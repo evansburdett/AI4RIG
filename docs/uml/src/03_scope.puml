@@ -1,0 +1,56 @@
+@startuml
+title AI4RIG — Scope Boundary
+skinparam dpi 140
+skinparam shadowing false
+skinparam defaultFontName Helvetica
+skinparam defaultFontSize 13
+skinparam roundCorner 6
+skinparam backgroundColor #FFFFFF
+skinparam ArrowColor #4A5058
+skinparam classBackgroundColor #F8F9FA
+skinparam classBorderColor #2C3138
+skinparam classAttributeIconSize 0
+skinparam usecaseBackgroundColor #F6F3EE
+skinparam usecaseBorderColor #9A6B2F
+skinparam actorBorderColor #2C3138
+skinparam packageBackgroundColor #FDFDFD
+skinparam packageBorderColor #C8CCD2
+skinparam noteBackgroundColor #F6F3EE
+skinparam noteBorderColor #9A6B2F
+hide circle
+skinparam rectangleBackgroundColor #F8F9FA
+skinparam rectangleBorderColor #2C3138
+
+rectangle "MVP — this cycle" as MVP #F0F5F1 {
+  card "Client profile intake" as m1
+  card "Anonymous identification" as m2
+  card "Ticker master list" as m3
+  card "Automatic bucket classification" as m4
+  card "Editable bucket assignments" as m5
+  card "Bucket funding from income gap" as m6
+  card "Age-driven bucket weighting" as m7
+  card "Asset class breakdown" as m8
+  card "Saved cases" as m9
+  card "Shared employee access" as m10
+  card "Client switching" as m11
+  card "Bucket deliverable" as m12
+}
+
+rectangle "Deferred — Future Work" as FW #FBF1F0 {
+  card "Automated allocation within buckets" as f1
+  card "Portfolio model selection" as f2
+  card "Rebalancing on market movement" as f3
+  card "Retirement forecasting (MME)" as f4
+  card "Stress testing" as f5
+  card "Client-readable MME output" as f6
+}
+
+MVP -[hidden]-> FW
+
+note bottom of FW
+  Deferred items depend on projection and
+  simulation logic that is a second product,
+  not a feature. They are modeled in the
+  domain but not implemented this cycle.
+end note
+@enduml

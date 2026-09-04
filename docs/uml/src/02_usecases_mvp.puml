@@ -1,0 +1,83 @@
+@startuml
+title AI4RIG — MVP Use Cases
+skinparam dpi 140
+skinparam shadowing false
+skinparam defaultFontName Helvetica
+skinparam defaultFontSize 13
+skinparam roundCorner 6
+skinparam backgroundColor #FFFFFF
+skinparam ArrowColor #4A5058
+skinparam classBackgroundColor #F8F9FA
+skinparam classBorderColor #2C3138
+skinparam classAttributeIconSize 0
+skinparam usecaseBackgroundColor #F6F3EE
+skinparam usecaseBorderColor #9A6B2F
+skinparam actorBorderColor #2C3138
+skinparam packageBackgroundColor #FDFDFD
+skinparam packageBorderColor #C8CCD2
+skinparam noteBackgroundColor #F6F3EE
+skinparam noteBorderColor #9A6B2F
+hide circle
+left to right direction
+skinparam actorStyle awesome
+
+actor Advisor as ADV
+actor Administrator as ADM
+ADM --|> ADV
+
+rectangle "AI4RIG — Minimum Viable Product" {
+
+  package "Case Management" {
+    usecase "Log in" as U1
+    usecase "Create client case" as U2
+    usecase "Switch between clients" as U3
+    usecase "Save / reopen case" as U4
+  }
+
+  package "Portfolio Entry" {
+    usecase "Add account" as U5
+    usecase "Enter holdings" as U6
+    usecase "Override bucket\nassignment" as U7
+  }
+
+  package "Ticker Universe" {
+    usecase "Classify ticker\ninto bucket" as U8
+    usecase "Edit ticker-to-bucket\nassignment" as U9
+  }
+
+  package "Planning Engine" {
+    usecase "Enter income\nand spending" as U10
+    usecase "Calculate bucket funding\nfrom income gap" as U11
+    usecase "Apply age-driven\nbucket weighting" as U12
+  }
+
+  package "Output" {
+    usecase "Generate Now/Soon/Later\ndeliverable" as U13
+    usecase "View asset class\nbreakdown" as U14
+  }
+}
+
+ADV --> U1
+ADV --> U2
+ADV --> U3
+ADV --> U4
+ADV --> U5
+ADV --> U6
+ADV --> U10
+ADV --> U13
+ADV --> U14
+ADM --> U9
+
+U6  ..> U8  : <<include>>
+U7  ..> U6  : <<extend>>
+U11 ..> U10 : <<include>>
+U11 ..> U12 : <<include>>
+U13 ..> U11 : <<include>>
+U14 ..> U13 : <<extend>>
+
+note bottom of U12
+  BLOCKED: target percentages
+  per life stage not yet
+  supplied by RIG.
+end note
+@enduml

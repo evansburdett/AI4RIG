@@ -1,0 +1,50 @@
+@startuml
+title AI4RIG — Sequence: Generate Bucket Deliverable
+skinparam dpi 140
+skinparam shadowing false
+skinparam defaultFontName Helvetica
+skinparam defaultFontSize 13
+skinparam roundCorner 6
+skinparam backgroundColor #FFFFFF
+skinparam ArrowColor #4A5058
+skinparam noteBackgroundColor #F6F3EE
+skinparam noteBorderColor #9A6B2F
+skinparam participantBackgroundColor #F8F9FA
+skinparam participantBorderColor #2C3138
+skinparam sequenceLifeLineBorderColor #C8CCD2
+
+actor Advisor as ADV
+participant "Web UI" as UI
+participant "API" as API
+participant "Bucket Engine\n<<pure — no I/O>>" as ENG
+database "Case Database" as DB
+
+ADV -> UI : Generate deliverable
+UI -> API : POST /clients/{id}/plan
+API -> DB : load client, accounts,\nholdings, cash flow
+DB --> API : case data
+API -> DB : load tickers, rules,\nallocation targets
+DB --> API : reference data
+
+API -> ENG : computePlan(case, reference)
+activate ENG
+ENG -> ENG : classify unassigned holdings
+ENG -> ENG : aggregate Now / Soon / Later
+ENG -> ENG : compute income gap
+ENG -> ENG : apply life-stage targets
+ENG -> ENG : build asset class breakdown
+ENG -> ENG : reconcile vs account balance
+ENG --> API : BucketPlan
+deactivate ENG
+
+API -> DB : save PlanSnapshot
+API --> UI : plan + warnings
+UI --> ADV : deliverable document
+
+note over ENG
+  The engine never touches the database and
+  never calls the network. Same inputs, same
+  outputs, every time — which is what makes
+  parity testing against RIG's workbook possible.
+end note
+@enduml

@@ -1,0 +1,111 @@
+@startuml
+title AI4RIG — MVP Domain Model
+skinparam dpi 140
+skinparam shadowing false
+skinparam defaultFontName Helvetica
+skinparam defaultFontSize 13
+skinparam roundCorner 6
+skinparam backgroundColor #FFFFFF
+skinparam ArrowColor #4A5058
+skinparam classBackgroundColor #F8F9FA
+skinparam classBorderColor #2C3138
+skinparam classAttributeIconSize 0
+skinparam noteBackgroundColor #F6F3EE
+skinparam noteBorderColor #9A6B2F
+hide circle
+
+class User {
+  id : UserId
+  username : String
+  passwordHash : String
+  role : Role
+}
+
+class Client {
+  id : ClientId <<PK>>
+  clientNumber : String
+  initials : String
+  birthDate : Date
+  lifeStage : LifeStage
+  --
+  age() : Integer
+}
+
+class Account {
+  id : AccountId
+  accountType : AccountType
+  maskedNumber : String
+  balance : Money
+}
+
+class Holding {
+  id : HoldingId
+  marketValue : Money
+  assignedBucket : BucketType
+  isOverride : Boolean
+}
+
+class Ticker {
+  id : TickerId
+  symbol : String <<unique>>
+  assetClass : AssetClass
+  defaultBucket : BucketType
+}
+
+enum BucketType {
+  NOW
+  SOON
+  LATER
+}
+
+class IncomeSource {
+  sourceType : String
+  annualAmount : Money
+}
+
+class CashFlowItem {
+  category : DistributionCategory
+  annualAmount : Money
+}
+
+class BucketPlan <<derived>> {
+  bucketTotal(b) : Money
+  bucketPct(b) : Pct
+  incomeGap() : Money
+  bucketFunding(b) : Money
+  assetClassBreakdown() : Map
+  targetDrift() : List
+  reconciliationDelta() : Money
+}
+
+class PlanSnapshot {
+  id : SnapshotId
+  generatedAt : DateTime
+  payload : JSON
+}
+
+User "1" --> "0..*" PlanSnapshot : generates
+Client "1" *-- "0..*" Account
+Client "1" *-- "0..*" IncomeSource
+Client "1" *-- "0..*" CashFlowItem
+Client "1" --> "0..*" PlanSnapshot
+Account "1" *-- "0..*" Holding
+Holding "0..*" --> "0..1" Ticker
+Holding --> BucketType : assignedBucket
+Ticker --> BucketType : defaultBucket
+BucketPlan ..> Client : computed for
+PlanSnapshot ..> BucketPlan : freezes
+
+note right of Client
+  No name, address or SSN.
+  Surrogate ID is the key;
+  initials + age are display only.
+end note
+
+note bottom of BucketPlan
+  <b>Derived, not a table.</b> Computed on
+  demand from holdings and cash flow.
+  Persisted only as a PlanSnapshot when
+  a deliverable is generated.
+end note
+@enduml

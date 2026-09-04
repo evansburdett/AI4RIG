@@ -1,0 +1,45 @@
+@startuml
+title AI4RIG — System Context
+skinparam dpi 140
+skinparam shadowing false
+skinparam defaultFontName Helvetica
+skinparam defaultFontSize 13
+skinparam roundCorner 6
+skinparam backgroundColor #FFFFFF
+skinparam ArrowColor #4A5058
+skinparam classBackgroundColor #F8F9FA
+skinparam classBorderColor #2C3138
+skinparam classAttributeIconSize 0
+skinparam usecaseBackgroundColor #F6F3EE
+skinparam usecaseBorderColor #9A6B2F
+skinparam actorBorderColor #2C3138
+skinparam packageBackgroundColor #FDFDFD
+skinparam packageBorderColor #C8CCD2
+skinparam noteBackgroundColor #F6F3EE
+skinparam noteBorderColor #9A6B2F
+hide circle
+left to right direction
+skinparam actorStyle awesome
+
+actor "Advisor\n(RIG employee)" as ADV
+actor "Administrator\n(RIG employee)" as ADM
+ADM --|> ADV
+
+rectangle "AI4RIG Bucket Planning Tool" as SYS {
+  usecase "Maintain de-identified\nclient cases" as A
+  usecase "Generate Now / Soon / Later\nbucket plan" as B
+  usecase "Maintain ticker universe\nand bucket rules" as C
+}
+
+ADV --> A
+ADV --> B
+ADM --> C
+
+note bottom of SYS
+  Advisor-facing only. Clients never
+  access the system; they receive a
+  printed deliverable from an advisor.
+  No personally identifying information
+  is stored.
+end note
+@enduml

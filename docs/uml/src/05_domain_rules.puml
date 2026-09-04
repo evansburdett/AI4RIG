@@ -1,0 +1,77 @@
+@startuml
+title AI4RIG — Bucket Rules and Targets
+skinparam dpi 140
+skinparam shadowing false
+skinparam defaultFontName Helvetica
+skinparam defaultFontSize 13
+skinparam roundCorner 6
+skinparam backgroundColor #FFFFFF
+skinparam ArrowColor #4A5058
+skinparam classBackgroundColor #F8F9FA
+skinparam classBorderColor #2C3138
+skinparam classAttributeIconSize 0
+skinparam noteBackgroundColor #F6F3EE
+skinparam noteBorderColor #9A6B2F
+hide circle
+
+enum BucketType {
+  NOW
+  SOON
+  LATER
+}
+
+enum LifeStage {
+  ACCUMULATION_YOUNG_PROFESSIONAL
+  ACCUMULATION_PEAK_EARNINGS
+  PRESERVATION
+  DISTRIBUTION_GO_GO
+  DISTRIBUTION_SLOW_GO
+  DISTRIBUTION_NO_GO
+}
+
+class Ticker {
+  symbol : String
+  assetClass : AssetClass
+  defaultBucket : BucketType
+}
+
+class ClassificationRule {
+  id : RuleId
+  assetClass : AssetClass
+  targetBucket : BucketType
+  precedence : Integer
+}
+
+class BucketDefinition {
+  bucket : BucketType
+  label : String
+  horizonMonths : Integer
+  purposeText : String
+}
+
+class AllocationTarget {
+  lifeStage : LifeStage
+  nowTargetPct : Pct
+  soonTargetPct : Pct
+  laterTargetPct : Pct
+}
+
+ClassificationRule --> BucketType : targetBucket
+ClassificationRule ..> Ticker : resolves default for
+BucketDefinition --> BucketType
+AllocationTarget --> LifeStage
+
+note right of ClassificationRule
+  Editable by an administrator, so
+  reclassifying a whole asset class
+  needs no developer involvement.
+  (Story: Editable Bucket Assignments)
+end note
+
+note bottom of AllocationTarget
+  <b>BLOCKED.</b> Percentages not yet
+  supplied by RIG. The structure is
+  the deliverable for this cycle.
+  (Story: Age-Driven Bucket Weighting)
+end note
+@enduml

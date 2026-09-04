@@ -1,0 +1,47 @@
+@startuml
+title AI4RIG — Deployment: Host / Client Mode
+skinparam dpi 140
+skinparam shadowing false
+skinparam defaultFontName Helvetica
+skinparam defaultFontSize 13
+skinparam roundCorner 6
+skinparam backgroundColor #FFFFFF
+skinparam ArrowColor #4A5058
+skinparam noteBackgroundColor #F6F3EE
+skinparam noteBorderColor #9A6B2F
+skinparam nodeBackgroundColor #F8F9FA
+skinparam nodeBorderColor #2C3138
+skinparam componentBackgroundColor #FDFDFD
+skinparam componentBorderColor #4A5058
+skinparam databaseBackgroundColor #F6F3EE
+skinparam databaseBorderColor #9A6B2F
+
+node "RIG Office LAN — no internet required" {
+
+  node "Host Machine\n(one designated PC)" as HOST {
+    component "Electron App\n(host mode)" as EH
+    component "API + Bucket Engine" as API
+    database "SQLite\ncase database" as DB
+  }
+
+  node "Advisor Workstation 1" as W1 {
+    component "Electron App\n(client mode)" as E1
+  }
+
+  node "Advisor Workstation N" as W2 {
+    component "Electron App\n(client mode)" as E2
+  }
+}
+
+EH --> API
+API --> DB
+E1 --> API : HTTP over LAN
+E2 --> API : HTTP over LAN
+
+note bottom of HOST
+  One executable, two roles. On first run the user
+  chooses "Host this database" or "Connect to a host."
+  No cloud account, no server, no IT staff required.
+  (Story: Shared Employee Access)
+end note
+@enduml
