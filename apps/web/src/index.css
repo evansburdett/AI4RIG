@@ -1,0 +1,85 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+}
+
+body {
+  margin: 0;
+  padding: 2rem 1.5rem;
+  background: Canvas;
+  color: CanvasText;
+}
+
+main {
+  max-width: 42rem;
+  margin: 0 auto;
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.75rem;
+}
+
+.subtitle,
+.muted {
+  color: color-mix(in srgb, CanvasText 60%, Canvas);
+}
+
+.subtitle {
+  margin-top: 0.25rem;
+}
+
+.card {
+  margin-top: 2rem;
+  padding: 1.25rem 1.5rem;
+  border: 1px solid color-mix(in srgb, CanvasText 20%, Canvas);
+  border-radius: 8px;
+}
+
+.card h2 {
+  margin-top: 0;
+  font-size: 1.1rem;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.9em;
+}
+
+.status {
+  margin-top: 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: 6px;
+  border-left: 4px solid;
+}
+
+.status-good {
+  border-color: #2e7d32;
+  background: color-mix(in srgb, #2e7d32 10%, Canvas);
+}
+
+.status-bad {
+  border-color: #c62828;
+  background: color-mix(in srgb, #c62828 10%, Canvas);
+}
+
+.status p {
+  margin: 0.5rem 0 0;
+}
+
+dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.35rem 1rem;
+  margin: 0.9rem 0 0;
+}
+
+dt {
+  font-weight: 600;
+}
+
+dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
