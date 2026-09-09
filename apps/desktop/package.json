@@ -1,0 +1,7 @@
+{
+  "name": "@ai4rig/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Electron shell. Empty until packaging, late in the project."
+}

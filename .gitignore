@@ -1,12 +1,36 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
 build/
 out/
+release/
+*.tsbuildinfo
+
+# Local environment — never commit; see .env.example for the key list
 .env
 .env.local
+.env.*.local
+
+# Local databases. Every developer builds their own from migrations; they are
+# disposable and are never shared. See docs/DEVELOPMENT.md.
+data/
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Logs and tool caches
 *.log
+npm-debug.log*
+.vitest/
+coverage/
+.eslintcache
+
+# Editor and OS noise
 .DS_Store
 .vscode/
 .idea/
-pgdata/
-release/
