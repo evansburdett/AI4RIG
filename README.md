@@ -8,7 +8,7 @@ Auburn University Senior Design, Team 22.
 Requires **Node 22 LTS** (see `.nvmrc`). No Docker, no database server.
 
 ```bash
-git clone https://github.com/<org>/AI4RIG.git
+git clone https://github.com/evansburdett/AI4RIG.git
 cd AI4RIG
 npm run setup
 npm run dev

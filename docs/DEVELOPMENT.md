@@ -108,7 +108,7 @@ xcode-select --install
 ### 2. Clone and set up
 
 ```bash
-git clone https://github.com/<org>/AI4RIG.git
+git clone https://github.com/evansburdett/AI4RIG.git
 cd AI4RIG
 nvm use
 npm run setup
@@ -182,7 +182,7 @@ which produces whole-file diffs that make your pull requests unreviewable. See
 ### 4. Clone and set up
 
 ```powershell
-git clone https://github.com/<org>/AI4RIG.git
+git clone https://github.com/evansburdett/AI4RIG.git
 cd AI4RIG
 npm run setup
 ```
