@@ -1,45 +1,32 @@
+/*
+ * Plain CSS, no framework and no build step beyond Vite.
+ *
+ * Colours are expressed against the `Canvas` / `CanvasText` system keywords and
+ * mixed with `color-mix`, which is how the file gets a working dark mode from
+ * `color-scheme: light dark` without maintaining a second palette. The three
+ * bucket hues are the only fixed colours, because Now, Soon, and Later need to
+ * mean the same thing on every screen and in a screenshot in a slide deck.
+ */
+
 :root {
   color-scheme: light dark;
   font-family: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
   line-height: 1.5;
+
+  --bucket-now: #b26a00;
+  --bucket-soon: #00695c;
+  --bucket-later: #37449e;
+
+  --border: color-mix(in srgb, CanvasText 18%, Canvas);
+  --border-strong: color-mix(in srgb, CanvasText 32%, Canvas);
+  --surface: color-mix(in srgb, CanvasText 3%, Canvas);
+  --muted: color-mix(in srgb, CanvasText 58%, Canvas);
 }
 
 body {
   margin: 0;
-  padding: 2rem 1.5rem;
   background: Canvas;
   color: CanvasText;
-}
-
-main {
-  max-width: 42rem;
-  margin: 0 auto;
-}
-
-h1 {
-  margin: 0;
-  font-size: 1.75rem;
-}
-
-.subtitle,
-.muted {
-  color: color-mix(in srgb, CanvasText 60%, Canvas);
-}
-
-.subtitle {
-  margin-top: 0.25rem;
-}
-
-.card {
-  margin-top: 2rem;
-  padding: 1.25rem 1.5rem;
-  border: 1px solid color-mix(in srgb, CanvasText 20%, Canvas);
-  border-radius: 8px;
-}
-
-.card h2 {
-  margin-top: 0;
-  font-size: 1.1rem;
 }
 
 code {
@@ -47,39 +34,477 @@ code {
   font-size: 0.9em;
 }
 
-.status {
-  margin-top: 1rem;
-  padding: 0.9rem 1rem;
+.muted,
+.field-hint {
+  color: var(--muted);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ── Shell ──────────────────────────────────────────────────────────────── */
+
+.app-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem 1.5rem;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: 1.25rem;
+  letter-spacing: 0.02em;
+}
+
+.brand span {
+  font-size: 0.85rem;
+}
+
+.app-header nav {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.app-header nav a {
+  padding: 0.35rem 0.75rem;
   border-radius: 6px;
-  border-left: 4px solid;
+  text-decoration: none;
+  color: inherit;
+  border: 1px solid transparent;
 }
 
-.status-good {
-  border-color: #2e7d32;
-  background: color-mix(in srgb, #2e7d32 10%, Canvas);
+.app-header nav a:hover {
+  background: color-mix(in srgb, CanvasText 8%, Canvas);
 }
 
-.status-bad {
-  border-color: #c62828;
-  background: color-mix(in srgb, #c62828 10%, Canvas);
-}
-
-.status p {
-  margin: 0.5rem 0 0;
-}
-
-dl {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 0.35rem 1rem;
-  margin: 0.9rem 0 0;
-}
-
-dt {
+.app-header nav a[aria-current="page"] {
+  border-color: var(--border-strong);
+  background: Canvas;
   font-weight: 600;
 }
 
-dd {
+.save-bar {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.switcher {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.switcher label {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.fixture-banner {
   margin: 0;
-  overflow-wrap: anywhere;
+  padding: 0.5rem 1.5rem;
+  background: color-mix(in srgb, var(--bucket-now) 14%, Canvas);
+  border-bottom: 1px solid color-mix(in srgb, var(--bucket-now) 35%, Canvas);
+  font-size: 0.85rem;
+}
+
+main {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.screen-header h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.4rem;
+}
+
+/* ── Cards and layout ───────────────────────────────────────────────────── */
+
+.card {
+  margin-top: 1.5rem;
+  padding: 1.25rem 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: Canvas;
+}
+
+.card h3 {
+  margin-top: 0;
+  font-size: 1.05rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.grid {
+  display: grid;
+  gap: 0 1.25rem;
+}
+
+.grid.two {
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+}
+
+.grid.three {
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+}
+
+fieldset {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 1rem 1rem;
+  margin: 0 0 1rem;
+}
+
+legend {
+  font-weight: 600;
+  padding: 0 0.4rem;
+}
+
+/* ── Fields ─────────────────────────────────────────────────────────────── */
+
+.field {
+  margin: 0.75rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.field label,
+.field-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.field input,
+.field select,
+select,
+textarea {
+  font: inherit;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: Canvas;
+  color: inherit;
+}
+
+textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
+.field input[aria-invalid="true"] {
+  border-color: #c62828;
+}
+
+.field-error {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #c62828;
+}
+
+.field-hint {
+  margin: 0;
+  font-size: 0.78rem;
+}
+
+.money-input {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.money-input span {
+  color: var(--muted);
+}
+
+.money-input input {
+  flex: 1;
+  min-width: 6rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.derived {
+  padding: 0.4rem 0.5rem;
+  border: 1px dashed var(--border-strong);
+  border-radius: 6px;
+  font-variant-numeric: tabular-nums;
+  background: var(--surface);
+}
+
+button {
+  font: inherit;
+  padding: 0.4rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: Canvas;
+  color: inherit;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+button:not(:disabled):hover {
+  background: color-mix(in srgb, CanvasText 8%, Canvas);
+}
+
+/* ── Tables ─────────────────────────────────────────────────────────────── */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.75rem;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+thead th {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+tfoot th,
+tfoot td {
+  border-bottom: none;
+  border-top: 2px solid var(--border-strong);
+  font-weight: 700;
+}
+
+.amount {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.cell {
+  font-size: 0.75rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.holdings .field,
+.tickers .field {
+  margin: 0;
+}
+
+.holdings .field label {
+  /* The column header already says what this is. */
+  display: none;
+}
+
+.account {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 1rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.account-head {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0 1rem;
+}
+
+.rows .row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0 1rem;
+}
+
+.worksheet {
+  margin-top: 1rem;
+}
+
+.tag {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--border-strong);
+  color: var(--muted);
+}
+
+.tag-warn {
+  border-color: color-mix(in srgb, var(--bucket-now) 60%, Canvas);
+  color: var(--bucket-now);
+}
+
+/* ── Buckets ────────────────────────────────────────────────────────────── */
+
+.swatch {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 3px;
+  flex: none;
+}
+
+.bucket-now {
+  background: var(--bucket-now);
+}
+
+.bucket-soon {
+  background: var(--bucket-soon);
+}
+
+.bucket-later {
+  background: var(--bucket-later);
+}
+
+.bucket-bar-track {
+  display: flex;
+  height: 1.5rem;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  margin-top: 0.75rem;
+}
+
+.bucket-bar-segment {
+  flex-basis: 0;
+  min-width: 2px;
+}
+
+.bucket-legend {
+  list-style: none;
+  padding: 0;
+  margin: 0.75rem 0 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.bucket-legend li {
+  display: grid;
+  grid-template-columns: 1rem 1fr auto auto;
+  align-items: center;
+  gap: 0.6rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.bucket-legend-value {
+  font-weight: 600;
+}
+
+.meter-cell {
+  width: 30%;
+}
+
+.meter {
+  height: 0.5rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, CanvasText 10%, Canvas);
+  overflow: hidden;
+}
+
+.meter-fill {
+  height: 100%;
+  background: color-mix(in srgb, CanvasText 45%, Canvas);
+}
+
+/* ── Callouts ───────────────────────────────────────────────────────────── */
+
+.callout {
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  border-left: 4px solid;
+  font-size: 0.9rem;
+}
+
+.callout strong {
+  display: block;
+  margin-bottom: 0.2rem;
+}
+
+.callout p {
+  margin: 0;
+}
+
+.callout-blocked {
+  border-color: #c62828;
+  background: color-mix(in srgb, #c62828 8%, Canvas);
+}
+
+.callout-warning {
+  border-color: var(--bucket-now);
+  background: color-mix(in srgb, var(--bucket-now) 10%, Canvas);
+}
+
+.callout-info {
+  border-color: var(--border-strong);
+  background: var(--surface);
+}
+
+.callout code {
+  margin-right: 0.3rem;
+}
+
+/* ── Bucket definition editor ───────────────────────────────────────────── */
+
+.definition {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.definition-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.definition-head label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-left: auto;
+}
+
+.definition-head input[type="number"] {
+  width: 5rem;
+}
+
+.definition-label {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.definition-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
 }
