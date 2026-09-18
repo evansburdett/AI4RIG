@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { bucketsByAccount, computeBreakdown, computeDrift } from './breakdown.js';
+import {
+  bucketsByAccount,
+  computeBreakdown,
+  computeDrift,
+  holdingsInBucket,
+} from './breakdown.js';
 import { SAMPLE_CASES } from '../fixtures/clients.js';
 import { PLACEHOLDER_TICKERS } from '../fixtures/tickers.js';
 import { computePlanTotals, targetAllocation } from './worksheet.js';
@@ -91,5 +96,42 @@ describe('bucketsByAccount', () => {
   it('rolls up to the portfolio total', () => {
     const rows = bucketsByAccount(WORKBOOK_CASE);
     expect(rows.reduce((sum, r) => sum + r.totalCents, 0)).toBe(3_000_000_00);
+  });
+});
+
+describe('holdingsInBucket', () => {
+  it('lists the largest position first', () => {
+    const holdings = holdingsInBucket(WORKBOOK_CASE, PLACEHOLDER_TICKERS, 'SOON');
+    const values = holdings.map((h) => h.marketValueCents);
+    expect(values).toEqual([...values].sort((a, b) => b - a));
+  });
+
+  it('sums to the bucket total, so the list cannot disagree with the drift', () => {
+    for (const bucket of ['NOW', 'SOON', 'LATER'] as const) {
+      const listed = holdingsInBucket(WORKBOOK_CASE, PLACEHOLDER_TICKERS, bucket).reduce(
+        (sum, h) => sum + h.marketValueCents,
+        0,
+      );
+      const composition = computeBreakdown(WORKBOOK_CASE, PLACEHOLDER_TICKERS).byBucket.find(
+        (b) => b.bucket === bucket,
+      );
+      expect(listed).toBe(composition?.valueCents);
+    }
+  });
+
+  it('flags a holding the advisor moved off the ticker default', () => {
+    // VXUS defaults to LATER but is parked in SOON on the sample case.
+    const overrides = holdingsInBucket(WORKBOOK_CASE, PLACEHOLDER_TICKERS, 'SOON').filter(
+      (h) => h.isOverride,
+    );
+    expect(overrides.map((h) => h.symbol)).toEqual(['VXUS']);
+  });
+
+  it('keeps an unclassifiable symbol in the list with a null asset class', () => {
+    const accumulator = SAMPLE_CASES[1]!;
+    const later = holdingsInBucket(accumulator, PLACEHOLDER_TICKERS, 'LATER');
+    const unknown = later.find((h) => h.symbol === 'ZZZZ');
+    expect(unknown?.assetClass).toBeNull();
+    expect(unknown?.isOverride).toBe(false);
   });
 });

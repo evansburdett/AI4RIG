@@ -2,7 +2,12 @@ import { useMemo } from 'react';
 
 import { BucketBar } from '../components/BucketBar.js';
 import { Callout } from '../components/Callout.js';
-import { bucketsByAccount, computeBreakdown, computeDrift } from '../domain/breakdown.js';
+import {
+  bucketsByAccount,
+  computeBreakdown,
+  computeDrift,
+  holdingsInBucket,
+} from '../domain/breakdown.js';
 import {
   ACCOUNT_TYPE_LABELS,
   ASSET_CLASS_LABELS,
@@ -178,24 +183,87 @@ export function AssetClassBreakdown({ clientCase, tickers }: Props) {
         </table>
       </section>
 
-      {breakdown.byBucket.map((composition) => (
-        <section className="card" key={composition.bucket}>
-          <h3>
-            <span className={`swatch bucket-${composition.bucket.toLowerCase()}`} aria-hidden="true" />
-            {BUCKET_LABELS[composition.bucket]} bucket
-          </h3>
-          <p className="muted">
-            {formatCents(composition.valueCents)} — {formatPercent(composition.pctOfPortfolio)} of
-            the portfolio
-          </p>
+      {breakdown.byBucket.map((composition) => {
+        const bucketDrift = drift.find((d) => d.bucket === composition.bucket);
+        const holdings = holdingsInBucket(clientCase, tickers, composition.bucket);
 
-          {composition.slices.length === 0 ? (
-            <p className="muted">Nothing classified in this bucket.</p>
-          ) : (
-            <SliceTable slices={composition.slices} totalCents={composition.valueCents} />
-          )}
-        </section>
-      ))}
+        return (
+          <section className="card" key={composition.bucket}>
+            <h3>
+              <span
+                className={`swatch bucket-${composition.bucket.toLowerCase()}`}
+                aria-hidden="true"
+              />
+              {BUCKET_LABELS[composition.bucket]} bucket
+            </h3>
+            <p className="muted">
+              {formatCents(composition.valueCents)} — {formatPercent(composition.pctOfPortfolio)} of
+              the portfolio
+              {bucketDrift !== undefined && bucketDrift.deltaCents !== 0 && (
+                <>
+                  {' · '}
+                  <strong>
+                    {formatCentsWhole(Math.abs(bucketDrift.deltaCents))}{' '}
+                    {bucketDrift.deltaCents > 0 ? 'over' : 'under'} target
+                  </strong>
+                </>
+              )}
+            </p>
+
+            {composition.slices.length > 0 && (
+              <SliceTable slices={composition.slices} totalCents={composition.valueCents} />
+            )}
+
+            <h4>Holdings in this bucket</h4>
+            {holdings.length === 0 ? (
+              <p className="empty">Nothing assigned to this bucket.</p>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Symbol</th>
+                    <th scope="col">Account</th>
+                    <th scope="col">Asset class</th>
+                    <th scope="col" className="amount">
+                      Value
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {holdings.map((holding) => (
+                    <tr key={holding.holdingId}>
+                      <th scope="row">
+                        <code>{holding.symbol === '' ? '—' : holding.symbol}</code>
+                        {holding.isOverride && <span className="tag">override</span>}
+                        {holding.symbol !== '' && holding.assetClass === null && (
+                          <span className="tag tag-warn">unknown</span>
+                        )}
+                      </th>
+                      <td className="muted">
+                        {ACCOUNT_TYPE_LABELS[holding.accountType]}
+                        {holding.maskedNumber === '' ? '' : ` ····${holding.maskedNumber}`}
+                      </td>
+                      <td className="muted">
+                        {holding.assetClass === null
+                          ? '—'
+                          : ASSET_CLASS_LABELS[holding.assetClass]}
+                      </td>
+                      <td className="amount">{formatCents(holding.marketValueCents)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            {bucketDrift !== undefined && bucketDrift.deltaCents !== 0 && (
+              <p className="field-hint">
+                Largest position first. Which of these to trade is the advisor&rsquo;s call —
+                automating it is US-13, deferred until RIG supplies allocation rules.
+              </p>
+            )}
+          </section>
+        );
+      })}
 
     </div>
   );

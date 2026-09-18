@@ -163,3 +163,49 @@ export function bucketsByAccount(clientCase: ClientCase): AccountBuckets[] {
     };
   });
 }
+
+export interface BucketHolding {
+  readonly holdingId: string;
+  readonly symbol: string;
+  readonly accountType: AccountType;
+  readonly maskedNumber: string;
+  readonly marketValueCents: Cents;
+  readonly assetClass: AssetClass | null;
+  /** The advisor put this here against the ticker's default (decision D1). */
+  readonly isOverride: boolean;
+}
+
+/**
+ * What is sitting in one bucket, largest position first.
+ *
+ * Shown next to a bucket's drift so the advisor can see the candidates without
+ * going back to the profile. It ranks by size and flags overrides; it does not
+ * suggest what to trade. Choosing positions is US-13, which is deferred until
+ * RIG supplies allocation rules.
+ */
+export function holdingsInBucket(
+  clientCase: ClientCase,
+  tickerList: readonly Ticker[],
+  bucket: BucketType,
+): BucketHolding[] {
+  const tickers = new Map(tickerList.map((t) => [t.symbol, t]));
+
+  return clientCase.accounts
+    .flatMap((account) =>
+      account.holdings
+        .filter((holding) => holding.assignedBucket === bucket)
+        .map((holding) => {
+          const ticker = tickers.get(holding.tickerSymbol);
+          return {
+            holdingId: holding.id,
+            symbol: holding.tickerSymbol,
+            accountType: account.accountType,
+            maskedNumber: account.maskedNumber,
+            marketValueCents: holding.marketValueCents,
+            assetClass: ticker?.assetClass ?? null,
+            isOverride: ticker !== undefined && ticker.defaultBucket !== bucket,
+          };
+        }),
+    )
+    .sort((a, b) => b.marketValueCents - a.marketValueCents);
+}

@@ -157,6 +157,15 @@ main {
   gap: 0.5rem;
 }
 
+.card h4 {
+  margin: 1.1rem 0 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+
 .card-head {
   display: flex;
   align-items: center;
