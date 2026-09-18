@@ -12,21 +12,18 @@ interface Props {
   totalCents: Cents;
 }
 
-/**
- * Now / Soon / Later as one bar.
- *
- * A negative segment means the plan asks for more than the client has, and the
- * bar cannot draw that. It shows the overdrawn amount as a labelled warning
- * instead of clamping to zero, because clamping would render an overfunded plan
- * and a perfectly funded one identically.
- */
+/** A negative segment is labelled rather than drawn, so it cannot look like zero. */
 export function BucketBar({ segments, totalCents }: Props) {
   const drawable = segments.filter((s) => s.valueCents > 0);
   const drawableTotal = drawable.reduce((sum, s) => sum + s.valueCents, 0);
 
+  const description = segments
+    .map((s) => `${BUCKET_LABELS[s.bucket]} ${formatCentsWhole(s.valueCents)}`)
+    .join('. ');
+
   return (
-    <div className="bucket-bar">
-      <div className="bucket-bar-track" role="img" aria-label={describe(segments, totalCents)}>
+    <div>
+      <div className="bucket-bar-track" role="img" aria-label={description}>
         {drawable.map((segment) => (
           <div
             key={segment.bucket}
@@ -40,7 +37,7 @@ export function BucketBar({ segments, totalCents }: Props) {
         {segments.map((segment) => (
           <li key={segment.bucket}>
             <span className={`swatch bucket-${segment.bucket.toLowerCase()}`} aria-hidden="true" />
-            <span className="bucket-legend-label">{BUCKET_LABELS[segment.bucket]}</span>
+            <span>{BUCKET_LABELS[segment.bucket]}</span>
             <span className="bucket-legend-value">{formatCentsWhole(segment.valueCents)}</span>
             <span className="muted">
               {segment.valueCents < 0
@@ -52,14 +49,4 @@ export function BucketBar({ segments, totalCents }: Props) {
       </ul>
     </div>
   );
-}
-
-function describe(segments: readonly BucketSegment[], totalCents: Cents): string {
-  return segments
-    .map(
-      (s) =>
-        `${BUCKET_LABELS[s.bucket]} ${formatCentsWhole(s.valueCents)}, ` +
-        `${formatPercent(percentOf(s.valueCents, totalCents))}`,
-    )
-    .join('. ');
 }

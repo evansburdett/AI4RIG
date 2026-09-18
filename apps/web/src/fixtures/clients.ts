@@ -1,12 +1,6 @@
 /**
- * Two sample cases so the screens have something to show before the API exists.
- *
- * No PII, and none is possible: the type has no field for a name, an address,
- * or a real account number. Client numbers are made up, initials are made up,
- * and the figures on case 1042 are the ones from the sponsor's own workbook so
- * that what the UI displays can be checked against the spreadsheet directly.
- *
- * See docs/decisions/0006-no-pii-anywhere.md.
+ * Two sample cases. Client numbers and initials are invented; the figures on
+ * case 1042 come from RIG's workbook so the UI can be checked against it.
  */
 
 import type { ClientCase } from '../domain/types.js';
@@ -25,7 +19,7 @@ const WORKBOOK_CASE: ClientCase = {
     {
       id: 'acct-1',
       accountType: 'JOINT',
-      maskedNumber: '••••4417',
+      maskedNumber: '4417',
       holdings: [
         { id: 'h-1', tickerSymbol: 'SGOV', marketValueCents: 190_000_00, assignedBucket: 'NOW' },
         { id: 'h-2', tickerSymbol: 'BND', marketValueCents: 400_000_00, assignedBucket: 'SOON' },
@@ -35,19 +29,18 @@ const WORKBOOK_CASE: ClientCase = {
     {
       id: 'acct-2',
       accountType: 'IRA',
-      maskedNumber: '••••8830',
+      maskedNumber: '8830',
       holdings: [
         { id: 'h-4', tickerSymbol: 'SHY', marketValueCents: 314_700_00, assignedBucket: 'SOON' },
         { id: 'h-5', tickerSymbol: 'VOO', marketValueCents: 985_300_00, assignedBucket: 'LATER' },
-        // Deliberately parked in Soon against its LATER default, so the
-        // override badge and the "unknown symbol" path both have a live case.
+        // Parked in Soon against its LATER default, to exercise the override badge.
         { id: 'h-6', tickerSymbol: 'VXUS', marketValueCents: 200_000_00, assignedBucket: 'SOON' },
       ],
     },
     {
       id: 'acct-3',
       accountType: 'ROTH_IRA',
-      maskedNumber: '••••2291',
+      maskedNumber: '2291',
       holdings: [
         { id: 'h-7', tickerSymbol: 'GLD', marketValueCents: 100_000_00, assignedBucket: 'SOON' },
         { id: 'h-8', tickerSymbol: 'VNQ', marketValueCents: 200_000_00, assignedBucket: 'LATER' },
@@ -77,7 +70,7 @@ const WORKBOOK_CASE: ClientCase = {
   updatedAt: '2026-09-15T14:02:00.000Z',
 };
 
-/** A second case, early in the cycle, so the switcher has somewhere to switch to. */
+/** A second case, early in the cycle. */
 const ACCUMULATOR_CASE: ClientCase = {
   clientNumber: '2317',
   initials: 'C.D.',
@@ -91,7 +84,7 @@ const ACCUMULATOR_CASE: ClientCase = {
     {
       id: 'acct-4',
       accountType: 'SINGLE',
-      maskedNumber: '••••1005',
+      maskedNumber: '1005',
       holdings: [
         { id: 'h-9', tickerSymbol: 'BIL', marketValueCents: 25_000_00, assignedBucket: 'NOW' },
         { id: 'h-10', tickerSymbol: 'VTI', marketValueCents: 240_000_00, assignedBucket: 'LATER' },
@@ -102,7 +95,7 @@ const ACCUMULATOR_CASE: ClientCase = {
     {
       id: 'acct-5',
       accountType: 'ROTH_IRA',
-      maskedNumber: '••••7742',
+      maskedNumber: '7742',
       holdings: [
         { id: 'h-12', tickerSymbol: 'TIP', marketValueCents: 60_000_00, assignedBucket: 'SOON' },
         { id: 'h-13', tickerSymbol: 'VOO', marketValueCents: 180_000_00, assignedBucket: 'LATER' },

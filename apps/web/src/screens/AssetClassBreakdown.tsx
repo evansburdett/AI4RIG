@@ -14,19 +14,9 @@ interface Props {
 }
 
 /**
- * US-11 — Asset Class Breakdown.
- *
- * What percentage of the portfolio sits in each asset class once the buckets
- * are built, overall and one bucket at a time. The per-bucket view is the one
- * that earns its place: "62% equity" across the whole portfolio is a fact, but
- * "62% equity inside the Soon bucket" is a problem, and the overall number
- * hides it.
- *
- * Every figure is derived from the holdings on each render and none of it is
- * stored (decision D2). Asset class comes from the ticker universe, so a symbol
- * that is not in it cannot be classified — those are called out rather than
- * dropped, since dropping them would make this screen quietly disagree with the
- * account totals on the profile.
+ * US-11 — asset class distribution, overall and per bucket. The per-bucket view
+ * is the useful one: equity concentration inside Soon is a problem the overall
+ * figure hides.
  */
 export function AssetClassBreakdown({ clientCase, tickers }: Props) {
   const breakdown = useMemo(
@@ -35,7 +25,7 @@ export function AssetClassBreakdown({ clientCase, tickers }: Props) {
   );
 
   return (
-    <div className="screen">
+    <div>
       <header className="screen-header">
         <h2>Asset class breakdown</h2>
         <p className="muted">
@@ -50,10 +40,8 @@ export function AssetClassBreakdown({ clientCase, tickers }: Props) {
             {breakdown.unknownSymbols.map((s) => (
               <code key={s}>{s}</code>
             ))}{' '}
-            {breakdown.unknownSymbols.length === 1 ? 'is' : 'are'} held on this case but not in the
-            ticker list, so {breakdown.unknownSymbols.length === 1 ? 'it has' : 'they have'} no
-            asset class. The money still counts toward the totals — it is real — but it cannot be
-            classified. Usually this is a typo or a gap in the master list.
+            held but not in the ticker list, so they have no asset class. The value still counts
+            toward the totals. Usually a typo or a gap in the master list.
           </p>
         </Callout>
       )}
@@ -81,8 +69,8 @@ export function AssetClassBreakdown({ clientCase, tickers }: Props) {
             {BUCKET_LABELS[composition.bucket]} bucket
           </h3>
           <p className="muted">
-            {formatCents(composition.valueCents)} —{' '}
-            {formatPercent(composition.pctOfPortfolio)} of the portfolio
+            {formatCents(composition.valueCents)} — {formatPercent(composition.pctOfPortfolio)} of
+            the portfolio
           </p>
 
           {composition.slices.length === 0 ? (
@@ -93,10 +81,10 @@ export function AssetClassBreakdown({ clientCase, tickers }: Props) {
         </section>
       ))}
 
-      <Callout tone="blocked" title="Nothing to compare this against yet">
-        A breakdown is only actionable next to a target. RIG has not supplied the Now / Soon / Later
-        percentages for {LIFE_STAGE_LABELS[clientCase.lifeStage]}, so this screen reports where the
-        money is and stops short of saying whether that is where it should be.
+      <Callout tone="blocked" title="No target to compare against">
+        RIG has not supplied the Now / Soon / Later percentages for{' '}
+        {LIFE_STAGE_LABELS[clientCase.lifeStage]}. This screen reports where the money is, not
+        whether that is where it should be.
       </Callout>
     </div>
   );
@@ -104,7 +92,7 @@ export function AssetClassBreakdown({ clientCase, tickers }: Props) {
 
 function SliceTable({ slices, totalCents }: { slices: readonly Slice[]; totalCents: number }) {
   return (
-    <table className="breakdown">
+    <table>
       <thead>
         <tr>
           <th scope="col">Asset class</th>

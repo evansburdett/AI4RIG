@@ -13,22 +13,10 @@ interface Props {
 }
 
 /**
- * US-08 — Editable Bucket Assignments.
- *
- * Two things are editable here, and both are data rather than code, which is
- * the point of the story: RIG can change how the model behaves without a
- * developer. A ticker's default bucket is what the engine proposes for a new
- * holding. A bucket definition is the language the firm uses to describe what
- * that bucket is for.
- *
- * Changing a default does not move money that is already placed. A holding
- * carries its own `assignedBucket`, set when the advisor put it there
- * (decision D1), and rewriting history underneath an advisor who had already
- * made a deliberate choice is not something an administrator should be able to
- * do by editing a dropdown. The notice at the top says so on the screen.
- *
- * Each row saves on its own. A page-wide Save would mean an administrator
- * reclassifying one symbol has to think about what else they touched.
+ * US-08 — ticker defaults and bucket definitions, both stored as data so RIG can
+ * change them without a developer. Changing a default does not move holdings
+ * already placed; a holding carries the bucket the advisor chose (decision D1).
+ * Each row saves on its own.
  */
 export function BucketAssignments({
   tickers,
@@ -52,7 +40,7 @@ export function BucketAssignments({
   }
 
   return (
-    <div className="screen">
+    <div>
       <header className="screen-header">
         <h2>Ticker universe and bucket rules</h2>
         <p className="muted">
@@ -60,18 +48,16 @@ export function BucketAssignments({
         </p>
       </header>
 
-      <Callout tone="warning" title="This is a placeholder investment universe">
-        RIG has not sent the Common Investments list yet. The ten symbols below exist so the screen
-        has something to render and are not the firm&rsquo;s approved set. Editing them here changes
-        nothing outside your browser session until the ticker endpoint lands (US-06).
+      <Callout tone="warning" title="Placeholder investment universe">
+        RIG has not sent the Common Investments list yet. These ten symbols are not the firm&rsquo;s
+        approved set. Edits are session-only until the ticker endpoint lands (US-06).
       </Callout>
 
       <section className="card">
         <h3>Default bucket by ticker</h3>
         <p className="muted">
-          The default is what the engine proposes for a <em>new</em> holding. Holdings already
-          placed keep the bucket the advisor chose for them — changing a default here does not
-          reach back and move a client&rsquo;s money.
+          Applied to <em>new</em> holdings. Holdings already placed keep the bucket the advisor
+          chose for them.
         </p>
 
         <div className="field">
@@ -147,10 +133,7 @@ export function BucketAssignments({
 
       <section className="card">
         <h3>What each bucket is for</h3>
-        <p className="muted">
-          The firm&rsquo;s own wording, editable so the model can be adjusted as RIG&rsquo;s strategy
-          evolves. This text is what an advisor reads when deciding where something belongs.
-        </p>
+        <p className="muted">Editable wording, shown to the advisor when assigning a holding.</p>
 
         {definitions.map((definition) => (
           <BucketDefinitionEditor
@@ -161,11 +144,9 @@ export function BucketAssignments({
         ))}
       </section>
 
-      <Callout tone="blocked" title="Classification rules by asset class are not built yet">
-        The conceptual model has a <code>ClassificationRule</code> that maps a whole asset class to
-        a bucket, so reclassifying every bond position is one edit rather than forty. It is not on
-        this screen because the rule table does not exist in the database yet. Per-ticker defaults
-        above cover the same ground for a universe this size.
+      <Callout tone="info" title="Asset-class rules not built">
+        <code>ClassificationRule</code> maps a whole asset class to a bucket. The table does not
+        exist yet; per-ticker defaults cover the same ground for a universe this size.
       </Callout>
     </div>
   );

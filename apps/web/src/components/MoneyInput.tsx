@@ -7,28 +7,20 @@ interface Props {
   valueCents: Cents;
   onChange: (cents: Cents) => void;
   hint?: string;
-  disabled?: boolean;
 }
 
 /**
  * A money field that hands back whole cents.
  *
- * It keeps the advisor's raw keystrokes in local state rather than reformatting
- * on every change. Normalising as they type is the behaviour where someone
- * enters "10.05", the field rewrites it to "10.5" mid-keystroke, and they end
- * up with the wrong number and no idea why. The text is theirs until they leave
- * the field; only then does it get tidied to match the cents it parsed to.
- *
- * Anything unparseable leaves the last good value in place and marks the field
- * invalid, so a typo cannot silently become zero.
+ * Keeps the raw keystrokes in local state so the text is not reformatted
+ * mid-edit, and tidies it on blur. Unparseable input keeps the last good value
+ * and marks the field invalid rather than silently becoming zero.
  */
-export function MoneyInput({ label, valueCents, onChange, hint, disabled = false }: Props) {
+export function MoneyInput({ label, valueCents, onChange, hint }: Props) {
   const id = useId();
   const [draft, setDraft] = useState(() => centsToInput(valueCents));
   const [focused, setFocused] = useState(false);
 
-  // Follow the value when it changes from somewhere else — a different client
-  // loaded into the same field — but never while the advisor is mid-edit.
   useEffect(() => {
     if (!focused) setDraft(centsToInput(valueCents));
   }, [valueCents, focused]);
@@ -46,9 +38,7 @@ export function MoneyInput({ label, valueCents, onChange, hint, disabled = false
           type="text"
           inputMode="decimal"
           value={draft}
-          disabled={disabled}
           aria-invalid={invalid}
-          aria-describedby={hint === undefined ? undefined : `${id}-hint`}
           onFocus={() => setFocused(true)}
           onChange={(event) => {
             const next = event.target.value;
@@ -64,11 +54,7 @@ export function MoneyInput({ label, valueCents, onChange, hint, disabled = false
         />
       </div>
       {invalid && <p className="field-error">Enter an amount like 1234.56</p>}
-      {hint !== undefined && !invalid && (
-        <p className="field-hint" id={`${id}-hint`}>
-          {hint}
-        </p>
-      )}
+      {hint !== undefined && !invalid && <p className="field-hint">{hint}</p>}
     </div>
   );
 }

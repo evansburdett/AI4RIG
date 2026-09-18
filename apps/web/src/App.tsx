@@ -1,27 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { api, ApiError } from './api.js';
-import { ClientSwitcher } from './components/ClientSwitcher.js';
 import { Callout } from './components/Callout.js';
+import { ClientSwitcher } from './components/ClientSwitcher.js';
 import type { BucketDefinition, ClientCase, ClientSummary, Ticker } from './domain/types.js';
+import { hrefFor, useRoute, type Screen } from './routing.js';
 import { AssetClassBreakdown } from './screens/AssetClassBreakdown.js';
 import { BucketAssignments } from './screens/BucketAssignments.js';
 import { ClientProfile } from './screens/ClientProfile.js';
-import { hrefFor, useRoute, type Screen } from './routing.js';
 
 /**
- * The application shell: reference data, the active client, and which screen is
- * showing.
+ * Shell: reference data, the open case, and which screen is showing.
  *
- * State lives here rather than in a store because there is very little of it —
- * a list of clients, one open case, and the ticker universe. A store would be
- * indirection around four `useState` calls. If this grows past what one file
- * can hold, that is the signal to add one.
- *
- * The active client is in the URL, not in component state, which is what makes
- * US-03 work properly: switching client re-routes, so the back button retraces
- * the advisor's path through their book and a specific client's breakdown is a
- * link they can keep.
+ * The active client lives in the URL, so switching is a route change and the
+ * back button retraces the advisor's path through their book.
  */
 export function App() {
   const [route, navigate] = useRoute();
@@ -31,23 +23,14 @@ export function App() {
   const [definitions, setDefinitions] = useState<readonly BucketDefinition[]>([]);
   const [referenceError, setReferenceError] = useState<string | null>(null);
 
-  /** The open case, as edited. `saved` is what the server last confirmed. */
-  /**
-   * The client to return to from a screen that has none of its own.
-   *
-   * The ticker editor is firm-wide, so its route carries no client number. That
-   * used to mean an advisor who checked a symbol came back to whichever client
-   * sorted first, not the one they had open. Remembering the last one keeps the
-   * switcher honest across a screen that does not belong to anybody.
-   */
+  /** Where to return from the ticker screen, which belongs to no client. */
   const [lastClientNumber, setLastClientNumber] = useState<string | null>(null);
 
   const [draft, setDraft] = useState<ClientCase | null>(null);
   const [saved, setSaved] = useState<ClientCase | null>(null);
   const [caseError, setCaseError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [busy, setBusy] = useState(false);
 
-  // Reference data, once.
   useEffect(() => {
     let cancelled = false;
 
@@ -71,15 +54,13 @@ export function App() {
     if (route.clientNumber !== null) setLastClientNumber(route.clientNumber);
   }, [route.clientNumber]);
 
-  // Land somewhere useful rather than on an empty screen: where the advisor
-  // last was, or the first client if this is a cold start.
+  // Land where the advisor last was, or on the first client.
   useEffect(() => {
     if (route.clientNumber !== null || route.screen === 'tickers') return;
     const target = lastClientNumber ?? clients[0]?.clientNumber;
     if (target !== undefined) navigate({ screen: 'profile', clientNumber: target });
   }, [clients, lastClientNumber, route.clientNumber, route.screen, navigate]);
 
-  // The open case follows the URL.
   useEffect(() => {
     const clientNumber = route.clientNumber;
     if (clientNumber === null) return;
@@ -107,14 +88,11 @@ export function App() {
   }, [route.clientNumber]);
 
   const dirty = draft !== null && saved !== null && draft !== saved;
-
-  /** What the switcher shows, and where the Profile/Breakdown links point. */
   const activeClientNumber = route.clientNumber ?? lastClientNumber;
 
   const selectClient = useCallback(
     (clientNumber: string) => {
-      // Keep the advisor on the screen they are reading. Someone comparing two
-      // clients' breakdowns should not be dropped back to the intake form.
+      // Stay on the screen the advisor is reading.
       const screen: Screen = route.screen === 'tickers' ? 'profile' : route.screen;
       navigate({ screen, clientNumber });
     },
@@ -123,29 +101,68 @@ export function App() {
 
   const save = useCallback(async () => {
     if (draft === null) return;
-    setSaving(true);
+    setBusy(true);
     try {
       const result = await api.saveClient(draft);
       setSaved(result);
       setDraft(result);
       setClients((current) =>
         current.map((c) =>
-          c.clientNumber === result.clientNumber
-            ? {
-                clientNumber: result.clientNumber,
-                initials: result.initials,
-                lifeStage: result.lifeStage,
-                updatedAt: result.updatedAt,
-              }
-            : c,
+          c.clientNumber === result.clientNumber ? toSummary(result) : c,
         ),
       );
     } catch (error: unknown) {
       setCaseError(describeError(error));
     } finally {
-      setSaving(false);
+      setBusy(false);
     }
   }, [draft]);
+
+  const createClient = useCallback(async () => {
+    if (dirty && !window.confirm('Discard unsaved changes to the open case?')) return;
+    setBusy(true);
+    try {
+      const created = await api.createClient();
+      setClients((current) =>
+        [...current, toSummary(created)].sort((a, b) =>
+          a.clientNumber.localeCompare(b.clientNumber),
+        ),
+      );
+      navigate({ screen: 'profile', clientNumber: created.clientNumber });
+    } catch (error: unknown) {
+      setCaseError(describeError(error));
+    } finally {
+      setBusy(false);
+    }
+  }, [dirty, navigate]);
+
+  const deleteClient = useCallback(async () => {
+    if (activeClientNumber === null) return;
+    const confirmed = window.confirm(
+      `Delete case ${activeClientNumber}? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+
+    setBusy(true);
+    try {
+      await api.deleteClient(activeClientNumber);
+      const remaining = clients.filter((c) => c.clientNumber !== activeClientNumber);
+      setClients(remaining);
+      setDraft(null);
+      setSaved(null);
+      setLastClientNumber(null);
+      const next = remaining[0]?.clientNumber;
+      navigate(
+        next === undefined
+          ? { screen: 'profile', clientNumber: null }
+          : { screen: 'profile', clientNumber: next },
+      );
+    } catch (error: unknown) {
+      setCaseError(describeError(error));
+    } finally {
+      setBusy(false);
+    }
+  }, [activeClientNumber, clients, navigate]);
 
   const saveTicker = useCallback(async (ticker: Ticker) => {
     const result = await api.saveTicker(ticker);
@@ -157,24 +174,26 @@ export function App() {
     setDefinitions((current) => current.map((d) => (d.bucket === result.bucket ? result : d)));
   }, []);
 
-  // `new Date()` once per render pass rather than inside the date helpers, so a
-  // screen cannot show two different "today"s and a test can pass its own.
   const today = useMemo(() => new Date(), []);
 
   return (
-    <div className="app">
+    <div>
       <header className="app-header">
         <div className="brand">
           <h1>AI4RIG</h1>
-          <span className="muted">Bucket planning · Railroad Investment Group</span>
+          <span className="muted">Railroad Investment Group</span>
         </div>
 
         <ClientSwitcher
           clients={clients}
           activeClientNumber={activeClientNumber}
           onSelect={selectClient}
-          disabled={saving}
+          disabled={busy}
         />
+
+        <button type="button" onClick={() => void createClient()} disabled={busy}>
+          New client
+        </button>
 
         <nav aria-label="Screens">
           <a
@@ -200,8 +219,21 @@ export function App() {
         {route.screen !== 'tickers' && (
           <div className="save-bar">
             {dirty && <span className="muted">Unsaved changes</span>}
-            <button type="button" disabled={!dirty || saving} onClick={() => void save()}>
-              {saving ? 'Saving…' : 'Save case'}
+            <button
+              type="button"
+              className="primary"
+              disabled={!dirty || busy}
+              onClick={() => void save()}
+            >
+              {busy ? 'Saving…' : 'Save case'}
+            </button>
+            <button
+              type="button"
+              className="danger"
+              disabled={busy || activeClientNumber === null}
+              onClick={() => void deleteClient()}
+            >
+              Delete
             </button>
           </div>
         )}
@@ -209,8 +241,8 @@ export function App() {
 
       {api.usingFixtures && (
         <p className="fixture-banner">
-          Fixture mode — screens are reading sample data, not the API. Set{' '}
-          <code>VITE_USE_FIXTURES=false</code> once the client and ticker endpoints exist.
+          Fixture mode — sample data, not the API. Changes are lost on reload. Set{' '}
+          <code>VITE_USE_FIXTURES=false</code> once the endpoints exist.
         </p>
       )}
 
@@ -232,21 +264,27 @@ export function App() {
           <Callout tone="warning" title="Could not open this case">
             {caseError}
           </Callout>
+        ) : clients.length === 0 && draft === null ? (
+          <p className="empty">No client cases. Use “New client” to create one.</p>
         ) : draft === null ? (
-          <p className="muted">Loading…</p>
+          <p className="empty">Loading…</p>
         ) : route.screen === 'breakdown' ? (
           <AssetClassBreakdown clientCase={draft} tickers={tickers} />
         ) : (
-          <ClientProfile
-            clientCase={draft}
-            tickers={tickers}
-            onChange={setDraft}
-            today={today}
-          />
+          <ClientProfile clientCase={draft} tickers={tickers} onChange={setDraft} today={today} />
         )}
       </main>
     </div>
   );
+}
+
+function toSummary(c: ClientCase): ClientSummary {
+  return {
+    clientNumber: c.clientNumber,
+    initials: c.initials,
+    lifeStage: c.lifeStage,
+    updatedAt: c.updatedAt,
+  };
 }
 
 function describeError(error: unknown): string {

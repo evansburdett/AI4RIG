@@ -1,13 +1,7 @@
 /**
- * PLACEHOLDER investment universe.
- *
- * RIG has not sent the Common Investments list yet — the sponsor's email says
- * "We will send these." Until it arrives this is a small set of broad, widely
- * quoted ETFs, chosen only so the screens have something to render. It is not
- * RIG's approved list and must not be mistaken for one, which is why the count
- * is small and obviously generic rather than a plausible-looking fifty rows.
- *
- * When the real list lands it belongs in the database behind US-06, not here.
+ * Placeholder investment universe. RIG has not sent the Common Investments list
+ * yet; these are broad ETFs so the screens have something to render. The real
+ * list belongs in the database behind US-06.
  */
 
 import type { BucketDefinition, Ticker } from '../domain/types.js';
@@ -25,31 +19,27 @@ export const PLACEHOLDER_TICKERS: readonly Ticker[] = [
   { symbol: 'GLD', assetClass: 'REAL_ASSET', defaultBucket: 'SOON' },
 ];
 
-/**
- * Bucket definitions, worded from the sponsor's own description of the three
- * buckets. Editable through the UI under US-08 so RIG can adjust the language
- * as their strategy evolves, without a developer.
- */
+/** Worded from RIG's description of the three buckets. Editable under US-08. */
 export const DEFAULT_BUCKET_DEFINITIONS: readonly BucketDefinition[] = [
   {
     bucket: 'NOW',
     label: 'Now',
     horizonMonths: 12,
     purposeText:
-      'Money spent in the next twelve months: income draw, the cash the client wants to see in the bank, and known large expenses.',
+      'Money spent in the next twelve months: income draw, cash held at the bank, and known large expenses.',
   },
   {
     bucket: 'SOON',
     label: 'Soon',
     horizonMonths: 120,
     purposeText:
-      'Preservation. Covers the income gap, an inflation hedge, any Social Security bridge, and anything the client wants invested conservatively.',
+      'Preservation. Income gap, inflation hedge, Social Security bridge, and anything held conservatively.',
   },
   {
     bucket: 'LATER',
     label: 'Later',
     horizonMonths: 360,
     purposeText:
-      'Long-term growth. Market dependent, and the bucket that absorbs whatever Now and Soon do not claim.',
+      'Long-term growth. Market dependent, and absorbs whatever Now and Soon do not claim.',
   },
 ];

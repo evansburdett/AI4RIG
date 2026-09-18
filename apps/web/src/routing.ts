@@ -1,16 +1,7 @@
 /**
- * A hash router, in about sixty lines, instead of a routing library.
- *
- * Two reasons it is hand-rolled. The first is that this app has four screens
- * and no nested layouts, so a router is the smallest part of the problem. The
- * second is Electron: the packaged app loads the bundle from `file://`, where
- * history-based routing needs either a custom protocol handler or a server that
- * is not there. Hash routing works unchanged in both places, so the packaging
- * step at the end of the project stays the packaging step it was scoped as.
- *
- * If the screen count grows past a dozen, or nested layouts show up, swap this
- * for react-router and delete the file. It is deliberately small enough to
- * throw away.
+ * Hash router. Hand-rolled because the packaged Electron build loads from
+ * `file://`, where history routing needs a custom protocol handler. Small enough
+ * to replace with react-router if the screen count grows.
  */
 
 import { useCallback, useSyncExternalStore } from 'react';
@@ -56,20 +47,13 @@ function currentHash(): string {
   return window.location.hash;
 }
 
-/**
- * The current route, and a way to change it.
- *
- * `useSyncExternalStore` rather than `useState` plus an effect: the hash is
- * external state that can change without React's involvement (the back button,
- * a typed URL), and this is the hook built for exactly that.
- */
+/** The hash can change without React's involvement, hence useSyncExternalStore. */
 export function useRoute(): [Route, (route: Route) => void] {
   const hash = useSyncExternalStore(subscribe, currentHash, () => '');
 
   const navigate = useCallback((route: Route) => {
     const href = hrefFor(route);
-    // Assigning an identical hash fires no hashchange, so bail rather than
-    // leaving a caller wondering why nothing happened.
+    // An identical hash fires no hashchange event.
     if (window.location.hash !== href) window.location.hash = href;
   }, []);
 

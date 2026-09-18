@@ -1,12 +1,4 @@
-/**
- * Age, life stage, and the labels the UI shows for each.
- *
- * The sponsor confirmed the six stages by email: early accumulator, peak
- * earning years, preservation, go-go, slow-go, no-go. What they have not given
- * us is the boundary between them, or the target percentages each one implies.
- * Both are deliberately absent here rather than guessed — see
- * `ALLOCATION_TARGETS_PENDING` at the bottom.
- */
+/** Age derivation and the display labels for each enum. */
 
 import type {
   AccountType,
@@ -18,31 +10,22 @@ import type {
   MoneyCyclePhase,
   Person,
 } from './types.js';
+import { LIFE_STAGES } from './types.js';
 
-/**
- * Age from year of birth.
- *
- * `today` is a parameter, not `new Date()` reached for inside the function, so
- * that a test can pin the year instead of breaking every January.
- */
+/** `today` is a parameter so tests can pin the year. */
 export function ageFromBirthYear(birthYear: number | null, today: Date): number | null {
   if (birthYear === null) return null;
   const age = today.getFullYear() - birthYear;
-  // Without a birth date we cannot know whether they have had this year's
-  // birthday. The worksheet asks for the year alone and accepts the same
-  // imprecision; being off by one for part of the year is the price of not
-  // storing a date of birth.
   return age >= 0 && age < 130 ? age : null;
 }
 
-/** Years the plan has to cover: life expectancy minus current age. */
 export function planYears(person: Person, today: Date): number | null {
   const age = ageFromBirthYear(person.birthYear, today);
   if (age === null || person.lifeExpectancyAge === null) return null;
   return Math.max(0, person.lifeExpectancyAge - age);
 }
 
-/** The longer of the two people's horizons — the plan has to outlast both. */
+/** The longer of the two horizons — the plan has to outlast both. */
 export function householdPlanYears(people: readonly Person[], today: Date): number | null {
   const years = people.map((p) => planYears(p, today)).filter((y): y is number => y !== null);
   return years.length === 0 ? null : Math.max(...years);
@@ -93,27 +76,12 @@ export const BUCKET_LABELS: Record<BucketType, string> = {
   LATER: 'Later',
 };
 
-/**
- * The structure of US-10, with the values RIG has not supplied.
- *
- * Nulls, not zeroes and not placeholder percentages. A screen that showed
- * "Now 10% / Soon 30% / Later 60%" would look like a rule the firm had agreed
- * to, and nobody would go back and check. Nulls make the gap visible on every
- * screen that touches it, which is the point.
- *
- * The sponsor's email is explicit that this matters most in preservation and
- * distribution and matters least — but is still present — in accumulation.
- */
-export const ALLOCATION_TARGETS_PENDING: readonly AllocationTarget[] = [
-  'ACCUMULATION_YOUNG_PROFESSIONAL',
-  'ACCUMULATION_PEAK_EARNINGS',
-  'PRESERVATION',
-  'DISTRIBUTION_GO_GO',
-  'DISTRIBUTION_SLOW_GO',
-  'DISTRIBUTION_NO_GO',
-].map((lifeStage) => ({
-  lifeStage: lifeStage as LifeStage,
-  nowTargetPct: null,
-  soonTargetPct: null,
-  laterTargetPct: null,
-}));
+/** Structure only. RIG has not supplied the percentages; US-10 is blocked. */
+export const ALLOCATION_TARGETS_PENDING: readonly AllocationTarget[] = LIFE_STAGES.map(
+  (lifeStage) => ({
+    lifeStage,
+    nowTargetPct: null,
+    soonTargetPct: null,
+    laterTargetPct: null,
+  }),
+);

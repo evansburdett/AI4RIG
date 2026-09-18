@@ -1,19 +1,15 @@
 import { useId } from 'react';
 
-/**
- * The plain form controls, so the screens read as a description of the
- * worksheet rather than a wall of label/input/div.
- */
-
 interface TextFieldProps {
   label: string;
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
   hint?: string;
+  uppercase?: boolean;
 }
 
-export function TextField({ label, value, onChange, placeholder, hint }: TextFieldProps) {
+export function TextField({ label, value, onChange, placeholder, hint, uppercase }: TextFieldProps) {
   const id = useId();
   return (
     <div className="field">
@@ -23,7 +19,9 @@ export function TextField({ label, value, onChange, placeholder, hint }: TextFie
         type="text"
         value={value}
         placeholder={placeholder ?? ''}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) =>
+          onChange(uppercase === true ? event.target.value.toUpperCase() : event.target.value)
+        }
       />
       {hint !== undefined && <p className="field-hint">{hint}</p>}
     </div>
@@ -40,13 +38,7 @@ interface NumberFieldProps {
   hint?: string;
 }
 
-/**
- * Integers and plain counts — a year, a month count, a number of years.
- *
- * Never money. Money goes through `MoneyInput`, which returns whole cents; a
- * dollars-valued `number` arriving from here is the float-money bug that
- * CONTRIBUTING.md tells a reviewer to reject.
- */
+/** Counts and years only. Money goes through MoneyInput. */
 export function NumberField({ label, value, onChange, min, max, step, hint }: NumberFieldProps) {
   const id = useId();
   return (
@@ -103,7 +95,15 @@ export function SelectField<T extends string>({
 }
 
 /** A value the system works out rather than one the advisor types. */
-export function DerivedField({ label, value, hint }: { label: string; value: string; hint?: string }) {
+export function DerivedField({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
   return (
     <div className="field">
       <span className="field-label">{label}</span>
