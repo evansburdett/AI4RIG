@@ -4,6 +4,8 @@ import express, { type Express } from 'express';
 
 import type { ApiConfig } from './config.js';
 
+import { createClientsRouter } from './routes/clients.js';
+
 export interface AppDeps {
   config: ApiConfig;
   /** Injected by tests so they can point at a temp database. */
@@ -41,6 +43,8 @@ export function createApp({ config, db = openDatabase() }: AppDeps): CreatedApp 
       time: new Date().toISOString(),
     });
   });
+
+  app.use(createClientsRouter(db));
 
   app.use((_req, res) => {
     res.status(404).json({ error: 'Not found' });
