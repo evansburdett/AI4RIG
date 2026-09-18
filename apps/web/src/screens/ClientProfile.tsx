@@ -13,7 +13,7 @@ import {
   ageFromBirthYear,
   householdPlanYears,
 } from '../domain/lifeStage.js';
-import { formatCents, formatCentsWhole } from '../domain/money.js';
+import { formatCents, formatCentsWhole, formatPercent } from '../domain/money.js';
 import {
   ACCOUNT_TYPES,
   BUCKETS,
@@ -31,7 +31,11 @@ import type {
   PlannedExpense,
   Ticker,
 } from '../domain/types.js';
-import { computePlanTotals, type BucketWorksheet } from '../domain/worksheet.js';
+import {
+  computePlanTotals,
+  targetAllocation,
+  type BucketWorksheet,
+} from '../domain/worksheet.js';
 
 interface Props {
   clientCase: ClientCase;
@@ -50,6 +54,7 @@ interface Props {
  */
 export function ClientProfile({ clientCase, tickers, onChange, today }: Props) {
   const totals = useMemo(() => computePlanTotals(clientCase), [clientCase]);
+  const target = useMemo(() => targetAllocation(clientCase, totals), [clientCase, totals]);
   const planYears = householdPlanYears(clientCase.people, today);
   const { nowInputs, soonInputs } = clientCase;
 
@@ -452,10 +457,36 @@ export function ClientProfile({ clientCase, tickers, onChange, today }: Props) {
           </Callout>
         )}
 
-        <Callout tone="blocked" title="No life-stage target to compare against">
-          RIG has not supplied the Now / Soon / Later percentages for{' '}
-          {LIFE_STAGE_LABELS[clientCase.lifeStage]}. US-10 is blocked on it.
-        </Callout>
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Stage of life</th>
+              <th scope="col" className="amount">
+                Now %
+              </th>
+              <th scope="col" className="amount">
+                Soon %
+              </th>
+              <th scope="col" className="amount">
+                Later %
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">{LIFE_STAGE_LABELS[target.lifeStage]}</th>
+              <td className="amount">{formatPercent(target.nowPct)}</td>
+              <td className="amount">{formatPercent(target.soonPct)}</td>
+              <td className="amount">{formatPercent(target.laterPct)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <p className="field-hint">
+          Derived from this client&rsquo;s worksheet inputs, not from a table keyed by life stage.
+          Stage of life shows up in which inputs are non-zero: an accumulator with no income gap and
+          no Social Security bridge gets a small Soon bucket without anything having to weight it.
+        </p>
       </section>
     </div>
   );

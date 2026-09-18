@@ -9,8 +9,15 @@
 
 import { addCents, type Cents } from '@ai4rig/engine';
 
-import { multiplyCents } from './money.js';
-import type { BucketType, ClientCase, GapEntry, NowInputs, SoonInputs } from './types.js';
+import { multiplyCents, percentOf } from './money.js';
+import type {
+  AllocationTarget,
+  BucketType,
+  ClientCase,
+  GapEntry,
+  NowInputs,
+  SoonInputs,
+} from './types.js';
 
 export interface WorksheetLine {
   readonly label: string;
@@ -143,4 +150,26 @@ export function computePlanTotals(clientCase: ClientCase): PlanTotals {
   const later = computeLater(assets, now.totalCents, soon.totalCents);
 
   return { now, soon, later, investableAssetsCents: assets, isOverfunded: later.totalCents < 0 };
+}
+
+/**
+ * The target Now / Soon / Later split for this client, as percentages of
+ * investable assets.
+ *
+ * This is the "bucket target percentages" RIG asked for. Their answer to how it
+ * is derived was that it comes out of the worksheet inputs rather than a table
+ * keyed by life stage, so this is a function of the client's own numbers.
+ */
+export function targetAllocation(clientCase: ClientCase, totals: PlanTotals): AllocationTarget {
+  const denominator = totals.investableAssetsCents;
+
+  return {
+    lifeStage: clientCase.lifeStage,
+    nowCents: totals.now.totalCents,
+    soonCents: totals.soon.totalCents,
+    laterCents: totals.later.totalCents,
+    nowPct: percentOf(totals.now.totalCents, denominator),
+    soonPct: percentOf(totals.soon.totalCents, denominator),
+    laterPct: percentOf(totals.later.totalCents, denominator),
+  };
 }

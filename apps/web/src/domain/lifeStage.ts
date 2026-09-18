@@ -2,7 +2,6 @@
 
 import type {
   AccountType,
-  AllocationTarget,
   AssetClass,
   BucketType,
   HealthConcern,
@@ -10,7 +9,6 @@ import type {
   MoneyCyclePhase,
   Person,
 } from './types.js';
-import { LIFE_STAGES } from './types.js';
 
 /** `today` is a parameter so tests can pin the year. */
 export function ageFromBirthYear(birthYear: number | null, today: Date): number | null {
@@ -75,13 +73,3 @@ export const BUCKET_LABELS: Record<BucketType, string> = {
   SOON: 'Soon',
   LATER: 'Later',
 };
-
-/** Structure only. RIG has not supplied the percentages; US-10 is blocked. */
-export const ALLOCATION_TARGETS_PENDING: readonly AllocationTarget[] = LIFE_STAGES.map(
-  (lifeStage) => ({
-    lifeStage,
-    nowTargetPct: null,
-    soonTargetPct: null,
-    laterTargetPct: null,
-  }),
-);

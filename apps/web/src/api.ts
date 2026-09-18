@@ -9,10 +9,8 @@
  * branch; the paths are a proposal to whoever builds the API, not a contract.
  */
 
-import { ALLOCATION_TARGETS_PENDING } from './domain/lifeStage.js';
 import { newClientCase } from './domain/factory.js';
 import type {
-  AllocationTarget,
   BucketDefinition,
   ClientCase,
   ClientSummary,
@@ -199,11 +197,5 @@ export const api = {
       'PUT',
       definition,
     );
-  },
-
-  /** Returns all six stages with null percentages until RIG supplies them. */
-  listAllocationTargets: async (): Promise<AllocationTarget[]> => {
-    if (useFixtures) return settle([...ALLOCATION_TARGETS_PENDING]);
-    return get<AllocationTarget[]>('/api/allocation-targets');
   },
 };

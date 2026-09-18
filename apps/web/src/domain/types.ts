@@ -79,12 +79,28 @@ export interface BucketDefinition {
   readonly purposeText: string;
 }
 
-/** Percentages are null until RIG supplies them. US-10 is blocked on this. */
+/**
+ * The target split for one client.
+ *
+ * Computed from that client's worksheet inputs, not looked up from a table per
+ * life stage. RIG confirmed this by email: "This will be calculated using the
+ * inputs we provided on the attached spreadsheet."
+ *
+ * Life stage does not scale the result. It describes which inputs are non-zero:
+ * an early accumulator has no income gap, no Social Security bridge, and no
+ * forced withdrawals, so Soon comes out small on its own.
+ *
+ * NOTE: the conceptual model has AllocationTarget as a stored table keyed by
+ * life stage. That predates RIG's answer. The model needs updating to match.
+ */
 export interface AllocationTarget {
   readonly lifeStage: LifeStage;
-  readonly nowTargetPct: number | null;
-  readonly soonTargetPct: number | null;
-  readonly laterTargetPct: number | null;
+  readonly nowCents: Cents;
+  readonly soonCents: Cents;
+  readonly laterCents: Cents;
+  readonly nowPct: number;
+  readonly soonPct: number;
+  readonly laterPct: number;
 }
 
 export interface PlannedExpense {

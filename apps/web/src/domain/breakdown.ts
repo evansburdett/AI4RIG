@@ -9,7 +9,15 @@ import { addCents, type Cents } from '@ai4rig/engine';
 
 import { percentOf } from './money.js';
 import { ASSET_CLASSES, BUCKETS } from './types.js';
-import type { AssetClass, BucketType, ClientCase, Holding, Ticker } from './types.js';
+import type {
+  AccountType,
+  AllocationTarget,
+  AssetClass,
+  BucketType,
+  ClientCase,
+  Holding,
+  Ticker,
+} from './types.js';
 
 export interface Slice {
   readonly assetClass: AssetClass;
@@ -76,4 +84,82 @@ export function computeBreakdown(clientCase: ClientCase, tickerList: readonly Ti
   });
 
   return { totalCents, byAssetClass: slice(holdings, tickers, totalCents), byBucket, unknownSymbols };
+}
+
+export interface BucketDrift {
+  readonly bucket: BucketType;
+  readonly targetCents: Cents;
+  readonly actualCents: Cents;
+  /** Actual minus target. Positive means over-funded against the plan. */
+  readonly deltaCents: Cents;
+  readonly targetPct: number;
+  readonly actualPct: number;
+}
+
+/**
+ * Where the holdings sit against where the worksheet says they should sit.
+ *
+ * Target comes from the client's Now / Soon / Later inputs; actual comes from
+ * the bucket each holding is assigned to. The gap between them is the thing the
+ * advisor acts on.
+ */
+export function computeDrift(target: AllocationTarget, breakdown: Breakdown): BucketDrift[] {
+  const targetByBucket: Record<BucketType, Cents> = {
+    NOW: target.nowCents,
+    SOON: target.soonCents,
+    LATER: target.laterCents,
+  };
+
+  return breakdown.byBucket.map((composition) => {
+    const targetCents = targetByBucket[composition.bucket];
+    return {
+      bucket: composition.bucket,
+      targetCents,
+      actualCents: composition.valueCents,
+      deltaCents: composition.valueCents - targetCents,
+      targetPct: percentOf(targetCents, breakdown.totalCents),
+      actualPct: composition.pctOfPortfolio,
+    };
+  });
+}
+
+export interface AccountBuckets {
+  readonly accountId: string;
+  readonly accountType: AccountType;
+  readonly maskedNumber: string;
+  readonly nowCents: Cents;
+  readonly soonCents: Cents;
+  readonly laterCents: Cents;
+  readonly totalCents: Cents;
+}
+
+/**
+ * Now / Soon / Later per account, which RIG asked for directly: "Each account
+ * type would have now, soon and later buckets. The tool would be able to show
+ * the detail per account, then nice clean summary that is the total of all the
+ * accounts."
+ */
+export function bucketsByAccount(clientCase: ClientCase): AccountBuckets[] {
+  return clientCase.accounts.map((account) => {
+    const sum = (bucket: BucketType) =>
+      addCents(
+        ...account.holdings
+          .filter((h) => h.assignedBucket === bucket)
+          .map((h) => h.marketValueCents),
+      );
+
+    const nowCents = sum('NOW');
+    const soonCents = sum('SOON');
+    const laterCents = sum('LATER');
+
+    return {
+      accountId: account.id,
+      accountType: account.accountType,
+      maskedNumber: account.maskedNumber,
+      nowCents,
+      soonCents,
+      laterCents,
+      totalCents: addCents(nowCents, soonCents, laterCents),
+    };
+  });
 }

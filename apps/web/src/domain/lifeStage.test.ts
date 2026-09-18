@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ALLOCATION_TARGETS_PENDING, ageFromBirthYear, householdPlanYears, planYears } from './lifeStage.js';
+import { ageFromBirthYear, householdPlanYears, planYears } from './lifeStage.js';
 import type { Person } from './types.js';
 
 const TODAY = new Date('2026-09-17T00:00:00Z');
@@ -46,13 +46,3 @@ describe('householdPlanYears', () => {
   });
 });
 
-describe('ALLOCATION_TARGETS_PENDING', () => {
-  it('carries all six stages with no invented percentages', () => {
-    expect(ALLOCATION_TARGETS_PENDING).toHaveLength(6);
-    for (const target of ALLOCATION_TARGETS_PENDING) {
-      expect(target.nowTargetPct).toBeNull();
-      expect(target.soonTargetPct).toBeNull();
-      expect(target.laterTargetPct).toBeNull();
-    }
-  });
-});
