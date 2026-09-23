@@ -12,11 +12,20 @@ not a backup.
 - **No real client data. No personally identifying information. Ever.** Not a
   real name, not a partial one, not an address, birth date, account number, or
   anything traceable to a person. Clients are identified by a generated client
-  number (`RIG-0001`). This holds for seed data, tests, and fixtures alike —
+  number (`1042`). This holds for seed data, tests, and fixtures alike —
   see `docs/decisions/0006-no-pii-anywhere.md`.
 - **Money is integer cents.** `250000` is $2,500.00.
 - Seeds must be re-runnable against a freshly migrated database. Use explicit
   primary keys and `INSERT OR REPLACE` so `db:seed` twice is not an error.
 - Naming follows the migrations: `0001_sample_clients.sql`.
 
-Nothing here yet — the schema does not exist. It is the team's to design.
+## What is here
+
+| File | What it loads |
+|---|---|
+| `0001_placeholder_tickers.sql` | Ten broad ETFs standing in for RIG's approved universe until they send the Common Investments list |
+| `0002_sample_cases.sql` | Two client cases (1042 and 2317). 1042 uses the figures from RIG's workbook |
+
+The sample cases use ids in the 9000s so they do not collide with cases you
+create in the UI. The bucket definitions are not here: they live in migration
+`0002` because the app needs them to exist.
