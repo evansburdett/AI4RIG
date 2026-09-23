@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@ai4rig/engine": "*",
+    "@ai4rig/shared": "*",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
