@@ -6,11 +6,11 @@
 
 import { useCallback, useSyncExternalStore } from 'react';
 
-export type Screen = 'profile' | 'breakdown' | 'tickers';
+export type Screen = 'profile' | 'breakdown' | 'models' | 'tickers';
 
 export interface Route {
   readonly screen: Screen;
-  /** Absent on screens that are not about one client, like the ticker editor. */
+  /** Absent on screens that are not about one client, like the model and ticker editors. */
   readonly clientNumber: string | null;
 }
 
@@ -21,6 +21,7 @@ export function parseHash(hash: string): Route {
   const segments = path.split('/').filter(Boolean);
 
   if (segments[0] === 'tickers') return { screen: 'tickers', clientNumber: null };
+  if (segments[0] === 'models') return { screen: 'models', clientNumber: null };
 
   if (segments[0] === 'clients' && segments[1] !== undefined) {
     const clientNumber = decodeURIComponent(segments[1]);
@@ -33,6 +34,7 @@ export function parseHash(hash: string): Route {
 
 export function hrefFor(route: Route): string {
   if (route.screen === 'tickers') return '#/tickers';
+  if (route.screen === 'models') return '#/models';
   if (route.clientNumber === null) return '#/';
   const base = `#/clients/${encodeURIComponent(route.clientNumber)}`;
   return route.screen === 'breakdown' ? `${base}/breakdown` : `${base}/profile`;
@@ -58,4 +60,9 @@ export function useRoute(): [Route, (route: Route) => void] {
   }, []);
 
   return [parseHash(hash), navigate];
+}
+
+/** Screens that belong to no client: the administrator's reference data. */
+export function isReferenceScreen(screen: Screen): boolean {
+  return screen === 'models' || screen === 'tickers';
 }

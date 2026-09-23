@@ -301,12 +301,16 @@ The shapes on both ends (`ClientCase`, `Ticker`, ...) are defined once, in
 | `GET /api/health` | Database path and migration count. The web app's footer shows it. |
 | `GET /api/clients` | Every case, as `{ clientNumber, initials, lifeStage, updatedAt }` |
 | `POST /api/clients` | New blank case. The server picks the next client number. |
-| `GET /api/clients/:clientNumber` | One whole case: people, accounts, holdings, Now and Soon inputs |
+| `GET /api/clients/:clientNumber` | One whole case: people, accounts with their Now/Soon/Later amounts and models, Now and Soon inputs |
 | `PUT /api/clients/:clientNumber` | Save the whole case |
 | `DELETE /api/clients/:clientNumber` | Delete the case and everything under it |
 | `GET /api/tickers` | The ticker universe |
 | `PUT /api/tickers/:symbol` | Add or update a ticker |
 | `DELETE /api/tickers/:symbol` | Remove a ticker |
+| `GET /api/models` | Every model portfolio with its tickers and weights |
+| `POST /api/models` | New model (weights must add up to 100%) |
+| `PUT /api/models/:id` | Edit a model |
+| `DELETE /api/models/:id` | Delete a model. Accounts using it keep the money, with no model |
 | `GET /api/bucket-definitions` | Now, Soon, Later |
 | `PUT /api/bucket-definitions/:bucket` | Edit one bucket's label, horizon, and wording |
 
@@ -319,15 +323,23 @@ see what a request and response look like.
 |---|---|
 | `client_cases` | Case. Its number, life stage, cash figures, and the single-value Now and Soon inputs |
 | `people` | Client or spouse on a case (birth year only, never a date) |
-| `accounts` | Account on a case (last four digits only) |
-| `holdings` | Position in an account, with the bucket the advisor put it in |
+| `accounts` | Account on a case: type, tax funnel, balance, last four digits only |
+| `account_sleeves` | Account and bucket: how much of the balance is in Now, Soon, or Later, and which model it follows. Always three per account |
+| `model_portfolios` | Model: a name, a bucket, and optionally the tax funnel it is meant for |
+| `model_lines` | Ticker in a model, with its weight in basis points (100 = 1%) |
 | `planned_expenses` | Now "large upcoming expenses" and Soon "miscellaneous costs" lines |
 | `gap_entries` | Social Security bridge, healthcare gap, and forced withdrawal lines |
 | `tickers` | Symbol in the approved universe, with its default bucket |
 | `bucket_definitions` | Bucket (always exactly three rows) |
 
-Saving a case rewrites its child rows, so account and holding ids change on
-every save. Nothing should store one.
+There is no holdings table. RIG's flow is: type the account balance, split it
+across the buckets, pick a model for each, and let the app work out the
+symbols and amounts. Those positions are computed from the model every time
+(`apps/web/src/domain/breakdown.ts`, using `splitByWeights` from
+`packages/engine`), never stored.
+
+Saving a case rewrites its child rows, so account ids change on every save.
+Nothing should store one.
 
 ### Recipe: add a field to a client case
 
@@ -362,12 +374,20 @@ and a delete-and-reinsert block in `saveClientCase`.
 
 ### Where calculations go
 
-The Now / Soon / Later worksheet math (`apps/web/src/domain/worksheet.ts`) and
-the asset class breakdown (`breakdown.ts`) run in the browser today, because
-they only need the case already on screen. When they move into
-`packages/engine` (US-07, US-09, US-11), the web app can import them from
-there unchanged, and the API can call the same functions when it generates a
-deliverable (US-12).
+There is no allocation algorithm to invent. RIG confirmed the bucket targets
+come straight out of their worksheet inputs, and the rest is arithmetic and
+lookups:
+
+- **Bucket targets**: `apps/web/src/domain/worksheet.ts`, a line-for-line copy
+  of RIG's Inputs tab, with tests pinned to their numbers.
+- **Positions from a model**: `splitByWeights` in `packages/engine`, which
+  splits a dollar amount across weights to the exact cent.
+- **Breakdown, drift, per-account view**: `apps/web/src/domain/breakdown.ts`.
+
+The worksheet and breakdown code runs in the browser today because it only
+needs the case on screen. It is pure, so moving it into `packages/engine` is a
+file move, and the API can then call the same functions when it generates the
+client deliverable (US-12).
 
 ---
 

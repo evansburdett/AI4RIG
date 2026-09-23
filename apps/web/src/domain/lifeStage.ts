@@ -8,6 +8,7 @@ import type {
   LifeStage,
   MoneyCyclePhase,
   Person,
+  TaxFunnel,
 } from './types.js';
 
 /** `today` is a parameter so tests can pin the year. */
@@ -72,4 +73,10 @@ export const BUCKET_LABELS: Record<BucketType, string> = {
   NOW: 'Now',
   SOON: 'Soon',
   LATER: 'Later',
+};
+
+export const TAX_FUNNEL_LABELS: Record<TaxFunnel, string> = {
+  TAXABLE: 'Taxable',
+  PRE_TAX: 'Pre-tax',
+  TAX_FREE: 'Tax-free',
 };

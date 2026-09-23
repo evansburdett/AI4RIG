@@ -135,12 +135,9 @@ export function computeLater(
   };
 }
 
+/** E59, and "Total Account Balances" on the profile sheet: the sum of the balances the advisor typed. */
 export function investableAssets(clientCase: ClientCase): Cents {
-  return addCents(
-    ...clientCase.accounts.flatMap((account) =>
-      account.holdings.map((holding) => holding.marketValueCents),
-    ),
-  );
+  return addCents(...clientCase.accounts.map((account) => account.balanceCents));
 }
 
 export function computePlanTotals(clientCase: ClientCase): PlanTotals {

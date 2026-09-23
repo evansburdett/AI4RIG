@@ -1,6 +1,6 @@
 -- Reshape 0001 into the shape the screens need, and add the tables that were
--- missing (holdings, tickers, bucket definitions, the Now and Soon worksheet
--- lines).
+-- missing (bucket slices, model portfolios, tickers, bucket definitions, the
+-- Now and Soon worksheet lines).
 --
 -- What changed from 0001, and why:
 --   plans     -> client_cases   One row per client case: the household, its
@@ -11,9 +11,21 @@
 --   clients   -> people         One row per person on the case (client and
 --                               spouse). The per-person client_number is gone:
 --                               the case is what gets a number, not the person.
---   accounts  -> accounts       balance_cents dropped. A balance is the sum of
---                               the account's holdings (decision D2: derived,
---                               never stored). masked_number added.
+--   accounts  -> accounts       Keeps balance_cents (the advisor types the
+--                               balance, as on RIG's profile sheet). Adds
+--                               tax_funnel and masked_number.
+--
+-- New:
+--   account_sleeves      Each account's balance split into Now, Soon, and
+--                        Later dollar amounts, each with an optional model.
+--   model_portfolios     A named list of tickers and weights for one bucket.
+--   model_lines          The tickers and weights in a model.
+--   tickers, bucket_definitions, planned_expenses, gap_entries
+--
+-- There is no holdings table. RIG's flow is: enter the account balance, decide
+-- how much of it goes in each bucket, pick a model, and let the app work out
+-- the symbols and amounts. Those positions are derived from the model every
+-- time (decision D2), never stored.
 --
 -- Every table is rebuilt rather than ALTERed because SQLite cannot add CHECK
 -- constraints or drop UNIQUE columns in place. Existing rows are copied over.
@@ -44,6 +56,9 @@ CREATE TABLE client_cases (
             'DISTRIBUTION_SLOW_GO',
             'DISTRIBUTION_NO_GO'
         )),
+    -- Marginal federal bracket as a whole percent, e.g. 22. Added at RIG's
+    -- request (Sept 16); what it drives is not decided yet.
+    tax_bracket_pct             INTEGER CHECK (tax_bracket_pct BETWEEN 0 AND 100),
     cash_on_hand_cents          INTEGER NOT NULL DEFAULT 0,
     spare_tire_cents            INTEGER NOT NULL DEFAULT 0,
 
@@ -73,7 +88,7 @@ CREATE TABLE people (
     id                   INTEGER PRIMARY KEY AUTOINCREMENT,
     client_case_id       INTEGER NOT NULL REFERENCES client_cases (id) ON DELETE CASCADE,
     role                 TEXT    NOT NULL CHECK (role IN ('CLIENT', 'SPOUSE')),
-    -- Year only. Age drives bucket weighting; a full date of birth is PII.
+    -- Year only. Age is all the planning needs; a full date of birth is PII.
     birth_year           INTEGER,
     health_concern       TEXT    NOT NULL DEFAULT 'NONE'
         CHECK (health_concern IN ('NONE', 'CANCER', 'STROKE', 'HEART', 'OTHER')),
@@ -95,7 +110,7 @@ SELECT
 FROM clients;
 
 -- ---------------------------------------------------------------------------
--- Accounts and holdings
+-- Accounts
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE accounts_new (
@@ -105,22 +120,37 @@ CREATE TABLE accounts_new (
     position        INTEGER NOT NULL DEFAULT 0,
     account_type    TEXT    NOT NULL
         CHECK (account_type IN ('SINGLE', 'JOINT', 'IRA', 'ROTH_IRA', 'OTHER')),
+    -- Which tax treatment the money gets. Defaults from account_type
+    -- (Single and Joint taxable, IRA pre-tax, Roth tax-free) but is stored,
+    -- because "Other" can be any of the three.
+    tax_funnel      TEXT    NOT NULL DEFAULT 'TAXABLE'
+        CHECK (tax_funnel IN ('TAXABLE', 'PRE_TAX', 'TAX_FREE')),
     -- Last four only, the way RIG masks them today. Never a full number.
-    masked_number   TEXT    NOT NULL DEFAULT '' CHECK (length(masked_number) <= 4)
+    masked_number   TEXT    NOT NULL DEFAULT '' CHECK (length(masked_number) <= 4),
+    balance_cents   INTEGER NOT NULL DEFAULT 0
 );
 
-INSERT INTO accounts_new (id, client_case_id, position, account_type)
+INSERT INTO accounts_new (id, client_case_id, position, account_type, tax_funnel, balance_cents)
 SELECT
     id,
     plan_id,
     id,
-    CASE
-        WHEN upper(replace(account_type, ' ', '_')) IN ('SINGLE', 'JOINT', 'IRA', 'ROTH_IRA')
-            THEN upper(replace(account_type, ' ', '_'))
-        WHEN upper(account_type) = 'ROTH' THEN 'ROTH_IRA'
-        ELSE 'OTHER'
-    END
-FROM accounts;
+    kind,
+    CASE kind WHEN 'IRA' THEN 'PRE_TAX' WHEN 'ROTH_IRA' THEN 'TAX_FREE' ELSE 'TAXABLE' END,
+    balance_cents
+FROM (
+    SELECT
+        id,
+        plan_id,
+        balance_cents,
+        CASE
+            WHEN upper(replace(account_type, ' ', '_')) IN ('SINGLE', 'JOINT', 'IRA', 'ROTH_IRA')
+                THEN upper(replace(account_type, ' ', '_'))
+            WHEN upper(account_type) = 'ROTH' THEN 'ROTH_IRA'
+            ELSE 'OTHER'
+        END AS kind
+    FROM accounts
+);
 
 -- Children first, so dropping plans cascades into nothing.
 DROP TABLE accounts;
@@ -130,22 +160,6 @@ DROP TABLE plans;
 ALTER TABLE accounts_new RENAME TO accounts;
 
 CREATE INDEX accounts_client_case_id ON accounts (client_case_id);
-
-CREATE TABLE holdings (
-    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    account_id          INTEGER NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
-    position            INTEGER NOT NULL DEFAULT 0,
-    -- Deliberately not a foreign key to tickers. An advisor can enter a symbol
-    -- that is not in the approved universe yet; the UI flags it as unknown
-    -- instead of refusing to save the case.
-    ticker_symbol       TEXT    NOT NULL DEFAULT '',
-    market_value_cents  INTEGER NOT NULL DEFAULT 0,
-    -- What the advisor chose. The ticker's default_bucket is only the starting
-    -- suggestion (decision D1).
-    assigned_bucket     TEXT    NOT NULL CHECK (assigned_bucket IN ('NOW', 'SOON', 'LATER'))
-);
-
-CREATE INDEX holdings_account_id ON holdings (account_id);
 
 -- ---------------------------------------------------------------------------
 -- Now and Soon worksheet lines
@@ -193,6 +207,51 @@ CREATE TABLE tickers (
         CHECK (asset_class IN ('CASH', 'FIXED_INCOME', 'EQUITY', 'REAL_ASSET', 'ALTERNATIVE')),
     default_bucket  TEXT NOT NULL CHECK (default_bucket IN ('NOW', 'SOON', 'LATER'))
 );
+
+-- A model portfolio: tickers and weights for money in one bucket (US-14).
+-- RIG's models come from vendors and change quarterly, so they are data the
+-- advisor edits, never code. A custom model is just another row.
+CREATE TABLE model_portfolios (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT    NOT NULL UNIQUE,
+    bucket      TEXT    NOT NULL CHECK (bucket IN ('NOW', 'SOON', 'LATER')),
+    -- NULL means the model suits any tax funnel.
+    tax_funnel  TEXT    CHECK (tax_funnel IN ('TAXABLE', 'PRE_TAX', 'TAX_FREE')),
+    updated_at  TEXT    NOT NULL
+);
+
+-- Weights are basis points (1% = 100) so they are whole numbers and a model
+-- adds up to exactly 10000. The API refuses a model that does not.
+CREATE TABLE model_lines (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    model_id       INTEGER NOT NULL REFERENCES model_portfolios (id) ON DELETE CASCADE,
+    position       INTEGER NOT NULL DEFAULT 0,
+    -- A ticker in a model cannot be deleted from the universe until it is
+    -- taken out of every model.
+    ticker_symbol  TEXT    NOT NULL REFERENCES tickers (symbol) ON UPDATE CASCADE ON DELETE RESTRICT,
+    weight_bps     INTEGER NOT NULL CHECK (weight_bps > 0 AND weight_bps <= 10000),
+    UNIQUE (model_id, ticker_symbol)
+);
+
+CREATE INDEX model_lines_model_id ON model_lines (model_id);
+
+-- How much of an account's balance sits in each bucket, and which model that
+-- money follows. Always three rows per account. Entered by the advisor
+-- (RIG: "for now, it is entered manually for each account").
+CREATE TABLE account_sleeves (
+    account_id    INTEGER NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+    bucket        TEXT    NOT NULL CHECK (bucket IN ('NOW', 'SOON', 'LATER')),
+    amount_cents  INTEGER NOT NULL DEFAULT 0 CHECK (amount_cents >= 0),
+    -- Deleting a model leaves the money in the bucket with no model chosen.
+    model_id      INTEGER REFERENCES model_portfolios (id) ON DELETE SET NULL,
+    PRIMARY KEY (account_id, bucket)
+);
+
+-- Accounts carried over from 0001 get their three empty sleeves.
+INSERT INTO account_sleeves (account_id, bucket)
+SELECT a.id, b.bucket
+FROM accounts a
+CROSS JOIN (SELECT 'NOW' AS bucket UNION ALL SELECT 'SOON' UNION ALL SELECT 'LATER') b;
 
 -- Editable wording for each bucket (US-08). The three rows are part of the
 -- schema, not sample data: the app needs them to exist.

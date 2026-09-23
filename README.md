@@ -32,7 +32,7 @@ apps/api           Express API, port 3001 — owns the database
   src/validation.ts  zod schemas for every request body
 apps/desktop       Electron shell — empty until packaging, late in the project
 packages/shared    Domain types shared by the API and the web app (the API contract)
-packages/engine    Pure bucket calculations, no I/O
+packages/engine    Deterministic calculations (integer-cents money, model splits), no I/O
 packages/db        SQLite connection, migration runner, seed loader
   migrations/      Numbered .sql files — the shared schema
   seed/            Sample data (no real client data, ever)

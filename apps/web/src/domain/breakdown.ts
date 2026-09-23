@@ -1,23 +1,106 @@
 /**
- * US-11 — asset class distribution, overall and per bucket.
+ * Where a client's money sits, worked out from what the advisor entered: each
+ * account's balance, how much of it is in Now / Soon / Later, and the model
+ * each of those follows.
  *
- * Derived on every render, never stored (decision D2). Provisional home; this
- * belongs in packages/engine alongside the rest of the BucketPlan.
+ * Positions ("holdings") are never entered or stored. They come from a
+ * bucket's dollars times its model's weights, recomputed on every render
+ * (decision D2). US-11 asset class breakdown and the drift against the
+ * worksheet both read from here.
+ *
+ * Provisional home: this belongs in packages/engine next to splitByWeights.
+ * It is pure, so moving it is a file move.
  */
 
-import { addCents, type Cents } from '@ai4rig/engine';
+import { addCents, splitByWeights, type Cents } from '@ai4rig/engine';
 
 import { percentOf } from './money.js';
 import { ASSET_CLASSES, BUCKETS } from './types.js';
 import type {
+  Account,
   AccountType,
   AllocationTarget,
   AssetClass,
   BucketType,
   ClientCase,
   Holding,
+  ModelPortfolio,
+  TaxFunnel,
   Ticker,
 } from './types.js';
+
+// ---------------------------------------------------------------------------
+// One account
+// ---------------------------------------------------------------------------
+
+export function allocatedCents(account: Account): Cents {
+  return addCents(...account.sleeves.map((s) => s.amountCents));
+}
+
+/** Balance not yet placed in any bucket. Negative when the buckets add up to more than the balance. */
+export function unallocatedCents(account: Account): Cents {
+  return account.balanceCents - allocatedCents(account);
+}
+
+/**
+ * The positions one account's bucket works out to. Empty when the bucket has
+ * no money or no model, or the model is missing or does not add up to 100%.
+ */
+export function sleeveHoldings(
+  account: Account,
+  bucket: BucketType,
+  models: ReadonlyMap<string, ModelPortfolio>,
+): Holding[] {
+  const sleeve = account.sleeves.find((s) => s.bucket === bucket);
+  if (sleeve === undefined || sleeve.modelId === null || sleeve.amountCents <= 0) return [];
+
+  const model = models.get(sleeve.modelId);
+  if (model === undefined || model.lines.length === 0) return [];
+
+  try {
+    return splitByWeights(
+      sleeve.amountCents,
+      model.lines.map((line) => ({ key: line.tickerSymbol, weightBps: line.weightBps })),
+    ).map((share) => ({
+      accountId: account.id,
+      bucket,
+      modelId: model.id,
+      tickerSymbol: share.key,
+      marketValueCents: share.amountCents,
+    }));
+  } catch {
+    // A model that does not add up to 100% cannot be saved, so this is only
+    // reachable with bad data. Show the money as unmodeled rather than crash.
+    return [];
+  }
+}
+
+export function accountHoldings(account: Account, models: ReadonlyMap<string, ModelPortfolio>): Holding[] {
+  return BUCKETS.flatMap((bucket) => sleeveHoldings(account, bucket, models));
+}
+
+export function modelsById(models: readonly ModelPortfolio[]): Map<string, ModelPortfolio> {
+  return new Map(models.map((m) => [m.id, m]));
+}
+
+/**
+ * Models offered for one account's bucket: that bucket's models, ones meant
+ * for the account's tax funnel first, then ones for any funnel, then the rest.
+ */
+export function modelChoices(
+  models: readonly ModelPortfolio[],
+  bucket: BucketType,
+  taxFunnel: TaxFunnel,
+): ModelPortfolio[] {
+  const rank = (m: ModelPortfolio) => (m.taxFunnel === taxFunnel ? 0 : m.taxFunnel === null ? 1 : 2);
+  return models
+    .filter((m) => m.bucket === bucket)
+    .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+}
+
+// ---------------------------------------------------------------------------
+// The whole case
+// ---------------------------------------------------------------------------
 
 export interface Slice {
   readonly assetClass: AssetClass;
@@ -27,17 +110,23 @@ export interface Slice {
 
 export interface BucketComposition {
   readonly bucket: BucketType;
+  /** Everything the advisor put in this bucket, with or without a model. */
   readonly valueCents: Cents;
   readonly pctOfPortfolio: number;
+  /** In this bucket but with no model chosen, so no asset class. */
+  readonly unmodeledCents: Cents;
   readonly slices: readonly Slice[];
 }
 
 export interface Breakdown {
+  /** Sum of account balances. */
   readonly totalCents: Cents;
+  /** Balance not in any bucket yet, across all accounts. */
+  readonly unallocatedCents: Cents;
+  /** Money in a bucket with no model chosen, across all buckets. */
+  readonly unmodeledCents: Cents;
   readonly byAssetClass: readonly Slice[];
   readonly byBucket: readonly BucketComposition[];
-  /** Held but not in the ticker list. Counted in totals, but unclassifiable. */
-  readonly unknownSymbols: readonly string[];
 }
 
 function slice(
@@ -59,31 +148,40 @@ function slice(
   }).filter((s) => s.valueCents !== 0);
 }
 
-export function computeBreakdown(clientCase: ClientCase, tickerList: readonly Ticker[]): Breakdown {
+export function computeBreakdown(
+  clientCase: ClientCase,
+  tickerList: readonly Ticker[],
+  modelList: readonly ModelPortfolio[],
+): Breakdown {
   const tickers = new Map(tickerList.map((t) => [t.symbol, t]));
-  const holdings = clientCase.accounts.flatMap((account) => account.holdings);
-  const totalCents = addCents(...holdings.map((h) => h.marketValueCents));
+  const models = modelsById(modelList);
+  const holdings = clientCase.accounts.flatMap((account) => accountHoldings(account, models));
+  const totalCents = addCents(...clientCase.accounts.map((a) => a.balanceCents));
 
-  const unknownSymbols = [
-    ...new Set(
-      holdings
-        .map((h) => h.tickerSymbol)
-        .filter((symbol) => symbol !== '' && !tickers.has(symbol)),
-    ),
-  ].sort();
-
-  const byBucket = BUCKETS.map((bucket) => {
-    const inBucket = holdings.filter((h) => h.assignedBucket === bucket);
-    const valueCents = addCents(...inBucket.map((h) => h.marketValueCents));
+  const byBucket = BUCKETS.map((bucket): BucketComposition => {
+    const valueCents = addCents(
+      ...clientCase.accounts.map((a) => a.sleeves.find((s) => s.bucket === bucket)?.amountCents ?? 0),
+    );
+    const inBucket = holdings.filter((h) => h.bucket === bucket);
+    const modeledCents = addCents(...inBucket.map((h) => h.marketValueCents));
     return {
       bucket,
       valueCents,
       pctOfPortfolio: percentOf(valueCents, totalCents),
+      unmodeledCents: valueCents - modeledCents,
       slices: slice(inBucket, tickers, valueCents),
     };
   });
 
-  return { totalCents, byAssetClass: slice(holdings, tickers, totalCents), byBucket, unknownSymbols };
+  const allocated = addCents(...byBucket.map((b) => b.valueCents));
+
+  return {
+    totalCents,
+    unallocatedCents: totalCents - allocated,
+    unmodeledCents: addCents(...byBucket.map((b) => b.unmodeledCents)),
+    byAssetClass: slice(holdings, tickers, totalCents),
+    byBucket,
+  };
 }
 
 export interface BucketDrift {
@@ -97,11 +195,8 @@ export interface BucketDrift {
 }
 
 /**
- * Where the holdings sit against where the worksheet says they should sit.
- *
- * Target comes from the client's Now / Soon / Later inputs; actual comes from
- * the bucket each holding is assigned to. The gap between them is the thing the
- * advisor acts on.
+ * What the advisor has put in each bucket against what the worksheet says
+ * the client needs there. The gap is the thing the advisor acts on.
  */
 export function computeDrift(target: AllocationTarget, breakdown: Breakdown): BucketDrift[] {
   const targetByBucket: Record<BucketType, Cents> = {
@@ -126,11 +221,13 @@ export function computeDrift(target: AllocationTarget, breakdown: Breakdown): Bu
 export interface AccountBuckets {
   readonly accountId: string;
   readonly accountType: AccountType;
+  readonly taxFunnel: TaxFunnel;
   readonly maskedNumber: string;
   readonly nowCents: Cents;
   readonly soonCents: Cents;
   readonly laterCents: Cents;
-  readonly totalCents: Cents;
+  readonly unallocatedCents: Cents;
+  readonly balanceCents: Cents;
 }
 
 /**
@@ -141,71 +238,60 @@ export interface AccountBuckets {
  */
 export function bucketsByAccount(clientCase: ClientCase): AccountBuckets[] {
   return clientCase.accounts.map((account) => {
-    const sum = (bucket: BucketType) =>
-      addCents(
-        ...account.holdings
-          .filter((h) => h.assignedBucket === bucket)
-          .map((h) => h.marketValueCents),
-      );
-
-    const nowCents = sum('NOW');
-    const soonCents = sum('SOON');
-    const laterCents = sum('LATER');
+    const amount = (bucket: BucketType) =>
+      account.sleeves.find((s) => s.bucket === bucket)?.amountCents ?? 0;
 
     return {
       accountId: account.id,
       accountType: account.accountType,
+      taxFunnel: account.taxFunnel,
       maskedNumber: account.maskedNumber,
-      nowCents,
-      soonCents,
-      laterCents,
-      totalCents: addCents(nowCents, soonCents, laterCents),
+      nowCents: amount('NOW'),
+      soonCents: amount('SOON'),
+      laterCents: amount('LATER'),
+      unallocatedCents: unallocatedCents(account),
+      balanceCents: account.balanceCents,
     };
   });
 }
 
 export interface BucketHolding {
-  readonly holdingId: string;
+  readonly key: string;
   readonly symbol: string;
   readonly accountType: AccountType;
   readonly maskedNumber: string;
+  readonly modelName: string;
   readonly marketValueCents: Cents;
   readonly assetClass: AssetClass | null;
-  /** The advisor put this here against the ticker's default (decision D1). */
-  readonly isOverride: boolean;
+  /** RIG's mapping puts this ticker in a different bucket than the model does. */
+  readonly outsideDefaultBucket: boolean;
 }
 
-/**
- * What is sitting in one bucket, largest position first.
- *
- * Shown next to a bucket's drift so the advisor can see the candidates without
- * going back to the profile. It ranks by size and flags overrides; it does not
- * suggest what to trade. Choosing positions is US-13, which is deferred until
- * RIG supplies allocation rules.
- */
+/** The positions in one bucket, across every account, largest first. */
 export function holdingsInBucket(
   clientCase: ClientCase,
   tickerList: readonly Ticker[],
+  modelList: readonly ModelPortfolio[],
   bucket: BucketType,
 ): BucketHolding[] {
   const tickers = new Map(tickerList.map((t) => [t.symbol, t]));
+  const models = modelsById(modelList);
 
   return clientCase.accounts
     .flatMap((account) =>
-      account.holdings
-        .filter((holding) => holding.assignedBucket === bucket)
-        .map((holding) => {
-          const ticker = tickers.get(holding.tickerSymbol);
-          return {
-            holdingId: holding.id,
-            symbol: holding.tickerSymbol,
-            accountType: account.accountType,
-            maskedNumber: account.maskedNumber,
-            marketValueCents: holding.marketValueCents,
-            assetClass: ticker?.assetClass ?? null,
-            isOverride: ticker !== undefined && ticker.defaultBucket !== bucket,
-          };
-        }),
+      sleeveHoldings(account, bucket, models).map((holding) => {
+        const ticker = tickers.get(holding.tickerSymbol);
+        return {
+          key: `${account.id}:${bucket}:${holding.tickerSymbol}`,
+          symbol: holding.tickerSymbol,
+          accountType: account.accountType,
+          maskedNumber: account.maskedNumber,
+          modelName: models.get(holding.modelId)?.name ?? '',
+          marketValueCents: holding.marketValueCents,
+          assetClass: ticker?.assetClass ?? null,
+          outsideDefaultBucket: ticker !== undefined && ticker.defaultBucket !== bucket,
+        };
+      }),
     )
     .sort((a, b) => b.marketValueCents - a.marketValueCents);
 }

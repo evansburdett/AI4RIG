@@ -6,6 +6,8 @@
 import type { Db } from '@ai4rig/db';
 import type { BucketDefinition, BucketType, Ticker } from '@ai4rig/shared';
 
+import { HttpError } from '../errors.js';
+
 interface TickerRow {
   symbol: string;
   asset_class: Ticker['assetClass'];
@@ -40,8 +42,9 @@ export function listTickers(db: Db): Ticker[] {
 }
 
 /**
- * Insert or update one ticker. Changing a default does not move holdings that
- * are already placed; a holding keeps the bucket the advisor chose (D1).
+ * Insert or update one ticker. The default bucket is RIG's mapping of which
+ * bucket the symbol belongs in; a model that puts it elsewhere is flagged on
+ * the Models screen, not refused.
  */
 export function upsertTicker(db: Db, ticker: Ticker): Ticker {
   db.prepare(
@@ -53,7 +56,18 @@ export function upsertTicker(db: Db, ticker: Ticker): Ticker {
   return ticker;
 }
 
+/** Refused (409) while any model still uses the ticker. */
 export function deleteTicker(db: Db, symbol: string): boolean {
+  const models = db
+    .prepare<[string], { name: string }>(
+      `SELECT DISTINCT m.name FROM model_lines l JOIN model_portfolios m ON m.id = l.model_id
+       WHERE l.ticker_symbol = ? ORDER BY m.name`,
+    )
+    .all(symbol)
+    .map((row) => row.name);
+  if (models.length > 0) {
+    throw new HttpError(409, `${symbol} is in ${models.join(', ')}. Take it out of those models first.`);
+  }
   return db.prepare('DELETE FROM tickers WHERE symbol = ?').run(symbol).changes > 0;
 }
 

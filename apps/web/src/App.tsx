@@ -4,11 +4,18 @@ import { api, ApiError } from './api.js';
 import { Callout } from './components/Callout.js';
 import { ClientSwitcher } from './components/ClientSwitcher.js';
 import { ConnectionStatus } from './components/ConnectionStatus.js';
-import type { BucketDefinition, ClientCase, ClientSummary, Ticker } from './domain/types.js';
-import { hrefFor, useRoute, type Screen } from './routing.js';
+import type {
+  BucketDefinition,
+  ClientCase,
+  ClientSummary,
+  ModelPortfolio,
+  Ticker,
+} from './domain/types.js';
+import { hrefFor, isReferenceScreen, useRoute, type Screen } from './routing.js';
 import { AssetClassBreakdown } from './screens/AssetClassBreakdown.js';
 import { BucketAssignments } from './screens/BucketAssignments.js';
 import { ClientProfile } from './screens/ClientProfile.js';
+import { Models } from './screens/Models.js';
 
 /**
  * Shell: reference data, the open case, and which screen is showing.
@@ -21,10 +28,11 @@ export function App() {
 
   const [clients, setClients] = useState<readonly ClientSummary[]>([]);
   const [tickers, setTickers] = useState<readonly Ticker[]>([]);
+  const [models, setModels] = useState<readonly ModelPortfolio[]>([]);
   const [definitions, setDefinitions] = useState<readonly BucketDefinition[]>([]);
   const [referenceError, setReferenceError] = useState<string | null>(null);
 
-  /** Where to return from the ticker screen, which belongs to no client. */
+  /** Where to return from the model and ticker screens, which belong to no client. */
   const [lastClientNumber, setLastClientNumber] = useState<string | null>(null);
 
   const [draft, setDraft] = useState<ClientCase | null>(null);
@@ -38,11 +46,12 @@ export function App() {
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([api.listClients(), api.listTickers(), api.listBucketDefinitions()])
-      .then(([clientList, tickerList, definitionList]) => {
+    Promise.all([api.listClients(), api.listTickers(), api.listModels(), api.listBucketDefinitions()])
+      .then(([clientList, tickerList, modelList, definitionList]) => {
         if (cancelled) return;
         setClients(clientList);
         setTickers(tickerList);
+        setModels(modelList);
         setDefinitions(definitionList);
       })
       .catch((error: unknown) => {
@@ -60,7 +69,7 @@ export function App() {
 
   // Land where the advisor last was, or on the first client.
   useEffect(() => {
-    if (route.clientNumber !== null || route.screen === 'tickers') return;
+    if (route.clientNumber !== null || isReferenceScreen(route.screen)) return;
     const target = lastClientNumber ?? clients[0]?.clientNumber;
     if (target !== undefined) navigate({ screen: 'profile', clientNumber: target });
   }, [clients, lastClientNumber, route.clientNumber, route.screen, navigate]);
@@ -98,7 +107,7 @@ export function App() {
   const selectClient = useCallback(
     (clientNumber: string) => {
       // Stay on the screen the advisor is reading.
-      const screen: Screen = route.screen === 'tickers' ? 'profile' : route.screen;
+      const screen: Screen = isReferenceScreen(route.screen) ? 'profile' : route.screen;
       navigate({ screen, clientNumber });
     },
     [navigate, route.screen],
@@ -182,6 +191,31 @@ export function App() {
     }
   }, []);
 
+  /** Throws on failure so the model editor can show the message next to the model. */
+  const saveModel = useCallback(async (model: ModelPortfolio): Promise<ModelPortfolio> => {
+    const result = await api.saveModel(model);
+    setModels((current) =>
+      model.id === '' ? [...current, result] : current.map((m) => (m.id === result.id ? result : m)),
+    );
+    return result;
+  }, []);
+
+  const deleteModel = useCallback(
+    async (id: string): Promise<void> => {
+      await api.deleteModel(id);
+      setModels((current) => current.filter((m) => m.id !== id));
+      // The database has already cleared this model from every account that
+      // used it. Do the same to the open case, keeping any unsaved edits and
+      // keeping draft === saved when there were none.
+      const drop = (c: ClientCase | null) => (c === null ? null : withoutModel(c, id));
+      const wasClean = draft === saved;
+      const nextSaved = drop(saved);
+      setSaved(nextSaved);
+      setDraft(wasClean ? nextSaved : drop(draft));
+    },
+    [draft, saved],
+  );
+
   const saveDefinition = useCallback(async (definition: BucketDefinition) => {
     try {
       const result = await api.saveBucketDefinition(definition);
@@ -227,6 +261,12 @@ export function App() {
             Breakdown
           </a>
           <a
+            href={hrefFor({ screen: 'models', clientNumber: null })}
+            aria-current={route.screen === 'models' ? 'page' : undefined}
+          >
+            Models
+          </a>
+          <a
             href={hrefFor({ screen: 'tickers', clientNumber: null })}
             aria-current={route.screen === 'tickers' ? 'page' : undefined}
           >
@@ -234,7 +274,7 @@ export function App() {
           </a>
         </nav>
 
-        {route.screen !== 'tickers' && (
+        {!isReferenceScreen(route.screen) && (
           <div className="save-bar">
             {dirty && <span className="muted">Unsaved changes</span>}
             <button
@@ -270,7 +310,9 @@ export function App() {
           </Callout>
         )}
 
-        {route.screen === 'tickers' ? (
+        {route.screen === 'models' ? (
+          <Models models={models} tickers={tickers} onSave={saveModel} onDelete={deleteModel} />
+        ) : route.screen === 'tickers' ? (
           <BucketAssignments
             tickers={tickers}
             definitions={definitions}
@@ -286,9 +328,9 @@ export function App() {
         ) : draft === null ? (
           <p className="empty">Loading…</p>
         ) : route.screen === 'breakdown' ? (
-          <AssetClassBreakdown clientCase={draft} tickers={tickers} />
+          <AssetClassBreakdown clientCase={draft} tickers={tickers} models={models} />
         ) : (
-          <ClientProfile clientCase={draft} tickers={tickers} onChange={setDraft} today={today} />
+          <ClientProfile clientCase={draft} models={models} onChange={setDraft} today={today} />
         )}
       </main>
 
@@ -297,6 +339,18 @@ export function App() {
       </footer>
     </div>
   );
+}
+
+function withoutModel(clientCase: ClientCase, modelId: string): ClientCase {
+  return {
+    ...clientCase,
+    accounts: clientCase.accounts.map((account) => ({
+      ...account,
+      sleeves: account.sleeves.map((sleeve) =>
+        sleeve.modelId === modelId ? { ...sleeve, modelId: null } : sleeve,
+      ),
+    })),
+  };
 }
 
 function toSummary(c: ClientCase): ClientSummary {

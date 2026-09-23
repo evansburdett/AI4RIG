@@ -36,6 +36,25 @@ export type MoneyCyclePhase = (typeof MONEY_CYCLE_PHASES)[number];
 export const ACCOUNT_TYPES = ['SINGLE', 'JOINT', 'IRA', 'ROTH_IRA', 'OTHER'] as const;
 export type AccountType = (typeof ACCOUNT_TYPES)[number];
 
+/**
+ * The three tax treatments RIG sorts money into ("tax funnels"): after-tax
+ * money in a taxable account, pre-tax money (IRA, 401k), and tax-free (Roth).
+ */
+export const TAX_FUNNELS = ['TAXABLE', 'PRE_TAX', 'TAX_FREE'] as const;
+export type TaxFunnel = (typeof TAX_FUNNELS)[number];
+
+/** What a new account of each type starts as. "Other" is a guess the advisor should check. */
+export const DEFAULT_TAX_FUNNEL: Record<AccountType, TaxFunnel> = {
+  SINGLE: 'TAXABLE',
+  JOINT: 'TAXABLE',
+  IRA: 'PRE_TAX',
+  ROTH_IRA: 'TAX_FREE',
+  OTHER: 'TAXABLE',
+};
+
+/** Federal marginal brackets, as whole percents. Pending RIG's version of the profile sheet. */
+export const TAX_BRACKETS = [10, 12, 22, 24, 32, 35, 37] as const;
+
 export const HEALTH_CONCERNS = ['NONE', 'CANCER', 'STROKE', 'HEART', 'OTHER'] as const;
 export type HealthConcern = (typeof HEALTH_CONCERNS)[number];
 
@@ -50,26 +69,70 @@ export type AssetClass = (typeof ASSET_CLASSES)[number];
 
 export interface Person {
   readonly role: 'CLIENT' | 'SPOUSE';
-  /** Year only. Age drives bucket weighting; a full date of birth is PII. */
+  /** Year only. Age is all the planning needs; a full date of birth is PII. */
   readonly birthYear: number | null;
   readonly healthConcern: HealthConcern;
   readonly lifeExpectancyAge: number | null;
 }
 
-export interface Holding {
-  readonly id: string;
-  readonly tickerSymbol: string;
-  readonly marketValueCents: Cents;
-  /** The advisor's choice. Seeded from the ticker's default, then independent. */
-  readonly assignedBucket: BucketType;
+/**
+ * The part of one account's balance that sits in one bucket, and the model
+ * that money follows. The advisor types the amount (RIG: "for now, it is
+ * entered manually for each account") and picks the model.
+ */
+export interface BucketSleeve {
+  readonly bucket: BucketType;
+  readonly amountCents: Cents;
+  /** A ModelPortfolio id, or null when no model has been chosen yet. */
+  readonly modelId: string | null;
 }
 
 export interface Account {
   readonly id: string;
   readonly accountType: AccountType;
+  readonly taxFunnel: TaxFunnel;
   /** Last four only, as RIG masks them today. */
   readonly maskedNumber: string;
-  readonly holdings: readonly Holding[];
+  /** Typed by the advisor, as on RIG's profile sheet. */
+  readonly balanceCents: Cents;
+  /**
+   * Exactly three, Now then Soon then Later. Their amounts should add up to the
+   * balance; anything left over shows as unallocated. Not enforced, so a
+   * half-finished case can still be saved.
+   */
+  readonly sleeves: readonly BucketSleeve[];
+}
+
+/** One ticker in a model. Basis points: 100 is 1%, and a model's lines add up to 10000. */
+export interface ModelLine {
+  readonly tickerSymbol: string;
+  readonly weightBps: number;
+}
+
+/**
+ * A model portfolio: which tickers, in what proportions, for money in one
+ * bucket. RIG's vendor models change quarterly, so these are data an
+ * administrator edits. A "custom model" is just another one of these.
+ */
+export interface ModelPortfolio {
+  readonly id: string;
+  readonly name: string;
+  readonly bucket: BucketType;
+  /** The funnel this model is meant for, or null for any. Only used to sort the dropdown. */
+  readonly taxFunnel: TaxFunnel | null;
+  readonly lines: readonly ModelLine[];
+}
+
+/**
+ * One position the app works out from a sleeve's amount and its model. Derived
+ * every time, never stored or sent to the API (decision D2).
+ */
+export interface Holding {
+  readonly accountId: string;
+  readonly bucket: BucketType;
+  readonly modelId: string;
+  readonly tickerSymbol: string;
+  readonly marketValueCents: Cents;
 }
 
 export interface Ticker {
@@ -96,8 +159,8 @@ export interface BucketDefinition {
  * an early accumulator has no income gap, no Social Security bridge, and no
  * forced withdrawals, so Soon comes out small on its own.
  *
- * NOTE: the conceptual model has AllocationTarget as a stored table keyed by
- * life stage. That predates RIG's answer. The model needs updating to match.
+ * The spike report's conceptual model has AllocationTarget as a stored table
+ * keyed by life stage. That predates RIG's answer and is superseded by this.
  */
 export interface AllocationTarget {
   readonly lifeStage: LifeStage;
@@ -149,6 +212,8 @@ export interface ClientCase {
   readonly people: readonly Person[];
   readonly moneyCyclePhase: MoneyCyclePhase;
   readonly lifeStage: LifeStage;
+  /** A value from TAX_BRACKETS, or null if not entered. */
+  readonly taxBracketPct: number | null;
   readonly accounts: readonly Account[];
   readonly cashOnHandCents: Cents;
   readonly spareTireCents: Cents;

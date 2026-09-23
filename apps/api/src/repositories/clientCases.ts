@@ -2,27 +2,30 @@
  * Client cases in and out of SQLite.
  *
  * This is the only file that knows how a ClientCase is spread across tables
- * (client_cases, people, accounts, holdings, planned_expenses, gap_entries).
+ * (client_cases, people, accounts, account_sleeves, planned_expenses,
+ * gap_entries).
  * Routes call these functions and deal only in ClientCase objects.
  *
  * Saving replaces the case's child rows wholesale inside one transaction:
- * delete them, insert what was sent. A case is small (a handful of accounts,
- * a few dozen holdings) and is always edited as a whole on the profile screen,
+ * delete them, insert what was sent. A case is small (a handful of accounts
+ * and worksheet lines) and is always edited as a whole on the profile screen,
  * so this is simpler and harder to get wrong than diffing rows. The cost is
  * that child ids change on every save; see the note in @ai4rig/shared.
  */
 
 import type { Db } from '@ai4rig/db';
-import type {
-  Account,
-  ClientCase,
-  ClientSummary,
-  GapEntry,
-  Holding,
-  Person,
-  PlannedExpense,
+import {
+  BUCKETS,
+  type Account,
+  type BucketSleeve,
+  type ClientCase,
+  type ClientSummary,
+  type GapEntry,
+  type Person,
+  type PlannedExpense,
 } from '@ai4rig/shared';
 
+import { HttpError } from '../errors.js';
 import type { ClientCaseInput } from '../validation.js';
 
 /** First number handed out on an empty database. */
@@ -38,6 +41,7 @@ interface CaseRow {
   initials: string;
   money_cycle_phase: ClientCase['moneyCyclePhase'];
   life_stage: ClientCase['lifeStage'];
+  tax_bracket_pct: number | null;
   cash_on_hand_cents: number;
   spare_tire_cents: number;
   monthly_income_draw_cents: number;
@@ -59,15 +63,16 @@ interface PersonRow {
 interface AccountRow {
   id: number;
   account_type: Account['accountType'];
+  tax_funnel: Account['taxFunnel'];
   masked_number: string;
+  balance_cents: number;
 }
 
-interface HoldingRow {
-  id: number;
+interface SleeveRow {
   account_id: number;
-  ticker_symbol: string;
-  market_value_cents: number;
-  assigned_bucket: Holding['assignedBucket'];
+  bucket: BucketSleeve['bucket'];
+  amount_cents: number;
+  model_id: number | null;
 }
 
 interface ExpenseRow {
@@ -127,18 +132,17 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
       }),
     );
 
-  const holdingRows = db
-    .prepare<[number], HoldingRow>(
-      `SELECT h.id, h.account_id, h.ticker_symbol, h.market_value_cents, h.assigned_bucket
-       FROM holdings h JOIN accounts a ON a.id = h.account_id
-       WHERE a.client_case_id = ?
-       ORDER BY h.position, h.id`,
+  const sleeveRows = db
+    .prepare<[number], SleeveRow>(
+      `SELECT s.account_id, s.bucket, s.amount_cents, s.model_id
+       FROM account_sleeves s JOIN accounts a ON a.id = s.account_id
+       WHERE a.client_case_id = ?`,
     )
     .all(row.id);
 
   const accounts = db
     .prepare<[number], AccountRow>(
-      `SELECT id, account_type, masked_number
+      `SELECT id, account_type, tax_funnel, masked_number, balance_cents
        FROM accounts WHERE client_case_id = ? ORDER BY position, id`,
     )
     .all(row.id)
@@ -146,15 +150,18 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
       (a): Account => ({
         id: String(a.id),
         accountType: a.account_type,
+        taxFunnel: a.tax_funnel,
         maskedNumber: a.masked_number,
-        holdings: holdingRows
-          .filter((h) => h.account_id === a.id)
-          .map((h) => ({
-            id: String(h.id),
-            tickerSymbol: h.ticker_symbol,
-            marketValueCents: h.market_value_cents,
-            assignedBucket: h.assigned_bucket,
-          })),
+        balanceCents: a.balance_cents,
+        // Always Now, Soon, Later, even if a row is somehow missing.
+        sleeves: BUCKETS.map((bucket): BucketSleeve => {
+          const sleeve = sleeveRows.find((s) => s.account_id === a.id && s.bucket === bucket);
+          return {
+            bucket,
+            amountCents: sleeve?.amount_cents ?? 0,
+            modelId: sleeve?.model_id == null ? null : String(sleeve.model_id),
+          };
+        }),
       }),
     );
 
@@ -195,6 +202,7 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
     people,
     moneyCyclePhase: row.money_cycle_phase,
     lifeStage: row.life_stage,
+    taxBracketPct: row.tax_bracket_pct,
     accounts,
     cashOnHandCents: row.cash_on_hand_cents,
     spareTireCents: row.spare_tire_cents,
@@ -255,9 +263,11 @@ export function createClientCase(db: Db, now: Date = new Date()): ClientCase {
     addPerson.run(caseId, 'CLIENT');
     addPerson.run(caseId, 'SPOUSE');
 
-    db.prepare(
-      "INSERT INTO accounts (client_case_id, position, account_type) VALUES (?, 0, 'SINGLE')",
-    ).run(caseId);
+    const account = db
+      .prepare("INSERT INTO accounts (client_case_id, position, account_type) VALUES (?, 0, 'SINGLE')")
+      .run(caseId);
+    const addSleeve = db.prepare('INSERT INTO account_sleeves (account_id, bucket) VALUES (?, ?)');
+    for (const bucket of BUCKETS) addSleeve.run(Number(account.lastInsertRowid), bucket);
 
     return clientNumber;
   });
@@ -265,6 +275,31 @@ export function createClientCase(db: Db, now: Date = new Date()): ClientCase {
   const created = getClientCase(db, create());
   if (created === null) throw new Error('Created a client case and then could not read it back');
   return created;
+}
+
+/**
+ * A sleeve can only follow a model that exists and is for the same bucket:
+ * Now money in a Later model is almost certainly a mis-click.
+ */
+function checkSleeveModels(db: Db, input: ClientCaseInput): void {
+  const modelBucket = db.prepare<[number], { bucket: string; name: string }>(
+    'SELECT bucket, name FROM model_portfolios WHERE id = ?',
+  );
+  input.accounts.forEach((account, index) => {
+    for (const sleeve of account.sleeves) {
+      if (sleeve.modelId === null) continue;
+      const model = modelBucket.get(Number(sleeve.modelId));
+      if (model === undefined) {
+        throw new HttpError(400, `Account ${index + 1}: model ${sleeve.modelId} no longer exists`);
+      }
+      if (model.bucket !== sleeve.bucket) {
+        throw new HttpError(
+          400,
+          `Account ${index + 1}: "${model.name}" is a ${model.bucket} model, not ${sleeve.bucket}`,
+        );
+      }
+    }
+  });
 }
 
 /**
@@ -283,12 +318,15 @@ export function saveClientCase(
     if (existing === undefined) return false;
     const caseId = existing.id;
 
+    checkSleeveModels(db, input);
+
     db.prepare(
       `UPDATE client_cases SET
          plan_number = @planNumber,
          initials = @initials,
          money_cycle_phase = @moneyCyclePhase,
          life_stage = @lifeStage,
+         tax_bracket_pct = @taxBracketPct,
          cash_on_hand_cents = @cashOnHandCents,
          spare_tire_cents = @spareTireCents,
          monthly_income_draw_cents = @monthlyIncomeDrawCents,
@@ -305,6 +343,7 @@ export function saveClientCase(
       initials: input.initials,
       moneyCyclePhase: input.moneyCyclePhase,
       lifeStage: input.lifeStage,
+      taxBracketPct: input.taxBracketPct,
       cashOnHandCents: input.cashOnHandCents,
       spareTireCents: input.spareTireCents,
       monthlyIncomeDrawCents: input.nowInputs.monthlyIncomeDrawCents,
@@ -316,7 +355,7 @@ export function saveClientCase(
       updatedAt: now.toISOString(),
     });
 
-    // Children: clear and rewrite. Holdings go with their accounts (cascade).
+    // Children: clear and rewrite. Sleeves go with their accounts (cascade).
     for (const table of ['people', 'accounts', 'planned_expenses', 'gap_entries']) {
       db.prepare(`DELETE FROM ${table} WHERE client_case_id = ?`).run(caseId);
     }
@@ -330,28 +369,29 @@ export function saveClientCase(
     }
 
     const addAccount = db.prepare(
-      'INSERT INTO accounts (client_case_id, position, account_type, masked_number) VALUES (?, ?, ?, ?)',
+      `INSERT INTO accounts (client_case_id, position, account_type, tax_funnel, masked_number, balance_cents)
+       VALUES (?, ?, ?, ?, ?, ?)`,
     );
-    const addHolding = db.prepare(
-      `INSERT INTO holdings (account_id, position, ticker_symbol, market_value_cents, assigned_bucket)
-       VALUES (?, ?, ?, ?, ?)`,
+    const addSleeve = db.prepare(
+      'INSERT INTO account_sleeves (account_id, bucket, amount_cents, model_id) VALUES (?, ?, ?, ?)',
     );
-    input.accounts.forEach((account, accountPosition) => {
+    input.accounts.forEach((account, position) => {
       const { lastInsertRowid } = addAccount.run(
         caseId,
-        accountPosition,
+        position,
         account.accountType,
+        account.taxFunnel,
         account.maskedNumber,
+        account.balanceCents,
       );
-      account.holdings.forEach((holding, holdingPosition) => {
-        addHolding.run(
+      for (const sleeve of account.sleeves) {
+        addSleeve.run(
           Number(lastInsertRowid),
-          holdingPosition,
-          holding.tickerSymbol,
-          holding.marketValueCents,
-          holding.assignedBucket,
+          sleeve.bucket,
+          sleeve.amountCents,
+          sleeve.modelId === null ? null : Number(sleeve.modelId),
         );
-      });
+      }
     });
 
     const addExpense = db.prepare(
@@ -384,7 +424,7 @@ export function saveClientCase(
   return save() ? getClientCase(db, input.clientNumber) : null;
 }
 
-/** True if a case was deleted. Its people, accounts, holdings, and lines go with it. */
+/** True if a case was deleted. Its people, accounts, sleeves, and lines go with it. */
 export function deleteClientCase(db: Db, clientNumber: string): boolean {
   return db.prepare('DELETE FROM client_cases WHERE client_number = ?').run(clientNumber).changes > 0;
 }

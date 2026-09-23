@@ -3,7 +3,8 @@
  * server (POST /api/clients), which assigns its number.
  */
 
-import type { Account, GapEntry, Holding, PlannedExpense } from './types.js';
+import { BUCKETS, DEFAULT_TAX_FUNNEL } from './types.js';
+import type { Account, GapEntry, ModelPortfolio, PlannedExpense } from './types.js';
 
 let counter = 0;
 
@@ -13,12 +14,20 @@ function localId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${counter}`;
 }
 
-export function newHolding(): Holding {
-  return { id: localId('h'), tickerSymbol: '', marketValueCents: 0, assignedBucket: 'LATER' };
+export function newAccount(): Account {
+  return {
+    id: localId('acct'),
+    accountType: 'SINGLE',
+    taxFunnel: DEFAULT_TAX_FUNNEL.SINGLE,
+    maskedNumber: '',
+    balanceCents: 0,
+    sleeves: BUCKETS.map((bucket) => ({ bucket, amountCents: 0, modelId: null })),
+  };
 }
 
-export function newAccount(): Account {
-  return { id: localId('acct'), accountType: 'SINGLE', maskedNumber: '', holdings: [] };
+/** A model not yet saved. The server assigns the id; until then it is ''. */
+export function newModel(): ModelPortfolio {
+  return { id: '', name: '', bucket: 'LATER', taxFunnel: null, lines: [] };
 }
 
 export function newExpense(): PlannedExpense {

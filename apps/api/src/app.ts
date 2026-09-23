@@ -3,7 +3,9 @@ import cors from 'cors';
 import express, { type ErrorRequestHandler, type Express } from 'express';
 
 import type { ApiConfig } from './config.js';
+import { constraintStatus } from './errors.js';
 import { createClientsRouter } from './routes/clients.js';
+import { createModelsRouter } from './routes/models.js';
 import { createReferenceDataRouter } from './routes/referenceData.js';
 
 export interface AppDeps {
@@ -51,6 +53,7 @@ export function createApp({ config, db = openDatabase() }: AppDeps): CreatedApp 
 
   app.use(createClientsRouter(db));
   app.use(createReferenceDataRouter(db));
+  app.use(createModelsRouter(db));
 
   app.use((_req, res) => {
     res.status(404).json({ error: 'Not found' });
@@ -67,15 +70,18 @@ export function createApp({ config, db = openDatabase() }: AppDeps): CreatedApp 
  */
 function jsonErrors(config: ApiConfig): ErrorRequestHandler {
   return (error: unknown, _req, res, _next) => {
-    // Malformed JSON body, or one over the size limit: the client's fault.
+    // An HttpError from our own code, or Express's own for a malformed JSON
+    // body or one over the size limit, carries its status.
+    const constraint = constraintStatus(error);
     const status =
-      typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number'
+      constraint?.status ??
+      (typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number'
         ? error.status
-        : 500;
+        : 500);
 
     if (status >= 500) console.error(error);
 
-    const message = error instanceof Error ? error.message : String(error);
+    const message = constraint?.message ?? (error instanceof Error ? error.message : String(error));
     res.status(status).json({
       error: status >= 500 && config.nodeEnv === 'production' ? 'Internal server error' : message,
     });

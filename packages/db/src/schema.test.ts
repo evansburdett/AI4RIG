@@ -41,11 +41,13 @@ describe('the repo migrations', () => {
     runMigrations(db);
 
     expect(tableNames()).toEqual([
+      'account_sleeves',
       'accounts',
       'bucket_definitions',
       'client_cases',
       'gap_entries',
-      'holdings',
+      'model_lines',
+      'model_portfolios',
       'people',
       'planned_expenses',
       'schema_migrations',
@@ -64,7 +66,7 @@ describe('the repo migrations', () => {
     expect(buckets).toEqual(['NOW', 'SOON', 'LATER']);
   });
 
-  it('reject a holding in a bucket that does not exist', () => {
+  it('reject money in a bucket that does not exist', () => {
     runMigrations(db);
     db.exec(`
       INSERT INTO client_cases (id, client_number, created_at, updated_at) VALUES (1, '1', 'x', 'x');
@@ -72,10 +74,30 @@ describe('the repo migrations', () => {
     `);
 
     expect(() =>
-      db.exec(
-        "INSERT INTO holdings (account_id, ticker_symbol, assigned_bucket) VALUES (1, 'VTI', 'SOMEDAY')",
-      ),
+      db.exec("INSERT INTO account_sleeves (account_id, bucket, amount_cents) VALUES (1, 'SOMEDAY', 100)"),
     ).toThrow(/CHECK constraint/);
+  });
+
+  it('refuse to delete a ticker that a model uses', () => {
+    runMigrations(db);
+    runSeeds(db);
+
+    expect(() => db.exec("DELETE FROM tickers WHERE symbol = 'VTI'")).toThrow(/FOREIGN KEY/);
+    expect(() => db.exec("DELETE FROM tickers WHERE symbol = 'GLD'")).not.toThrow();
+  });
+
+  it('leave the money in place, with no model, when a model is deleted', () => {
+    runMigrations(db);
+    runSeeds(db);
+
+    db.exec('DELETE FROM model_portfolios WHERE id = 9001');
+
+    const nowSleeve = db
+      .prepare<[], { amount_cents: number; model_id: number | null }>(
+        "SELECT amount_cents, model_id FROM account_sleeves WHERE account_id = 9001 AND bucket = 'NOW'",
+      )
+      .get();
+    expect(nowSleeve).toEqual({ amount_cents: 19_000_000, model_id: null });
   });
 
   it('delete a case together with everything under it', () => {
@@ -86,7 +108,7 @@ describe('the repo migrations', () => {
 
     const orphans = db
       .prepare<[], { count: number }>(
-        'SELECT COUNT(*) AS count FROM holdings h JOIN accounts a ON a.id = h.account_id WHERE a.client_case_id = 9001',
+        'SELECT COUNT(*) AS count FROM account_sleeves s JOIN accounts a ON a.id = s.account_id WHERE a.client_case_id = 9001',
       )
       .get();
     expect(orphans?.count).toBe(0);
@@ -100,10 +122,29 @@ describe('the repo seed data', () => {
     runSeeds(db);
     expect(() => runSeeds(db)).not.toThrow();
 
-    const cases = db.prepare<[], { count: number }>('SELECT COUNT(*) AS count FROM client_cases').get();
-    const holdings = db.prepare<[], { count: number }>('SELECT COUNT(*) AS count FROM holdings').get();
-    expect(cases?.count).toBe(2);
-    expect(holdings?.count).toBe(13);
+    const count = (table: string) =>
+      db.prepare<[], { count: number }>(`SELECT COUNT(*) AS count FROM ${table}`).get()?.count;
+    expect(count('client_cases')).toBe(2);
+    expect(count('account_sleeves')).toBe(15);
+    expect(count('model_portfolios')).toBe(4);
+  });
+
+  it('puts case 1042 exactly on the workbook bucket totals', () => {
+    runMigrations(db);
+    runSeeds(db);
+
+    const totals = db
+      .prepare<[], { bucket: string; total: number }>(
+        `SELECT s.bucket, SUM(s.amount_cents) AS total
+         FROM account_sleeves s JOIN accounts a ON a.id = s.account_id
+         WHERE a.client_case_id = 9001 GROUP BY s.bucket ORDER BY s.bucket`,
+      )
+      .all();
+    expect(totals).toEqual([
+      { bucket: 'LATER', total: 189_530_000 },
+      { bucket: 'NOW', total: 19_000_000 },
+      { bucket: 'SOON', total: 91_470_000 },
+    ]);
   });
 
   it('passes the foreign key check', () => {

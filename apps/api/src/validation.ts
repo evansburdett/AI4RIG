@@ -14,6 +14,8 @@ import {
   HEALTH_CONCERNS,
   LIFE_STAGES,
   MONEY_CYCLE_PHASES,
+  TAX_BRACKETS,
+  TAX_FUNNELS,
 } from '@ai4rig/shared';
 import type { Response } from 'express';
 import { z } from 'zod';
@@ -33,19 +35,31 @@ const person = z.object({
   lifeExpectancyAge: z.int().min(0).max(130).nullable(),
 });
 
-const holding = z.object({
-  id: z.string(),
-  tickerSymbol: z.string().trim().toUpperCase().max(10),
-  marketValueCents: cents,
-  assignedBucket: bucket,
+const taxFunnel = z.enum(TAX_FUNNELS);
+
+/** Database ids travel as strings of digits. */
+const rowId = z.string().regex(/^\d+$/, 'Must be the id of an existing row');
+
+const sleeve = z.object({
+  bucket,
+  amountCents: cents.min(0, 'A bucket amount cannot be negative'),
+  modelId: rowId.nullable(),
 });
 
 const account = z.object({
   id: z.string(),
   accountType: z.enum(ACCOUNT_TYPES),
+  taxFunnel,
   // Last four only (ADR 0006). Anything longer is a real account number.
   maskedNumber: z.string().trim().max(4, 'Masked number is the last four digits only'),
-  holdings: z.array(holding),
+  balanceCents: cents,
+  sleeves: z
+    .array(sleeve)
+    .length(3)
+    .refine(
+      (sleeves) => sleeves.map((s) => s.bucket).join() === BUCKETS.join(),
+      'Sleeves must be exactly Now, Soon, Later, in that order',
+    ),
 });
 
 const plannedExpense = z.object({
@@ -75,6 +89,10 @@ export const clientCaseSchema = z.object({
     ),
   moneyCyclePhase: z.enum(MONEY_CYCLE_PHASES),
   lifeStage: z.enum(LIFE_STAGES),
+  taxBracketPct: z
+    .int()
+    .refine((pct) => (TAX_BRACKETS as readonly number[]).includes(pct), 'Not a federal tax bracket')
+    .nullable(),
   accounts: z.array(account),
   cashOnHandCents: cents,
   spareTireCents: cents,
@@ -111,6 +129,32 @@ export const tickerSchema = z.object({
   assetClass: z.enum(ASSET_CLASSES),
   defaultBucket: bucket,
 });
+
+export const modelPortfolioSchema = z.object({
+  // Ignored on create; checked against the URL on update.
+  id: z.string().optional(),
+  name: z.string().trim().min(1, 'A model needs a name').max(80),
+  bucket,
+  taxFunnel: taxFunnel.nullable(),
+  lines: z
+    .array(
+      z.object({
+        tickerSymbol: z.string().trim().toUpperCase().min(1).max(10),
+        weightBps: z.int().min(1, 'Each weight must be above 0%').max(10_000),
+      }),
+    )
+    .min(1, 'A model needs at least one ticker')
+    .refine(
+      (lines) => new Set(lines.map((l) => l.tickerSymbol)).size === lines.length,
+      'A ticker can appear in a model only once',
+    )
+    .refine(
+      (lines) => lines.reduce((sum, l) => sum + l.weightBps, 0) === 10_000,
+      'Weights must add up to exactly 100%',
+    ),
+});
+
+export type ModelPortfolioInput = z.infer<typeof modelPortfolioSchema>;
 
 export const bucketDefinitionSchema = z.object({
   bucket,

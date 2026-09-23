@@ -56,8 +56,8 @@ export function BucketAssignments({
       <section className="card">
         <h3>Default bucket by ticker</h3>
         <p className="muted">
-          Applied to <em>new</em> holdings. Holdings already placed keep the bucket the advisor
-          chose for them.
+          Which bucket each symbol normally belongs in. A model that uses a symbol in a different
+          bucket is flagged on the Models screen, not blocked.
         </p>
 
         <div className="field">

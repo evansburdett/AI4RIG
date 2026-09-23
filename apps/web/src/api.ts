@@ -7,7 +7,13 @@
  * apps/api/src/routes; the shapes are in packages/shared.
  */
 
-import type { BucketDefinition, ClientCase, ClientSummary, Ticker } from './domain/types.js';
+import type {
+  BucketDefinition,
+  ClientCase,
+  ClientSummary,
+  ModelPortfolio,
+  Ticker,
+} from './domain/types.js';
 
 const baseUrl = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
 
@@ -116,6 +122,18 @@ export const api = {
 
   saveTicker: (ticker: Ticker) =>
     send<Ticker>(`/api/tickers/${encodeURIComponent(ticker.symbol)}`, 'PUT', ticker),
+
+  listModels: () => get<ModelPortfolio[]>('/api/models'),
+
+  /** A model with an empty id is new; the server assigns one. */
+  saveModel: (model: ModelPortfolio) =>
+    model.id === ''
+      ? send<ModelPortfolio>('/api/models', 'POST', model)
+      : send<ModelPortfolio>(`/api/models/${encodeURIComponent(model.id)}`, 'PUT', model),
+
+  deleteModel: async (id: string): Promise<void> => {
+    await send<void>(`/api/models/${encodeURIComponent(id)}`, 'DELETE');
+  },
 
   listBucketDefinitions: () => get<BucketDefinition[]>('/api/bucket-definitions'),
 

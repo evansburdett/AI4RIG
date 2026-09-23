@@ -434,6 +434,88 @@ tfoot td {
   text-transform: uppercase;
 }
 
+.sleeves .field,
+.model-lines .field {
+  margin: 0;
+}
+
+.sleeves .field label {
+  display: none;
+}
+
+.sleeves .money-input input {
+  width: 9rem;
+}
+
+.works-out {
+  font-size: 0.82rem;
+}
+
+.position {
+  display: inline-block;
+  margin-right: 0.8rem;
+  white-space: nowrap;
+}
+
+.bucket-totals {
+  margin-top: 1rem;
+}
+
+.model {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0.5rem 1rem 0.9rem;
+  margin: 0.75rem 0;
+  background: var(--bg);
+}
+
+.model-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0 1rem;
+}
+
+.model-head > .field {
+  flex: 1 1 9rem;
+  min-width: 0;
+}
+
+.model-closed {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 1rem;
+}
+
+.model-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.6rem;
+  min-width: 0;
+}
+
+.model-summary .muted {
+  font-size: 0.85rem;
+}
+
+.percent-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.percent-input input {
+  width: 5rem;
+  text-align: right;
+}
+
+.meter-fill.meter-other {
+  background: var(--border-strong);
+}
+
 .account {
   border: 1px solid var(--border);
   border-radius: 5px;

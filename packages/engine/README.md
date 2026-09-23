@@ -1,8 +1,16 @@
 # @ai4rig/engine
 
-The bucket-planning calculations. **This package is the team's work — what is
-here now is a placeholder that exists to prove the build, type-check, and test
-plumbing works.** Replace it.
+Deterministic bucket-planning calculations. No AI and no I/O: the same inputs
+always give the same answer, down to the cent.
+
+What is here:
+
+- `addCents`, `assertCents`: integer-cents money.
+- `splitByWeights`: split a dollar amount across a model's weights so the
+  positions add back up to the amount exactly.
+
+What should move here next: the worksheet (`apps/web/src/domain/worksheet.ts`)
+and breakdown (`apps/web/src/domain/breakdown.ts`) math, which is pure already.
 
 Two constraints are not placeholders:
 
