@@ -103,9 +103,35 @@ export function ClientProfile({ clientCase, models, onChange, today }: Props) {
                   hint="Entered by the advisor. The worksheet wants this estimated from age and health."
                   onChange={(lifeExpectancyAge) => updatePerson({ lifeExpectancyAge })}
                 />
+                {person.role === 'SPOUSE' && (
+                  <button
+                    type="button"
+                    className="link"
+                    onClick={() => patch({ people: clientCase.people.filter((p) => p.role !== 'SPOUSE') })}
+                  >
+                    Remove spouse
+                  </button>
+                )}
               </fieldset>
             );
           })}
+          {!clientCase.people.some((p) => p.role === 'SPOUSE') && (
+            <div>
+              <button
+                type="button"
+                onClick={() =>
+                  patch({
+                    people: [
+                      ...clientCase.people,
+                      { role: 'SPOUSE', birthYear: null, healthConcern: 'NONE', lifeExpectancyAge: null },
+                    ],
+                  })
+                }
+              >
+                Add spouse
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="grid three">
