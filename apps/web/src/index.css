@@ -117,13 +117,36 @@ code {
   font-weight: 600;
 }
 
-.fixture-banner {
-  margin: 0;
-  padding: 0.4rem 1.5rem;
-  background: #fdf6e3;
-  border-bottom: 1px solid #e8d9a8;
-  font-size: 0.82rem;
-  color: #6b5518;
+.app-footer {
+  padding: 0.75rem 1.5rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.8rem;
+}
+
+.status::before {
+  content: "";
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  margin-right: 0.45rem;
+  border-radius: 50%;
+  vertical-align: 0.05rem;
+}
+
+.status-ok {
+  color: var(--text-muted);
+}
+
+.status-ok::before {
+  background: #2e7d4f;
+}
+
+.status-down {
+  color: var(--danger);
+}
+
+.status-down::before {
+  background: var(--danger);
 }
 
 main {

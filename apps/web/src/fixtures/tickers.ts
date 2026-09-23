@@ -1,7 +1,7 @@
 /**
- * Placeholder investment universe. RIG has not sent the Common Investments list
- * yet; these are broad ETFs so the screens have something to render. The real
- * list belongs in the database behind US-06.
+ * Placeholder investment universe for the front-end unit tests. The running
+ * app reads the same list from the database (packages/db/seed/0001_placeholder_tickers.sql)
+ * and the bucket definitions from migration 0002.
  */
 
 import type { BucketDefinition, Ticker } from '../domain/types.js';

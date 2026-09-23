@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, ApiError } from './api.js';
 import { Callout } from './components/Callout.js';
 import { ClientSwitcher } from './components/ClientSwitcher.js';
+import { ConnectionStatus } from './components/ConnectionStatus.js';
 import type { BucketDefinition, ClientCase, ClientSummary, Ticker } from './domain/types.js';
 import { hrefFor, useRoute, type Screen } from './routing.js';
 import { AssetClassBreakdown } from './screens/AssetClassBreakdown.js';
@@ -28,7 +29,10 @@ export function App() {
 
   const [draft, setDraft] = useState<ClientCase | null>(null);
   const [saved, setSaved] = useState<ClientCase | null>(null);
+  /** The open case could not be loaded. Replaces the screen. */
   const [caseError, setCaseError] = useState<string | null>(null);
+  /** A save, create, or delete failed. Shown above the screen; the draft is kept. */
+  const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -67,6 +71,7 @@ export function App() {
 
     let cancelled = false;
     setCaseError(null);
+    setActionError(null);
 
     api
       .getClient(clientNumber)
@@ -102,6 +107,7 @@ export function App() {
   const save = useCallback(async () => {
     if (draft === null) return;
     setBusy(true);
+    setActionError(null);
     try {
       const result = await api.saveClient(draft);
       setSaved(result);
@@ -112,7 +118,7 @@ export function App() {
         ),
       );
     } catch (error: unknown) {
-      setCaseError(describeError(error));
+      setActionError(describeError(error));
     } finally {
       setBusy(false);
     }
@@ -121,6 +127,7 @@ export function App() {
   const createClient = useCallback(async () => {
     if (dirty && !window.confirm('Discard unsaved changes to the open case?')) return;
     setBusy(true);
+    setActionError(null);
     try {
       const created = await api.createClient();
       setClients((current) =>
@@ -130,7 +137,7 @@ export function App() {
       );
       navigate({ screen: 'profile', clientNumber: created.clientNumber });
     } catch (error: unknown) {
-      setCaseError(describeError(error));
+      setActionError(describeError(error));
     } finally {
       setBusy(false);
     }
@@ -144,6 +151,7 @@ export function App() {
     if (!confirmed) return;
 
     setBusy(true);
+    setActionError(null);
     try {
       await api.deleteClient(activeClientNumber);
       const remaining = clients.filter((c) => c.clientNumber !== activeClientNumber);
@@ -158,20 +166,30 @@ export function App() {
           : { screen: 'profile', clientNumber: next },
       );
     } catch (error: unknown) {
-      setCaseError(describeError(error));
+      setActionError(describeError(error));
     } finally {
       setBusy(false);
     }
   }, [activeClientNumber, clients, navigate]);
 
   const saveTicker = useCallback(async (ticker: Ticker) => {
-    const result = await api.saveTicker(ticker);
-    setTickers((current) => current.map((t) => (t.symbol === result.symbol ? result : t)));
+    try {
+      const result = await api.saveTicker(ticker);
+      setTickers((current) => current.map((t) => (t.symbol === result.symbol ? result : t)));
+      setReferenceError(null);
+    } catch (error: unknown) {
+      setReferenceError(describeError(error));
+    }
   }, []);
 
   const saveDefinition = useCallback(async (definition: BucketDefinition) => {
-    const result = await api.saveBucketDefinition(definition);
-    setDefinitions((current) => current.map((d) => (d.bucket === result.bucket ? result : d)));
+    try {
+      const result = await api.saveBucketDefinition(definition);
+      setDefinitions((current) => current.map((d) => (d.bucket === result.bucket ? result : d)));
+      setReferenceError(null);
+    } catch (error: unknown) {
+      setReferenceError(describeError(error));
+    }
   }, []);
 
   const today = useMemo(() => new Date(), []);
@@ -239,17 +257,16 @@ export function App() {
         )}
       </header>
 
-      {api.usingFixtures && (
-        <p className="fixture-banner">
-          Fixture mode — sample data, not the API. Changes are lost on reload. Set{' '}
-          <code>VITE_USE_FIXTURES=false</code> once the endpoints exist.
-        </p>
-      )}
-
       <main>
         {referenceError !== null && (
-          <Callout tone="warning" title="Could not load reference data">
+          <Callout tone="warning" title="Could not load or save reference data">
             {referenceError}
+          </Callout>
+        )}
+
+        {actionError !== null && (
+          <Callout tone="warning" title="That did not go through">
+            {actionError}
           </Callout>
         )}
 
@@ -274,6 +291,10 @@ export function App() {
           <ClientProfile clientCase={draft} tickers={tickers} onChange={setDraft} today={today} />
         )}
       </main>
+
+      <footer className="app-footer">
+        <ConnectionStatus />
+      </footer>
     </div>
   );
 }

@@ -1,6 +1,10 @@
 /**
- * Two sample cases. Client numbers and initials are invented; the figures on
- * case 1042 come from RIG's workbook so the UI can be checked against it.
+ * Two sample cases for the front-end unit tests. Client numbers and initials
+ * are invented; the figures on case 1042 come from RIG's workbook.
+ *
+ * The running app does not use these; it reads the same two cases from the
+ * database, loaded by packages/db/seed/0002_sample_cases.sql. Keep the two in
+ * step if you change either.
  */
 
 import type { ClientCase } from '../domain/types.js';
