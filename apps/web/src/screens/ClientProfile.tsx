@@ -1,12 +1,13 @@
 import { useMemo } from 'react';
 
+import { AccountCard } from '../components/AccountCard.js';
 import { BucketBar } from '../components/BucketBar.js';
 import { Callout } from '../components/Callout.js';
 import { DerivedField, NumberField, SelectField, TextField } from '../components/Fields.js';
 import { MoneyInput } from '../components/MoneyInput.js';
-import { newAccount, newExpense, newGapEntry, newHolding } from '../domain/factory.js';
+import { bucketsByAccount } from '../domain/breakdown.js';
+import { newAccount, newExpense, newGapEntry } from '../domain/factory.js';
 import {
-  ACCOUNT_TYPE_LABELS,
   HEALTH_CONCERN_LABELS,
   LIFE_STAGE_LABELS,
   MONEY_CYCLE_LABELS,
@@ -14,22 +15,13 @@ import {
   householdPlanYears,
 } from '../domain/lifeStage.js';
 import { formatCents, formatCentsWhole, formatPercent } from '../domain/money.js';
-import {
-  ACCOUNT_TYPES,
-  BUCKETS,
-  HEALTH_CONCERNS,
-  LIFE_STAGES,
-  MONEY_CYCLE_PHASES,
-} from '../domain/types.js';
+import { HEALTH_CONCERNS, LIFE_STAGES, MONEY_CYCLE_PHASES, TAX_BRACKETS } from '../domain/types.js';
 import type {
-  Account,
-  BucketType,
-  Cents,
+  AllocationTarget,
   ClientCase,
   GapEntry,
-  Holding,
+  ModelPortfolio,
   PlannedExpense,
-  Ticker,
 } from '../domain/types.js';
 import {
   computePlanTotals,
@@ -39,7 +31,7 @@ import {
 
 interface Props {
   clientCase: ClientCase;
-  tickers: readonly Ticker[];
+  models: readonly ModelPortfolio[];
   onChange: (next: ClientCase) => void;
   today: Date;
 }
@@ -47,12 +39,12 @@ interface Props {
 /**
  * US-01 — client profile intake.
  *
- * Ordered to follow RIG's two worksheets: household, accounts and holdings,
+ * Ordered to follow RIG's two worksheets: household, accounts and buckets,
  * fees and cash, then the Now and Soon questions with the buckets recomputed as
  * the advisor types. Edits go to a working copy held by the parent; nothing is
  * written until Save.
  */
-export function ClientProfile({ clientCase, tickers, onChange, today }: Props) {
+export function ClientProfile({ clientCase, models, onChange, today }: Props) {
   const totals = useMemo(() => computePlanTotals(clientCase), [clientCase]);
   const target = useMemo(() => targetAllocation(clientCase, totals), [clientCase, totals]);
   const planYears = householdPlanYears(clientCase.people, today);
@@ -60,33 +52,6 @@ export function ClientProfile({ clientCase, tickers, onChange, today }: Props) {
 
   function patch(changes: Partial<ClientCase>) {
     onChange({ ...clientCase, ...changes });
-  }
-
-  function patchAccount(id: string, changes: Partial<Account>) {
-    patch({ accounts: clientCase.accounts.map((a) => (a.id === id ? { ...a, ...changes } : a)) });
-  }
-
-  function patchHolding(accountId: string, holdingId: string, changes: Partial<Holding>) {
-    const account = clientCase.accounts.find((a) => a.id === accountId);
-    if (!account) return;
-    patchAccount(accountId, {
-      holdings: account.holdings.map((h) => (h.id === holdingId ? { ...h, ...changes } : h)),
-    });
-  }
-
-  /** New holdings start on the ticker's default bucket, if the symbol is known. */
-  function addHolding(account: Account) {
-    patchAccount(account.id, { holdings: [...account.holdings, newHolding()] });
-  }
-
-  function setSymbol(accountId: string, holding: Holding, symbol: string) {
-    const ticker = tickers.find((t) => t.symbol === symbol);
-    patchHolding(accountId, holding.id, {
-      tickerSymbol: symbol,
-      ...(ticker !== undefined && holding.tickerSymbol === ''
-        ? { assignedBucket: ticker.defaultBucket }
-        : {}),
-    });
   }
 
   return (
@@ -138,9 +103,35 @@ export function ClientProfile({ clientCase, tickers, onChange, today }: Props) {
                   hint="Entered by the advisor. The worksheet wants this estimated from age and health."
                   onChange={(lifeExpectancyAge) => updatePerson({ lifeExpectancyAge })}
                 />
+                {person.role === 'SPOUSE' && (
+                  <button
+                    type="button"
+                    className="link"
+                    onClick={() => patch({ people: clientCase.people.filter((p) => p.role !== 'SPOUSE') })}
+                  >
+                    Remove spouse
+                  </button>
+                )}
               </fieldset>
             );
           })}
+          {!clientCase.people.some((p) => p.role === 'SPOUSE') && (
+            <div>
+              <button
+                type="button"
+                onClick={() =>
+                  patch({
+                    people: [
+                      ...clientCase.people,
+                      { role: 'SPOUSE', birthYear: null, healthConcern: 'NONE', lifeExpectancyAge: null },
+                    ],
+                  })
+                }
+              >
+                Add spouse
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="grid three">
@@ -162,6 +153,14 @@ export function ClientProfile({ clientCase, tickers, onChange, today }: Props) {
             labels={LIFE_STAGE_LABELS}
             onChange={(lifeStage) => patch({ lifeStage })}
           />
+          <SelectField
+            label="Tax bracket"
+            value={clientCase.taxBracketPct === null ? '' : String(clientCase.taxBracketPct)}
+            options={TAX_BRACKET_OPTIONS}
+            labels={TAX_BRACKET_LABELS}
+            hint="Federal marginal rate."
+            onChange={(value) => patch({ taxBracketPct: value === '' ? null : Number(value) })}
+          />
           <TextField
             label="Initials"
             value={clientCase.initials}
@@ -173,7 +172,7 @@ export function ClientProfile({ clientCase, tickers, onChange, today }: Props) {
 
       <section className="card">
         <div className="card-head">
-          <h3>Accounts and holdings</h3>
+          <h3>Accounts and buckets</h3>
           <button
             type="button"
             onClick={() => patch({ accounts: [...clientCase.accounts, newAccount()] })}
@@ -181,140 +180,28 @@ export function ClientProfile({ clientCase, tickers, onChange, today }: Props) {
             Add account
           </button>
         </div>
+        <p className="muted">
+          Enter each account&rsquo;s balance, split it across Now, Soon, and Later, and pick a
+          model for each. The positions are worked out from the model.
+        </p>
 
         {clientCase.accounts.length === 0 && (
-          <p className="empty">No accounts yet. Add one to start entering holdings.</p>
+          <p className="empty">No accounts yet. Add one to start.</p>
         )}
 
-        {clientCase.accounts.map((account) => {
-          const balanceCents = account.holdings.reduce<Cents>(
-            (sum, h) => sum + h.marketValueCents,
-            0,
-          );
+        {clientCase.accounts.map((account) => (
+          <AccountCard
+            key={account.id}
+            account={account}
+            models={models}
+            onChange={(next) =>
+              patch({ accounts: clientCase.accounts.map((a) => (a.id === account.id ? next : a)) })
+            }
+            onRemove={() => patch({ accounts: clientCase.accounts.filter((a) => a.id !== account.id) })}
+          />
+        ))}
 
-          return (
-            <div className="account" key={account.id}>
-              <div className="account-head">
-                <SelectField
-                  label="Account type"
-                  value={account.accountType}
-                  options={ACCOUNT_TYPES}
-                  labels={ACCOUNT_TYPE_LABELS}
-                  onChange={(accountType) => patchAccount(account.id, { accountType })}
-                />
-                <TextField
-                  label="Masked number"
-                  value={account.maskedNumber}
-                  placeholder="Last four"
-                  onChange={(maskedNumber) => patchAccount(account.id, { maskedNumber })}
-                />
-                <DerivedField label="Account balance" value={formatCents(balanceCents)} />
-                <div className="field">
-                  <button
-                    type="button"
-                    className="danger"
-                    onClick={() =>
-                      patch({ accounts: clientCase.accounts.filter((a) => a.id !== account.id) })
-                    }
-                  >
-                    Remove account
-                  </button>
-                </div>
-              </div>
-
-              <table className="holdings">
-                <thead>
-                  <tr>
-                    <th scope="col">Symbol</th>
-                    <th scope="col">Asset class</th>
-                    <th scope="col">Market value</th>
-                    <th scope="col">Bucket</th>
-                    <th scope="col" className="row-actions">
-                      <span className="visually-hidden">Actions</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {account.holdings.map((holding) => {
-                    const ticker = tickers.find((t) => t.symbol === holding.tickerSymbol);
-                    const overridden =
-                      ticker !== undefined && ticker.defaultBucket !== holding.assignedBucket;
-
-                    return (
-                      <tr key={holding.id}>
-                        <td>
-                          <TextField
-                            label="Symbol"
-                            value={holding.tickerSymbol}
-                            placeholder="VTI"
-                            uppercase
-                            onChange={(symbol) => setSymbol(account.id, holding, symbol)}
-                          />
-                          {holding.tickerSymbol !== '' && ticker === undefined && (
-                            <span className="tag tag-warn">unknown</span>
-                          )}
-                        </td>
-                        <td className="muted">
-                          {ticker === undefined
-                            ? '—'
-                            : ticker.assetClass.replace(/_/g, ' ').toLowerCase()}
-                        </td>
-                        <td>
-                          <MoneyInput
-                            label="Market value"
-                            valueCents={holding.marketValueCents}
-                            onChange={(marketValueCents) =>
-                              patchHolding(account.id, holding.id, { marketValueCents })
-                            }
-                          />
-                        </td>
-                        <td>
-                          <select
-                            aria-label="Bucket"
-                            value={holding.assignedBucket}
-                            onChange={(event) =>
-                              patchHolding(account.id, holding.id, {
-                                assignedBucket: event.target.value as BucketType,
-                              })
-                            }
-                          >
-                            {BUCKETS.map((bucket) => (
-                              <option key={bucket} value={bucket}>
-                                {bucket}
-                              </option>
-                            ))}
-                          </select>
-                          {overridden && <span className="tag">override</span>}
-                        </td>
-                        <td className="row-actions">
-                          <button
-                            type="button"
-                            className="link"
-                            onClick={() =>
-                              patchAccount(account.id, {
-                                holdings: account.holdings.filter((h) => h.id !== holding.id),
-                              })
-                            }
-                          >
-                            Remove
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-
-              {account.holdings.length === 0 && <p className="empty">No holdings in this account.</p>}
-
-              <div className="button-row">
-                <button type="button" onClick={() => addHolding(account)}>
-                  Add holding
-                </button>
-              </div>
-            </div>
-          );
-        })}
+        <BucketTotals clientCase={clientCase} target={target} />
       </section>
 
       <section className="card">
@@ -489,6 +376,65 @@ export function ClientProfile({ clientCase, tickers, onChange, today }: Props) {
         </p>
       </section>
     </div>
+  );
+}
+
+const TAX_BRACKET_OPTIONS = ['', ...TAX_BRACKETS.map(String)] as const;
+const TAX_BRACKET_LABELS: Record<string, string> = Object.fromEntries(
+  TAX_BRACKET_OPTIONS.map((value) => [value, value === '' ? 'Not entered' : `${value}%`]),
+);
+
+/**
+ * What the accounts add up to in each bucket against what the worksheet below
+ * says the client needs there. The same comparison as the Breakdown screen,
+ * kept here so the advisor sees it while splitting the accounts.
+ */
+function BucketTotals({ clientCase, target }: { clientCase: ClientCase; target: AllocationTarget }) {
+  if (clientCase.accounts.length === 0) return null;
+  const rows = bucketsByAccount(clientCase);
+  const sum = (pick: (r: (typeof rows)[number]) => number) => rows.reduce((t, r) => t + pick(r), 0);
+  const lines = [
+    { label: 'Now', actual: sum((r) => r.nowCents), target: target.nowCents },
+    { label: 'Soon', actual: sum((r) => r.soonCents), target: target.soonCents },
+    { label: 'Later', actual: sum((r) => r.laterCents), target: target.laterCents },
+  ];
+
+  return (
+    <table className="bucket-totals">
+      <thead>
+        <tr>
+          <th scope="col">All accounts</th>
+          <th scope="col" className="amount">
+            In accounts
+          </th>
+          <th scope="col" className="amount">
+            Worksheet says
+          </th>
+          <th scope="col" className="amount">
+            Difference
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {lines.map((line) => {
+          const delta = line.actual - line.target;
+          return (
+            <tr key={line.label}>
+              <th scope="row">{line.label}</th>
+              <td className="amount">{formatCentsWhole(line.actual)}</td>
+              <td className="amount">{formatCentsWhole(line.target)}</td>
+              <td className="amount">
+                {delta === 0 ? (
+                  <span className="muted">matches</span>
+                ) : (
+                  `${delta > 0 ? '+' : '\u2212'}${formatCentsWhole(Math.abs(delta))}`
+                )}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 

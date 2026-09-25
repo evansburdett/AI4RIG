@@ -12,6 +12,7 @@
     "apps/web",
     "apps/desktop",
     "packages/engine",
+    "packages/shared",
     "packages/db"
   ],
   "scripts": {

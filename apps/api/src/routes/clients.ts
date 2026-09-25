@@ -1,44 +1,72 @@
-import { Router } from 'express';
 import type { Db } from '@ai4rig/db';
+import { Router } from 'express';
 
-import { z } from 'zod';
+import {
+  createClientCase,
+  deleteClientCase,
+  getClientCase,
+  listClientSummaries,
+  saveClientCase,
+} from '../repositories/clientCases.js';
+import { clientCaseSchema, parseOr400 } from '../validation.js';
 
-const clientIntakeSchema = z.object({
-  accountData: z.record(z.string(), z.unknown()),
-  incomeCents: z.number().int(),
-  spendingCents: z.number().int(),
-});
-
+/**
+ * Client cases (US-01 intake, US-02 generated numbers, US-03 switching, US-04
+ * saved cases). Cases are addressed by client number, never by the database
+ * row id, so the number the advisor sees is the number in the URL.
+ *
+ *   GET    /api/clients                  list, for the switcher
+ *   GET    /api/clients/:clientNumber    one whole case
+ *   POST   /api/clients                  new blank case; the server picks the number
+ *   PUT    /api/clients/:clientNumber    save the whole case
+ *   DELETE /api/clients/:clientNumber    delete it and everything under it
+ */
 export function createClientsRouter(db: Db): Router {
   const router = Router();
 
   router.get('/api/clients', (_req, res) => {
-    const rows = db.prepare('SELECT id FROM clients ORDER BY id').all();
-    res.json(rows);
+    res.json(listClientSummaries(db));
   });
 
-  router.get('/api/clients/:id', (req, res) => {
-    const client = db
-      .prepare('SELECT * FROM clients WHERE id = ?')
-      .get(req.params.id);
+  router.get('/api/clients/:clientNumber', (req, res) => {
+    const clientCase = getClientCase(db, req.params.clientNumber);
+    if (clientCase === null) {
+      res.status(404).json({ error: `No client case numbered ${req.params.clientNumber}` });
+      return;
+    }
+    res.json(clientCase);
+  });
 
-    if (!client) {
-      res.status(404).json({ error: 'Client not found' });
+  router.post('/api/clients', (_req, res) => {
+    res.status(201).json(createClientCase(db));
+  });
+
+  router.put('/api/clients/:clientNumber', (req, res) => {
+    const input = parseOr400(clientCaseSchema, req.body, res);
+    if (input === null) return;
+
+    if (input.clientNumber !== req.params.clientNumber) {
+      res.status(400).json({
+        error: `Body is case ${input.clientNumber} but the URL is case ${req.params.clientNumber}`,
+      });
       return;
     }
 
-    res.json(client);
-  });
-
-
-  router.post('/api/clients', (req, res) => {
-    const parsed = clientIntakeSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ error: parsed.error.flatten() });
+    const saved = saveClientCase(db, input);
+    if (saved === null) {
+      res.status(404).json({ error: `No client case numbered ${req.params.clientNumber}` });
       return;
     }
-    res.json({ received: parsed.data });
+    res.json(saved);
   });
-  
+
+  router.delete('/api/clients/:clientNumber', (req, res) => {
+    if (!deleteClientCase(db, req.params.clientNumber)) {
+      res.status(404).json({ error: `No client case numbered ${req.params.clientNumber}` });
+      return;
+    }
+    res.status(204).end();
+  });
+
   return router;
 }

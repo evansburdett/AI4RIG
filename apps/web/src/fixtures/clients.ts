@@ -1,10 +1,28 @@
 /**
- * Two sample cases. Client numbers and initials are invented; the figures on
- * case 1042 come from RIG's workbook so the UI can be checked against it.
+ * Two sample cases for the front-end unit tests. Client numbers and initials
+ * are invented; the figures on case 1042 come from RIG's workbook.
+ *
+ * The running app does not use these; it reads the same two cases from the
+ * database, loaded by packages/db/seed/0002_sample_cases.sql. Keep the two in
+ * step if you change either.
  */
 
-import type { ClientCase } from '../domain/types.js';
+import type { Account, ClientCase } from '../domain/types.js';
 
+/** Three sleeves in bucket order. `[amountDollars, modelId]` for Now, Soon, Later. */
+function sleeves(
+  now: [number, string | null],
+  soon: [number, string | null],
+  later: [number, string | null],
+): Account['sleeves'] {
+  return [
+    { bucket: 'NOW', amountCents: now[0] * 100, modelId: now[1] },
+    { bucket: 'SOON', amountCents: soon[0] * 100, modelId: soon[1] },
+    { bucket: 'LATER', amountCents: later[0] * 100, modelId: later[1] },
+  ];
+}
+
+/** Buckets land exactly on the workbook's $190,000 / $914,700 / $1,895,300. */
 const WORKBOOK_CASE: ClientCase = {
   clientNumber: '1042',
   initials: 'A.B.',
@@ -15,36 +33,31 @@ const WORKBOOK_CASE: ClientCase = {
   ],
   moneyCyclePhase: 'DISTRIBUTION',
   lifeStage: 'DISTRIBUTION_GO_GO',
+  taxBracketPct: 22,
   accounts: [
     {
-      id: 'acct-1',
+      id: '9001',
       accountType: 'JOINT',
+      taxFunnel: 'TAXABLE',
       maskedNumber: '4417',
-      holdings: [
-        { id: 'h-1', tickerSymbol: 'SGOV', marketValueCents: 190_000_00, assignedBucket: 'NOW' },
-        { id: 'h-2', tickerSymbol: 'BND', marketValueCents: 400_000_00, assignedBucket: 'SOON' },
-        { id: 'h-3', tickerSymbol: 'VTI', marketValueCents: 610_000_00, assignedBucket: 'LATER' },
-      ],
+      balanceCents: 1_200_000_00,
+      sleeves: sleeves([190_000, '9001'], [400_000, '9002'], [610_000, '9003']),
     },
     {
-      id: 'acct-2',
+      id: '9002',
       accountType: 'IRA',
+      taxFunnel: 'PRE_TAX',
       maskedNumber: '8830',
-      holdings: [
-        { id: 'h-4', tickerSymbol: 'SHY', marketValueCents: 314_700_00, assignedBucket: 'SOON' },
-        { id: 'h-5', tickerSymbol: 'VOO', marketValueCents: 985_300_00, assignedBucket: 'LATER' },
-        // Parked in Soon against its LATER default, to exercise the override badge.
-        { id: 'h-6', tickerSymbol: 'VXUS', marketValueCents: 200_000_00, assignedBucket: 'SOON' },
-      ],
+      balanceCents: 1_500_000_00,
+      sleeves: sleeves([0, null], [514_700, '9002'], [985_300, '9003']),
     },
     {
-      id: 'acct-3',
+      id: '9003',
       accountType: 'ROTH_IRA',
+      taxFunnel: 'TAX_FREE',
       maskedNumber: '2291',
-      holdings: [
-        { id: 'h-7', tickerSymbol: 'GLD', marketValueCents: 100_000_00, assignedBucket: 'SOON' },
-        { id: 'h-8', tickerSymbol: 'VNQ', marketValueCents: 200_000_00, assignedBucket: 'LATER' },
-      ],
+      balanceCents: 300_000_00,
+      sleeves: sleeves([0, null], [0, null], [300_000, '9004']),
     },
   ],
   cashOnHandCents: 85_000_00,
@@ -70,36 +83,34 @@ const WORKBOOK_CASE: ClientCase = {
   updatedAt: '2026-09-15T14:02:00.000Z',
 };
 
-/** A second case, early in the cycle. */
+/**
+ * An early accumulator, deliberately off target: $15,000 of the Single
+ * account is in no bucket, and the Roth's Soon money has no model.
+ */
 const ACCUMULATOR_CASE: ClientCase = {
   clientNumber: '2317',
   initials: 'C.D.',
   planNumber: 1,
-  people: [
-    { role: 'CLIENT', birthYear: 1988, healthConcern: 'NONE', lifeExpectancyAge: 90 },
-  ],
+  people: [{ role: 'CLIENT', birthYear: 1988, healthConcern: 'NONE', lifeExpectancyAge: 90 }],
   moneyCyclePhase: 'ACCUMULATION',
   lifeStage: 'ACCUMULATION_PEAK_EARNINGS',
+  taxBracketPct: 32,
   accounts: [
     {
-      id: 'acct-4',
+      id: '9004',
       accountType: 'SINGLE',
+      taxFunnel: 'TAXABLE',
       maskedNumber: '1005',
-      holdings: [
-        { id: 'h-9', tickerSymbol: 'BIL', marketValueCents: 25_000_00, assignedBucket: 'NOW' },
-        { id: 'h-10', tickerSymbol: 'VTI', marketValueCents: 240_000_00, assignedBucket: 'LATER' },
-        // Not in the placeholder universe — exercises the unknown-symbol notice.
-        { id: 'h-11', tickerSymbol: 'ZZZZ', marketValueCents: 15_000_00, assignedBucket: 'LATER' },
-      ],
+      balanceCents: 280_000_00,
+      sleeves: sleeves([25_000, '9001'], [0, null], [240_000, '9003']),
     },
     {
-      id: 'acct-5',
+      id: '9005',
       accountType: 'ROTH_IRA',
+      taxFunnel: 'TAX_FREE',
       maskedNumber: '7742',
-      holdings: [
-        { id: 'h-12', tickerSymbol: 'TIP', marketValueCents: 60_000_00, assignedBucket: 'SOON' },
-        { id: 'h-13', tickerSymbol: 'VOO', marketValueCents: 180_000_00, assignedBucket: 'LATER' },
-      ],
+      balanceCents: 240_000_00,
+      sleeves: sleeves([0, null], [60_000, null], [180_000, '9004']),
     },
   ],
   cashOnHandCents: 40_000_00,

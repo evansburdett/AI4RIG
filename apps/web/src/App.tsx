@@ -3,11 +3,19 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, ApiError } from './api.js';
 import { Callout } from './components/Callout.js';
 import { ClientSwitcher } from './components/ClientSwitcher.js';
-import type { BucketDefinition, ClientCase, ClientSummary, Ticker } from './domain/types.js';
-import { hrefFor, useRoute, type Screen } from './routing.js';
+import { ConnectionStatus } from './components/ConnectionStatus.js';
+import type {
+  BucketDefinition,
+  ClientCase,
+  ClientSummary,
+  ModelPortfolio,
+  Ticker,
+} from './domain/types.js';
+import { hrefFor, isReferenceScreen, useRoute, type Screen } from './routing.js';
 import { AssetClassBreakdown } from './screens/AssetClassBreakdown.js';
 import { BucketAssignments } from './screens/BucketAssignments.js';
 import { ClientProfile } from './screens/ClientProfile.js';
+import { Models } from './screens/Models.js';
 
 /**
  * Shell: reference data, the open case, and which screen is showing.
@@ -20,25 +28,30 @@ export function App() {
 
   const [clients, setClients] = useState<readonly ClientSummary[]>([]);
   const [tickers, setTickers] = useState<readonly Ticker[]>([]);
+  const [models, setModels] = useState<readonly ModelPortfolio[]>([]);
   const [definitions, setDefinitions] = useState<readonly BucketDefinition[]>([]);
   const [referenceError, setReferenceError] = useState<string | null>(null);
 
-  /** Where to return from the ticker screen, which belongs to no client. */
+  /** Where to return from the model and ticker screens, which belong to no client. */
   const [lastClientNumber, setLastClientNumber] = useState<string | null>(null);
 
   const [draft, setDraft] = useState<ClientCase | null>(null);
   const [saved, setSaved] = useState<ClientCase | null>(null);
+  /** The open case could not be loaded. Replaces the screen. */
   const [caseError, setCaseError] = useState<string | null>(null);
+  /** A save, create, or delete failed. Shown above the screen; the draft is kept. */
+  const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([api.listClients(), api.listTickers(), api.listBucketDefinitions()])
-      .then(([clientList, tickerList, definitionList]) => {
+    Promise.all([api.listClients(), api.listTickers(), api.listModels(), api.listBucketDefinitions()])
+      .then(([clientList, tickerList, modelList, definitionList]) => {
         if (cancelled) return;
         setClients(clientList);
         setTickers(tickerList);
+        setModels(modelList);
         setDefinitions(definitionList);
       })
       .catch((error: unknown) => {
@@ -56,7 +69,7 @@ export function App() {
 
   // Land where the advisor last was, or on the first client.
   useEffect(() => {
-    if (route.clientNumber !== null || route.screen === 'tickers') return;
+    if (route.clientNumber !== null || isReferenceScreen(route.screen)) return;
     const target = lastClientNumber ?? clients[0]?.clientNumber;
     if (target !== undefined) navigate({ screen: 'profile', clientNumber: target });
   }, [clients, lastClientNumber, route.clientNumber, route.screen, navigate]);
@@ -67,6 +80,7 @@ export function App() {
 
     let cancelled = false;
     setCaseError(null);
+    setActionError(null);
 
     api
       .getClient(clientNumber)
@@ -93,7 +107,7 @@ export function App() {
   const selectClient = useCallback(
     (clientNumber: string) => {
       // Stay on the screen the advisor is reading.
-      const screen: Screen = route.screen === 'tickers' ? 'profile' : route.screen;
+      const screen: Screen = isReferenceScreen(route.screen) ? 'profile' : route.screen;
       navigate({ screen, clientNumber });
     },
     [navigate, route.screen],
@@ -102,6 +116,7 @@ export function App() {
   const save = useCallback(async () => {
     if (draft === null) return;
     setBusy(true);
+    setActionError(null);
     try {
       const result = await api.saveClient(draft);
       setSaved(result);
@@ -112,7 +127,7 @@ export function App() {
         ),
       );
     } catch (error: unknown) {
-      setCaseError(describeError(error));
+      setActionError(describeError(error));
     } finally {
       setBusy(false);
     }
@@ -121,6 +136,7 @@ export function App() {
   const createClient = useCallback(async () => {
     if (dirty && !window.confirm('Discard unsaved changes to the open case?')) return;
     setBusy(true);
+    setActionError(null);
     try {
       const created = await api.createClient();
       setClients((current) =>
@@ -130,7 +146,7 @@ export function App() {
       );
       navigate({ screen: 'profile', clientNumber: created.clientNumber });
     } catch (error: unknown) {
-      setCaseError(describeError(error));
+      setActionError(describeError(error));
     } finally {
       setBusy(false);
     }
@@ -144,6 +160,7 @@ export function App() {
     if (!confirmed) return;
 
     setBusy(true);
+    setActionError(null);
     try {
       await api.deleteClient(activeClientNumber);
       const remaining = clients.filter((c) => c.clientNumber !== activeClientNumber);
@@ -158,20 +175,55 @@ export function App() {
           : { screen: 'profile', clientNumber: next },
       );
     } catch (error: unknown) {
-      setCaseError(describeError(error));
+      setActionError(describeError(error));
     } finally {
       setBusy(false);
     }
   }, [activeClientNumber, clients, navigate]);
 
   const saveTicker = useCallback(async (ticker: Ticker) => {
-    const result = await api.saveTicker(ticker);
-    setTickers((current) => current.map((t) => (t.symbol === result.symbol ? result : t)));
+    try {
+      const result = await api.saveTicker(ticker);
+      setTickers((current) => current.map((t) => (t.symbol === result.symbol ? result : t)));
+      setReferenceError(null);
+    } catch (error: unknown) {
+      setReferenceError(describeError(error));
+    }
   }, []);
 
+  /** Throws on failure so the model editor can show the message next to the model. */
+  const saveModel = useCallback(async (model: ModelPortfolio): Promise<ModelPortfolio> => {
+    const result = await api.saveModel(model);
+    setModels((current) =>
+      model.id === '' ? [...current, result] : current.map((m) => (m.id === result.id ? result : m)),
+    );
+    return result;
+  }, []);
+
+  const deleteModel = useCallback(
+    async (id: string): Promise<void> => {
+      await api.deleteModel(id);
+      setModels((current) => current.filter((m) => m.id !== id));
+      // The database has already cleared this model from every account that
+      // used it. Do the same to the open case, keeping any unsaved edits and
+      // keeping draft === saved when there were none.
+      const drop = (c: ClientCase | null) => (c === null ? null : withoutModel(c, id));
+      const wasClean = draft === saved;
+      const nextSaved = drop(saved);
+      setSaved(nextSaved);
+      setDraft(wasClean ? nextSaved : drop(draft));
+    },
+    [draft, saved],
+  );
+
   const saveDefinition = useCallback(async (definition: BucketDefinition) => {
-    const result = await api.saveBucketDefinition(definition);
-    setDefinitions((current) => current.map((d) => (d.bucket === result.bucket ? result : d)));
+    try {
+      const result = await api.saveBucketDefinition(definition);
+      setDefinitions((current) => current.map((d) => (d.bucket === result.bucket ? result : d)));
+      setReferenceError(null);
+    } catch (error: unknown) {
+      setReferenceError(describeError(error));
+    }
   }, []);
 
   const today = useMemo(() => new Date(), []);
@@ -209,6 +261,12 @@ export function App() {
             Breakdown
           </a>
           <a
+            href={hrefFor({ screen: 'models', clientNumber: null })}
+            aria-current={route.screen === 'models' ? 'page' : undefined}
+          >
+            Models
+          </a>
+          <a
             href={hrefFor({ screen: 'tickers', clientNumber: null })}
             aria-current={route.screen === 'tickers' ? 'page' : undefined}
           >
@@ -216,7 +274,7 @@ export function App() {
           </a>
         </nav>
 
-        {route.screen !== 'tickers' && (
+        {!isReferenceScreen(route.screen) && (
           <div className="save-bar">
             {dirty && <span className="muted">Unsaved changes</span>}
             <button
@@ -239,21 +297,22 @@ export function App() {
         )}
       </header>
 
-      {api.usingFixtures && (
-        <p className="fixture-banner">
-          Fixture mode — sample data, not the API. Changes are lost on reload. Set{' '}
-          <code>VITE_USE_FIXTURES=false</code> once the endpoints exist.
-        </p>
-      )}
-
       <main>
         {referenceError !== null && (
-          <Callout tone="warning" title="Could not load reference data">
+          <Callout tone="warning" title="Could not load or save reference data">
             {referenceError}
           </Callout>
         )}
 
-        {route.screen === 'tickers' ? (
+        {actionError !== null && (
+          <Callout tone="warning" title="That did not go through">
+            {actionError}
+          </Callout>
+        )}
+
+        {route.screen === 'models' ? (
+          <Models models={models} tickers={tickers} onSave={saveModel} onDelete={deleteModel} />
+        ) : route.screen === 'tickers' ? (
           <BucketAssignments
             tickers={tickers}
             definitions={definitions}
@@ -269,13 +328,29 @@ export function App() {
         ) : draft === null ? (
           <p className="empty">Loading…</p>
         ) : route.screen === 'breakdown' ? (
-          <AssetClassBreakdown clientCase={draft} tickers={tickers} />
+          <AssetClassBreakdown clientCase={draft} tickers={tickers} models={models} />
         ) : (
-          <ClientProfile clientCase={draft} tickers={tickers} onChange={setDraft} today={today} />
+          <ClientProfile clientCase={draft} models={models} onChange={setDraft} today={today} />
         )}
       </main>
+
+      <footer className="app-footer">
+        <ConnectionStatus />
+      </footer>
     </div>
   );
+}
+
+function withoutModel(clientCase: ClientCase, modelId: string): ClientCase {
+  return {
+    ...clientCase,
+    accounts: clientCase.accounts.map((account) => ({
+      ...account,
+      sleeves: account.sleeves.map((sleeve) =>
+        sleeve.modelId === modelId ? { ...sleeve, modelId: null } : sleeve,
+      ),
+    })),
+  };
 }
 
 function toSummary(c: ClientCase): ClientSummary {

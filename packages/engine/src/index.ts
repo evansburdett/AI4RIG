@@ -1,8 +1,7 @@
 /**
- * Placeholder module. The real bucket-planning calculations are the team's
- * work — see README.md. What is here proves the workspace builds, type-checks,
- * and runs tests, and it fixes the one convention every future function
- * depends on: money is a whole number of cents.
+ * Deterministic calculations: the same inputs always give the same answer.
+ * No database, no network, no clock (ADR 0005). Money is a whole number of
+ * cents everywhere (ADR 0004).
  */
 
 /**
@@ -47,3 +46,5 @@ export function addCents(...amounts: Cents[]): Cents {
   assertCents(total, 'total');
   return total;
 }
+
+export { splitByWeights, WHOLE_BPS, type Share, type Weighted } from './split.js';

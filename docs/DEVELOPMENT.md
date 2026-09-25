@@ -8,6 +8,7 @@ identical.
 - [First-time setup — Windows](#first-time-setup--windows)
 - [Before you start work](#before-you-start-work)
 - [End of day](#end-of-day)
+- [How the code fits together](#how-the-code-fits-together)
 - [Command reference](#command-reference)
 - [Adding a migration](#adding-a-migration)
 - [Troubleshooting](#troubleshooting)
@@ -123,8 +124,8 @@ builds your database, and runs `npm run doctor` to confirm all of it worked.
 npm run dev
 ```
 
-Open <http://localhost:5173>. You should see "Front end, API, and database are
-connected" with your database path and a migration count.
+Open <http://localhost:5173>. You should land on sample case 1042, with
+"Connected", your database path, and a migration count in the footer.
 
 If you do not, run `npm run doctor` — it prints what is wrong and the exact
 command to fix it.
@@ -270,6 +271,123 @@ built the wrong thing. A PR needs one teammate's approval and is squash-merged.
 **Never push to `main` directly.** Every change goes through a branch and a
 pull request. That is not ceremony — it is what stops `main` from breaking for
 three other people while you are at lunch.
+
+---
+
+## How the code fits together
+
+### One request, start to finish
+
+Saving a client case:
+
+1. `apps/web/src/App.tsx` calls `api.saveClient(draft)`.
+2. `apps/web/src/api.ts` sends `PUT /api/clients/1042` with the whole case as
+   JSON. This is the only file in the web app that knows where the API is.
+3. `apps/api/src/routes/clients.ts` parses the body with `clientCaseSchema`
+   from `apps/api/src/validation.ts`. A bad body is a `400` listing every
+   problem, and the web app shows that message above the form.
+4. The route calls `saveClientCase` in `apps/api/src/repositories/clientCases.ts`,
+   which writes the case and its child rows in one transaction.
+5. The route answers with the case as it now is in the database, and the web
+   app replaces its draft with that.
+
+The shapes on both ends (`ClientCase`, `Ticker`, ...) are defined once, in
+`packages/shared/src/index.ts`.
+
+### Endpoints
+
+| Method and path | What it does |
+|---|---|
+| `GET /api/health` | Database path and migration count. The web app's footer shows it. |
+| `GET /api/clients` | Every case, as `{ clientNumber, initials, lifeStage, updatedAt }` |
+| `POST /api/clients` | New blank case. The server picks the next client number. |
+| `GET /api/clients/:clientNumber` | One whole case: people, accounts with their Now/Soon/Later amounts and models, Now and Soon inputs |
+| `PUT /api/clients/:clientNumber` | Save the whole case |
+| `DELETE /api/clients/:clientNumber` | Delete the case and everything under it |
+| `GET /api/tickers` | The ticker universe |
+| `PUT /api/tickers/:symbol` | Add or update a ticker |
+| `DELETE /api/tickers/:symbol` | Remove a ticker |
+| `GET /api/models` | Every model portfolio with its tickers and weights |
+| `POST /api/models` | New model (weights must add up to 100%) |
+| `PUT /api/models/:id` | Edit a model |
+| `DELETE /api/models/:id` | Delete a model. Accounts using it keep the money, with no model |
+| `GET /api/bucket-definitions` | Now, Soon, Later |
+| `PUT /api/bucket-definitions/:bucket` | Edit one bucket's label, horizon, and wording |
+
+`apps/api/src/routes.test.ts` has a test for each, and is the quickest way to
+see what a request and response look like.
+
+### The tables
+
+| Table | One row per |
+|---|---|
+| `client_cases` | Case. Its number, life stage, cash figures, and the single-value Now and Soon inputs |
+| `people` | Client or spouse on a case (birth year only, never a date) |
+| `accounts` | Account on a case: type, tax funnel, balance, last four digits only |
+| `account_sleeves` | Account and bucket: how much of the balance is in Now, Soon, or Later, and which model it follows. Always three per account |
+| `model_portfolios` | Model: a name, a bucket, and optionally the tax funnel it is meant for |
+| `model_lines` | Ticker in a model, with its weight in basis points (100 = 1%) |
+| `planned_expenses` | Now "large upcoming expenses" and Soon "miscellaneous costs" lines |
+| `gap_entries` | Social Security bridge, healthcare gap, and forced withdrawal lines |
+| `tickers` | Symbol in the approved universe, with its default bucket |
+| `bucket_definitions` | Bucket (always exactly three rows) |
+
+There is no holdings table. RIG's flow is: type the account balance, split it
+across the buckets, pick a model for each, and let the app work out the
+symbols and amounts. Those positions are computed from the model every time
+(`apps/web/src/domain/breakdown.ts`, using `splitByWeights` from
+`packages/engine`), never stored.
+
+Saving a case rewrites its child rows, so account ids change on every save.
+Nothing should store one.
+
+### Recipe: add a field to a client case
+
+Say RIG wants a "risk tolerance" on each case.
+
+1. **Migration.** New file `packages/db/migrations/0003_add_risk_tolerance.sql`:
+   `ALTER TABLE client_cases ADD COLUMN risk_tolerance TEXT NOT NULL DEFAULT 'MODERATE';`
+   Then `npm run db:reset`.
+2. **Type.** Add `readonly riskTolerance: ...` to `ClientCase` in
+   `packages/shared/src/index.ts`. Run `npm run typecheck`: it now lists every
+   place that builds a `ClientCase` and is missing the field. Fix each one.
+3. **Validation.** Add it to `clientCaseSchema` in `apps/api/src/validation.ts`.
+4. **Repository.** Read it in `getClientCase` and write it in the `UPDATE` in
+   `saveClientCase` (`apps/api/src/repositories/clientCases.ts`).
+5. **Screen.** Add a field in `apps/web/src/screens/ClientProfile.tsx` that
+   calls `patch({ riskTolerance })`.
+6. **Test.** Extend the save test in `apps/api/src/routes.test.ts` so it round
+   trips the new value. `npm run check`.
+
+A new list under a case (like another kind of worksheet line) is the same
+steps, with a new table that has `client_case_id ... REFERENCES client_cases (id) ON DELETE CASCADE`
+and a delete-and-reinsert block in `saveClientCase`.
+
+### Recipe: add an endpoint
+
+1. A function in `apps/api/src/repositories/` that does the SQL.
+2. A zod schema in `apps/api/src/validation.ts` if it takes a body.
+3. A route in `apps/api/src/routes/`. Use `parseOr400`. If it is a new file,
+   mount the router in `apps/api/src/app.ts`.
+4. A method on `api` in `apps/web/src/api.ts`.
+5. A test in `apps/api/src/routes.test.ts`.
+
+### Where calculations go
+
+There is no allocation algorithm to invent. RIG confirmed the bucket targets
+come straight out of their worksheet inputs, and the rest is arithmetic and
+lookups:
+
+- **Bucket targets**: `apps/web/src/domain/worksheet.ts`, a line-for-line copy
+  of RIG's Inputs tab, with tests pinned to their numbers.
+- **Positions from a model**: `splitByWeights` in `packages/engine`, which
+  splits a dollar amount across weights to the exact cent.
+- **Breakdown, drift, per-account view**: `apps/web/src/domain/breakdown.ts`.
+
+The worksheet and breakdown code runs in the browser today because it only
+needs the case on screen. It is pure, so moving it into `packages/engine` is a
+file move, and the API can then call the same functions when it generates the
+client deliverable (US-12).
 
 ---
 
@@ -523,12 +641,13 @@ The build is slow — several minutes — and prints a lot. Let it finish.
 
 ### The web page says "API unreachable"
 
-The front end loaded but could not reach the API.
+The front end loaded but could not reach the API. The footer of every page
+shows this.
 
 1. Is the API running? `npm run dev` starts both; `npm run dev:web` starts only
    the web app.
 2. Does `VITE_API_BASE_URL` in `.env` match where the API is actually
-   listening? The health page prints what the API thinks it is bound to.
+   listening? `/api/health` prints what the API thinks it is bound to.
 3. **Vite reads `.env` only at startup.** If you edited it, restart
    `npm run dev`.
 4. Check the API's own output — it prints its address on boot, and the browser

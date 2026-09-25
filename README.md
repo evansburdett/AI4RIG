@@ -14,8 +14,8 @@ npm run setup
 npm run dev
 ```
 
-Then open <http://localhost:5173>. You should see the API, the database, and
-the front end reporting that they are connected.
+Then open <http://localhost:5173>. You should land on sample case 1042, with
+"Connected" and your database path in the footer.
 
 Something not working? `npm run doctor` checks your machine and prints the
 exact fix.
@@ -27,8 +27,12 @@ Full instructions, including Windows: **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.m
 ```
 apps/web           React + Vite front end, port 5173 — the primary dev target
 apps/api           Express API, port 3001 — owns the database
+  src/routes/        One file per resource: validate, call a repository, respond
+  src/repositories/  All the SQL
+  src/validation.ts  zod schemas for every request body
 apps/desktop       Electron shell — empty until packaging, late in the project
-packages/engine    Pure bucket calculations, no I/O
+packages/shared    Domain types shared by the API and the web app (the API contract)
+packages/engine    Deterministic calculations (integer-cents money, model splits), no I/O
 packages/db        SQLite connection, migration runner, seed loader
   migrations/      Numbered .sql files — the shared schema
   seed/            Sample data (no real client data, ever)
@@ -56,7 +60,11 @@ All from the repo root. Full table in
 
 The front end talks to the API over HTTP. The API owns the SQLite database and
 calls the engine. The engine is pure functions — the API reads the data and
-passes it in.
+passes it in. Both sides use the types in `packages/shared`, so changing a
+shape there makes `npm run typecheck` point at every place that needs to follow.
+
+Walkthrough of a request, the endpoint list, and a recipe for adding a field
+end to end: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#how-the-code-fits-together).
 
 That HTTP boundary is the same one the shipped product uses: at RIG, one host
 machine runs the API with `API_HOST=0.0.0.0` and advisor workstations connect

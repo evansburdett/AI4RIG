@@ -49,15 +49,15 @@ export function BucketAssignments({
       </header>
 
       <Callout tone="warning" title="Placeholder investment universe">
-        RIG has not sent the Common Investments list yet. These ten symbols are not the firm&rsquo;s
-        approved set. Edits are session-only until the ticker endpoint lands (US-06).
+        RIG has not sent the Common Investments list yet. These symbols come from the sample seed
+        data and are not the firm&rsquo;s approved set (US-06).
       </Callout>
 
       <section className="card">
         <h3>Default bucket by ticker</h3>
         <p className="muted">
-          Applied to <em>new</em> holdings. Holdings already placed keep the bucket the advisor
-          chose for them.
+          Which bucket each symbol normally belongs in. A model that uses a symbol in a different
+          bucket is flagged on the Models screen, not blocked.
         </p>
 
         <div className="field">
