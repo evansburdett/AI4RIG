@@ -30,10 +30,19 @@ INSERT OR REPLACE INTO client_cases (
      0, 10, 7500000,
      '2026-09-11T09:20:00.000Z', '2026-09-11T09:20:00.000Z');
 
-INSERT OR REPLACE INTO people (id, client_case_id, role, birth_year, health_concern, life_expectancy_age) VALUES
-    (9001, 9001, 'CLIENT', 1960, 'NONE',  88),
-    (9002, 9001, 'SPOUSE', 1963, 'HEART', 85),
-    (9003, 9002, 'CLIENT', 1988, 'NONE',  90);
+INSERT OR REPLACE INTO people (id, client_case_id, role, birth_year, health_concern_other, life_expectancy_age) VALUES
+    (9001, 9001, 'CLIENT', 1960, '',                      88),
+    (9002, 9001, 'SPOUSE', 1963, 'Managed hypertension',  85),
+    (9003, 9002, 'CLIENT', 1988, '',                      90);
+
+-- US-27: a person carries any combination of concerns, so these are rows
+-- rather than a column. No rows means nothing reported. The spouse on case
+-- 1042 has two, one of them the free-text OTHER above.
+-- Re-running the seed replaces the people first, which cascades these away,
+-- so they have to be inserted after.
+INSERT OR REPLACE INTO person_health_concerns (person_id, concern) VALUES
+    (9002, 'HEART'),
+    (9002, 'OTHER');
 
 INSERT OR REPLACE INTO accounts (id, client_case_id, position, account_type, tax_funnel, masked_number, balance_cents) VALUES
     (9001, 9001, 0, 'JOINT',    'TAXABLE',  '4417', 120000000),

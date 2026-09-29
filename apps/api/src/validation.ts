@@ -28,12 +28,25 @@ const duration = z.number().finite().min(0);
 
 const bucket = z.enum(BUCKETS);
 
-const person = z.object({
-  role: z.enum(['CLIENT', 'SPOUSE']),
-  birthYear: z.int().min(1900).max(2100).nullable(),
-  healthConcern: z.enum(HEALTH_CONCERNS),
-  lifeExpectancyAge: z.int().min(0).max(130).nullable(),
-});
+const person = z
+  .object({
+    role: z.enum(['CLIENT', 'SPOUSE']),
+    birthYear: z.int().min(1900).max(2100).nullable(),
+    healthConcerns: z
+      .array(z.enum(HEALTH_CONCERNS))
+      .refine(
+        (concerns) => new Set(concerns).size === concerns.length,
+        'A health concern can only be selected once',
+      ),
+    healthConcernOther: z.string().trim().max(200),
+    lifeExpectancyAge: z.int().min(0).max(130).nullable(),
+  })
+  // Free text with no OTHER ticked describes nothing, and would sit in the
+  // database unreachable from the screen that wrote it.
+  .refine((p) => p.healthConcernOther === '' || p.healthConcerns.includes('OTHER'), {
+    error: 'Describe an "other" health concern only when Other is selected',
+    path: ['healthConcernOther'],
+  });
 
 const taxFunnel = z.enum(TAX_FUNNELS);
 

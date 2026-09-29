@@ -54,7 +54,6 @@ export const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
 };
 
 export const HEALTH_CONCERN_LABELS: Record<HealthConcern, string> = {
-  NONE: 'None reported',
   CANCER: 'Cancer',
   STROKE: 'Stroke',
   HEART: 'Heart',

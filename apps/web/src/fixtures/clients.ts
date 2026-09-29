@@ -28,8 +28,15 @@ const WORKBOOK_CASE: ClientCase = {
   initials: 'A.B.',
   planNumber: 1,
   people: [
-    { role: 'CLIENT', birthYear: 1960, healthConcern: 'NONE', lifeExpectancyAge: 88 },
-    { role: 'SPOUSE', birthYear: 1963, healthConcern: 'HEART', lifeExpectancyAge: 85 },
+    { role: 'CLIENT', birthYear: 1960, healthConcerns: [], healthConcernOther: '', lifeExpectancyAge: 88 },
+    {
+      role: 'SPOUSE',
+      birthYear: 1963,
+      // Two concerns plus a description, to exercise US-27 on the profile screen.
+      healthConcerns: ['HEART', 'OTHER'],
+      healthConcernOther: 'Managed hypertension',
+      lifeExpectancyAge: 85,
+    },
   ],
   moneyCyclePhase: 'DISTRIBUTION',
   lifeStage: 'DISTRIBUTION_GO_GO',
@@ -91,7 +98,9 @@ const ACCUMULATOR_CASE: ClientCase = {
   clientNumber: '2317',
   initials: 'C.D.',
   planNumber: 1,
-  people: [{ role: 'CLIENT', birthYear: 1988, healthConcern: 'NONE', lifeExpectancyAge: 90 }],
+  people: [
+    { role: 'CLIENT', birthYear: 1988, healthConcerns: [], healthConcernOther: '', lifeExpectancyAge: 90 },
+  ],
   moneyCyclePhase: 'ACCUMULATION',
   lifeStage: 'ACCUMULATION_PEAK_EARNINGS',
   taxBracketPct: 32,
