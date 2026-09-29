@@ -94,6 +94,52 @@ export function SelectField<T extends string>({
   );
 }
 
+interface CheckboxGroupFieldProps<T extends string> {
+  legend: string;
+  values: readonly T[];
+  options: readonly T[];
+  labels: Record<T, string>;
+  onChange: (values: readonly T[]) => void;
+  /** Shown when nothing is ticked, so an empty group does not read as unanswered. */
+  emptyHint?: string;
+}
+
+/**
+ * Several options at once. The value handed back is always in `options` order,
+ * whatever order the advisor ticked the boxes in, so the same selection is
+ * always the same array.
+ */
+export function CheckboxGroupField<T extends string>({
+  legend,
+  values,
+  options,
+  labels,
+  onChange,
+  emptyHint,
+}: CheckboxGroupFieldProps<T>) {
+  return (
+    <fieldset className="field checkbox-group">
+      <legend>{legend}</legend>
+      {options.map((option) => {
+        const checked = values.includes(option);
+        return (
+          <label key={option} className="checkbox">
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={() =>
+                onChange(options.filter((o) => (o === option ? !checked : values.includes(o))))
+              }
+            />
+            {labels[option]}
+          </label>
+        );
+      })}
+      {values.length === 0 && emptyHint !== undefined && <p className="field-hint">{emptyHint}</p>}
+    </fieldset>
+  );
+}
+
 /** A value the system works out rather than one the advisor types. */
 export function DerivedField({
   label,

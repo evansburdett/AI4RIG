@@ -6,7 +6,7 @@ import type { Person } from './types.js';
 const TODAY = new Date('2026-09-17T00:00:00Z');
 
 function person(birthYear: number | null, lifeExpectancyAge: number | null): Person {
-  return { role: 'CLIENT', birthYear, healthConcern: 'NONE', lifeExpectancyAge };
+  return { role: 'CLIENT', birthYear, healthConcerns: [], healthConcernOther: '', lifeExpectancyAge };
 }
 
 describe('ageFromBirthYear', () => {

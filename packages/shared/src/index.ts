@@ -55,7 +55,12 @@ export const DEFAULT_TAX_FUNNEL: Record<AccountType, TaxFunnel> = {
 /** Federal marginal brackets, as whole percents. Pending RIG's version of the profile sheet. */
 export const TAX_BRACKETS = [10, 12, 22, 24, 32, 35, 37] as const;
 
-export const HEALTH_CONCERNS = ['NONE', 'CANCER', 'STROKE', 'HEART', 'OTHER'] as const;
+/**
+ * The concerns an advisor can tick for one person (US-27). A person carries any
+ * combination of them, so there is no 'NONE' — an empty list is how "nothing
+ * reported" is written down.
+ */
+export const HEALTH_CONCERNS = ['CANCER', 'STROKE', 'HEART', 'OTHER'] as const;
 export type HealthConcern = (typeof HEALTH_CONCERNS)[number];
 
 export const ASSET_CLASSES = [
@@ -71,7 +76,14 @@ export interface Person {
   readonly role: 'CLIENT' | 'SPOUSE';
   /** Year only. Age is all the planning needs; a full date of birth is PII. */
   readonly birthYear: number | null;
-  readonly healthConcern: HealthConcern;
+  /** Any combination, kept in HEALTH_CONCERNS order. Empty means nothing reported. */
+  readonly healthConcerns: readonly HealthConcern[];
+  /**
+   * What OTHER means for this person, so US-28 can pass it to the life
+   * expectancy estimate. Empty unless OTHER is selected. A description of a
+   * condition and nothing else — never anything identifying (ADR 0006).
+   */
+  readonly healthConcernOther: string;
   readonly lifeExpectancyAge: number | null;
 }
 

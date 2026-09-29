@@ -415,3 +415,82 @@ describe('bucket definitions', () => {
     expect(status).toBe(404);
   });
 });
+
+describe('health concerns (US-27)', () => {
+  it('reads back every concern a person has', async () => {
+    const { body } = await call<ClientCase>('GET', '/api/clients/1042');
+
+    expect(body.people[0]).toMatchObject({ healthConcerns: [], healthConcernOther: '' });
+    expect(body.people[1]).toMatchObject({
+      healthConcerns: ['HEART', 'OTHER'],
+      healthConcernOther: 'Managed hypertension',
+    });
+  });
+
+  it('orders them the same however they arrive', async () => {
+    const { body: original } = await call<ClientCase>('GET', '/api/clients/2317');
+    const edited = {
+      ...original,
+      people: original.people.map((p) => ({
+        ...p,
+        // Deliberately not in HEALTH_CONCERNS order.
+        healthConcerns: ['OTHER', 'CANCER', 'STROKE'],
+        healthConcernOther: 'Family history',
+      })),
+    };
+
+    const saved = await call<ClientCase>('PUT', '/api/clients/2317', edited);
+    expect(saved.status).toBe(200);
+    expect(saved.body.people[0]?.healthConcerns).toEqual(['CANCER', 'STROKE', 'OTHER']);
+
+    const { body: reread } = await call<ClientCase>('GET', '/api/clients/2317');
+    expect(reread.people[0]?.healthConcerns).toEqual(['CANCER', 'STROKE', 'OTHER']);
+    expect(reread.people[0]?.healthConcernOther).toBe('Family history');
+  });
+
+  it('treats an empty list as nothing reported, leaving no rows behind', async () => {
+    const { body: original } = await call<ClientCase>('GET', '/api/clients/1042');
+    const cleared = {
+      ...original,
+      people: original.people.map((p) => ({ ...p, healthConcerns: [], healthConcernOther: '' })),
+    };
+
+    const { status, body } = await call<ClientCase>('PUT', '/api/clients/1042', cleared);
+    expect(status).toBe(200);
+    expect(body.people.every((p) => p.healthConcerns.length === 0)).toBe(true);
+
+    const left = db
+      .prepare<[], { n: number }>('SELECT COUNT(*) AS n FROM person_health_concerns')
+      .get();
+    expect(left?.n).toBe(0);
+  });
+
+  it('refuses a description when Other is not selected', async () => {
+    const { body: original } = await call<ClientCase>('GET', '/api/clients/2317');
+    const { status, body } = await call<{ issues: { path: string; message: string }[] }>(
+      'PUT',
+      '/api/clients/2317',
+      {
+        ...original,
+        people: original.people.map((p) => ({
+          ...p,
+          healthConcerns: ['HEART'],
+          healthConcernOther: 'Something',
+        })),
+      },
+    );
+
+    expect(status).toBe(400);
+    expect(body.issues.some((i) => i.path.endsWith('healthConcernOther'))).toBe(true);
+  });
+
+  it('refuses the same concern twice', async () => {
+    const { body: original } = await call<ClientCase>('GET', '/api/clients/2317');
+    const { status } = await call('PUT', '/api/clients/2317', {
+      ...original,
+      people: original.people.map((p) => ({ ...p, healthConcerns: ['HEART', 'HEART'] })),
+    });
+
+    expect(status).toBe(400);
+  });
+});

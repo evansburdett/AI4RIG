@@ -16,11 +16,13 @@
 import type { Db } from '@ai4rig/db';
 import {
   BUCKETS,
+  HEALTH_CONCERNS,
   type Account,
   type BucketSleeve,
   type ClientCase,
   type ClientSummary,
   type GapEntry,
+  type HealthConcern,
   type Person,
   type PlannedExpense,
 } from '@ai4rig/shared';
@@ -54,9 +56,10 @@ interface CaseRow {
 }
 
 interface PersonRow {
+  id: number;
   role: Person['role'];
   birth_year: number | null;
-  health_concern: Person['healthConcern'];
+  health_concern_other: string;
   life_expectancy_age: number | null;
 }
 
@@ -117,20 +120,35 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
     .get(clientNumber);
   if (row === undefined) return null;
 
-  const people = db
+  const personRows = db
     .prepare<[number], PersonRow>(
-      `SELECT role, birth_year, health_concern, life_expectancy_age
+      `SELECT id, role, birth_year, health_concern_other, life_expectancy_age
        FROM people WHERE client_case_id = ? ORDER BY role`,
     )
-    .all(row.id)
-    .map(
-      (p): Person => ({
-        role: p.role,
-        birthYear: p.birth_year,
-        healthConcern: p.health_concern,
-        lifeExpectancyAge: p.life_expectancy_age,
-      }),
-    );
+    .all(row.id);
+
+  const concernRows = db
+    .prepare<[number], { person_id: number; concern: HealthConcern }>(
+      `SELECT c.person_id, c.concern
+       FROM person_health_concerns c
+       JOIN people p ON p.id = c.person_id
+       WHERE p.client_case_id = ?`,
+    )
+    .all(row.id);
+
+  const people = personRows.map(
+    (p): Person => ({
+      role: p.role,
+      birthYear: p.birth_year,
+      // Filtering HEALTH_CONCERNS rather than mapping the rows keeps the order
+      // the same every read, whatever order the advisor ticked them in.
+      healthConcerns: HEALTH_CONCERNS.filter((concern) =>
+        concernRows.some((c) => c.person_id === p.id && c.concern === concern),
+      ),
+      healthConcernOther: p.health_concern_other,
+      lifeExpectancyAge: p.life_expectancy_age,
+    }),
+  );
 
   const sleeveRows = db
     .prepare<[number], SleeveRow>(
@@ -361,11 +379,24 @@ export function saveClientCase(
     }
 
     const addPerson = db.prepare(
-      `INSERT INTO people (client_case_id, role, birth_year, health_concern, life_expectancy_age)
+      `INSERT INTO people (client_case_id, role, birth_year, health_concern_other, life_expectancy_age)
        VALUES (?, ?, ?, ?, ?)`,
     );
+    // Deleting the people above already cascaded their concerns away.
+    const addConcern = db.prepare(
+      'INSERT INTO person_health_concerns (person_id, concern) VALUES (?, ?)',
+    );
     for (const person of input.people) {
-      addPerson.run(caseId, person.role, person.birthYear, person.healthConcern, person.lifeExpectancyAge);
+      const { lastInsertRowid } = addPerson.run(
+        caseId,
+        person.role,
+        person.birthYear,
+        person.healthConcernOther,
+        person.lifeExpectancyAge,
+      );
+      for (const concern of person.healthConcerns) {
+        addConcern.run(Number(lastInsertRowid), concern);
+      }
     }
 
     const addAccount = db.prepare(

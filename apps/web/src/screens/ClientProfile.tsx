@@ -3,7 +3,13 @@ import { useMemo } from 'react';
 import { AccountCard } from '../components/AccountCard.js';
 import { BucketBar } from '../components/BucketBar.js';
 import { Callout } from '../components/Callout.js';
-import { DerivedField, NumberField, SelectField, TextField } from '../components/Fields.js';
+import {
+  CheckboxGroupField,
+  DerivedField,
+  NumberField,
+  SelectField,
+  TextField,
+} from '../components/Fields.js';
 import { MoneyInput } from '../components/MoneyInput.js';
 import { bucketsByAccount } from '../domain/breakdown.js';
 import { newAccount, newExpense, newGapEntry } from '../domain/factory.js';
@@ -88,13 +94,29 @@ export function ClientProfile({ clientCase, models, onChange, today }: Props) {
                   onChange={(birthYear) => updatePerson({ birthYear })}
                 />
                 <DerivedField label="Age" value={age === null ? '—' : String(age)} />
-                <SelectField
-                  label="Health concerns"
-                  value={person.healthConcern}
+                <CheckboxGroupField
+                  legend="Health concerns"
+                  values={person.healthConcerns}
                   options={HEALTH_CONCERNS}
                   labels={HEALTH_CONCERN_LABELS}
-                  onChange={(healthConcern) => updatePerson({ healthConcern })}
+                  emptyHint="None reported."
+                  onChange={(healthConcerns) =>
+                    updatePerson({
+                      healthConcerns,
+                      // The description goes with the box that explained it.
+                      ...(healthConcerns.includes('OTHER') ? {} : { healthConcernOther: '' }),
+                    })
+                  }
                 />
+                {person.healthConcerns.includes('OTHER') && (
+                  <TextField
+                    label="Other health concern"
+                    value={person.healthConcernOther}
+                    placeholder="Condition only"
+                    hint="The condition itself. Never a name, a place, or anything else identifying."
+                    onChange={(healthConcernOther) => updatePerson({ healthConcernOther })}
+                  />
+                )}
                 <NumberField
                   label="Life expectancy age"
                   value={person.lifeExpectancyAge}
@@ -123,7 +145,13 @@ export function ClientProfile({ clientCase, models, onChange, today }: Props) {
                   patch({
                     people: [
                       ...clientCase.people,
-                      { role: 'SPOUSE', birthYear: null, healthConcern: 'NONE', lifeExpectancyAge: null },
+                      {
+                        role: 'SPOUSE',
+                        birthYear: null,
+                        healthConcerns: [],
+                        healthConcernOther: '',
+                        lifeExpectancyAge: null,
+                      },
                     ],
                   })
                 }

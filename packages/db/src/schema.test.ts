@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { openDatabase, type Db } from './database.js';
 import { runMigrations } from './migrate.js';
+import { migrationsDir } from './paths.js';
 import { runSeeds } from './seed.js';
 
 /**
@@ -49,10 +50,44 @@ describe('the repo migrations', () => {
       'model_lines',
       'model_portfolios',
       'people',
+      'person_health_concerns',
       'planned_expenses',
       'schema_migrations',
       'tickers',
     ]);
+  });
+
+  it('carry an existing health concern into its own table (US-27)', () => {
+    // Build the schema as it stood before 0003, add a person the old way, then
+    // let 0003 move them. This is the upgrade every teammate's database takes.
+    const beforeUs27 = join(workspace, 'before-us27');
+    mkdirSync(beforeUs27);
+    for (const name of ['0001_original_test.sql', '0002_client_case_schema.sql']) {
+      copyFileSync(join(migrationsDir(), name), join(beforeUs27, name));
+    }
+    runMigrations(db, beforeUs27);
+
+    db.exec(`
+      INSERT INTO client_cases (id, client_number, created_at, updated_at) VALUES (1, '1', 'x', 'x');
+      INSERT INTO people (id, client_case_id, role, health_concern) VALUES (1, 1, 'CLIENT', 'HEART');
+      INSERT INTO people (id, client_case_id, role, health_concern) VALUES (2, 1, 'SPOUSE', 'NONE');
+    `);
+
+    runMigrations(db);
+
+    // HEART becomes a row; NONE becomes the absence of one.
+    expect(
+      db
+        .prepare<[], { person_id: number; concern: string }>(
+          'SELECT person_id, concern FROM person_health_concerns ORDER BY person_id',
+        )
+        .all(),
+    ).toEqual([{ person_id: 1, concern: 'HEART' }]);
+
+    // Both people survive the rebuild, ids and all.
+    expect(
+      db.prepare<[], { id: number }>('SELECT id FROM people ORDER BY id').all(),
+    ).toEqual([{ id: 1 }, { id: 2 }]);
   });
 
   it('ship the three bucket definitions as part of the schema', () => {
