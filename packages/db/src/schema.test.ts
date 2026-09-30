@@ -53,6 +53,7 @@ describe('the repo migrations', () => {
       'person_health_concerns',
       'planned_expenses',
       'schema_migrations',
+      'sleeve_lines',
       'tickers',
     ]);
   });

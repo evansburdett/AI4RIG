@@ -76,6 +76,14 @@ interface SleeveRow {
   bucket: BucketSleeve['bucket'];
   amount_cents: number;
   model_id: number | null;
+  mode: BucketSleeve['mode'];
+}
+
+interface SleeveLineRow {
+  account_id: number;
+  bucket: BucketSleeve['bucket'];
+  ticker_symbol: string;
+  weight_bps: number;
 }
 
 interface ExpenseRow {
@@ -152,9 +160,18 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
 
   const sleeveRows = db
     .prepare<[number], SleeveRow>(
-      `SELECT s.account_id, s.bucket, s.amount_cents, s.model_id
+      `SELECT s.account_id, s.bucket, s.amount_cents, s.model_id, s.mode
        FROM account_sleeves s JOIN accounts a ON a.id = s.account_id
        WHERE a.client_case_id = ?`,
+    )
+    .all(row.id);
+
+  const sleeveLineRows = db
+    .prepare<[number], SleeveLineRow>(
+      `SELECT l.account_id, l.bucket, l.ticker_symbol, l.weight_bps
+       FROM sleeve_lines l JOIN accounts a ON a.id = l.account_id
+       WHERE a.client_case_id = ?
+       ORDER BY l.position, l.id`,
     )
     .all(row.id);
 
@@ -177,7 +194,11 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
           return {
             bucket,
             amountCents: sleeve?.amount_cents ?? 0,
+            mode: sleeve?.mode ?? 'MODEL',
             modelId: sleeve?.model_id == null ? null : String(sleeve.model_id),
+            lines: sleeveLineRows
+              .filter((l) => l.account_id === a.id && l.bucket === bucket)
+              .map((l) => ({ tickerSymbol: l.ticker_symbol, weightBps: l.weight_bps })),
           };
         }),
       }),
@@ -321,6 +342,30 @@ function checkSleeveModels(db: Db, input: ClientCaseInput): void {
 }
 
 /**
+ * A manual bucket can only hold symbols in RIG's universe. The foreign key
+ * would refuse an unknown one anyway, but as an opaque constraint failure;
+ * catching it here makes it a 400 that names the symbol. This is the point
+ * US-24 turns into an offer to add the ticker instead of an error.
+ */
+function checkSleeveTickers(db: Db, input: ClientCaseInput): void {
+  const known = db.prepare<[string], { symbol: string }>(
+    'SELECT symbol FROM tickers WHERE symbol = ?',
+  );
+  input.accounts.forEach((account, index) => {
+    for (const sleeve of account.sleeves) {
+      for (const line of sleeve.lines) {
+        if (known.get(line.tickerSymbol) === undefined) {
+          throw new HttpError(
+            400,
+            `Account ${index + 1}, ${sleeve.bucket}: ${line.tickerSymbol} is not in the ticker list`,
+          );
+        }
+      }
+    }
+  });
+}
+
+/**
  * Overwrite a case with `input`. Returns null if no case has that number.
  * Everything happens in one transaction: a failure leaves the case as it was.
  */
@@ -337,6 +382,7 @@ export function saveClientCase(
     const caseId = existing.id;
 
     checkSleeveModels(db, input);
+    checkSleeveTickers(db, input);
 
     db.prepare(
       `UPDATE client_cases SET
@@ -404,7 +450,13 @@ export function saveClientCase(
        VALUES (?, ?, ?, ?, ?, ?)`,
     );
     const addSleeve = db.prepare(
-      'INSERT INTO account_sleeves (account_id, bucket, amount_cents, model_id) VALUES (?, ?, ?, ?)',
+      `INSERT INTO account_sleeves (account_id, bucket, amount_cents, model_id, mode)
+       VALUES (?, ?, ?, ?, ?)`,
+    );
+    // Lines go with their sleeve (cascade), so there is nothing to clear first.
+    const addSleeveLine = db.prepare(
+      `INSERT INTO sleeve_lines (account_id, bucket, position, ticker_symbol, weight_bps)
+       VALUES (?, ?, ?, ?, ?)`,
     );
     input.accounts.forEach((account, position) => {
       const { lastInsertRowid } = addAccount.run(
@@ -415,12 +467,19 @@ export function saveClientCase(
         account.maskedNumber,
         account.balanceCents,
       );
+      const accountId = Number(lastInsertRowid);
       for (const sleeve of account.sleeves) {
         addSleeve.run(
-          Number(lastInsertRowid),
+          accountId,
           sleeve.bucket,
           sleeve.amountCents,
-          sleeve.modelId === null ? null : Number(sleeve.modelId),
+          // Validation already refuses a model on a manual sleeve; this keeps
+          // the column null either way.
+          sleeve.mode === 'MODEL' && sleeve.modelId !== null ? Number(sleeve.modelId) : null,
+          sleeve.mode,
+        );
+        sleeve.lines.forEach((line, position) =>
+          addSleeveLine.run(accountId, sleeve.bucket, position, line.tickerSymbol, line.weightBps),
         );
       }
     });

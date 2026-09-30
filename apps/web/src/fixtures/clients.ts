@@ -7,19 +7,27 @@
  * step if you change either.
  */
 
-import type { Account, ClientCase } from '../domain/types.js';
+import type {
+  Account,
+  BucketSleeve,
+  BucketType,
+  ClientCase,
+  SleeveLine,
+} from '../domain/types.js';
 
-/** Three sleeves in bucket order. `[amountDollars, modelId]` for Now, Soon, Later. */
-function sleeves(
-  now: [number, string | null],
-  soon: [number, string | null],
-  later: [number, string | null],
-): Account['sleeves'] {
-  return [
-    { bucket: 'NOW', amountCents: now[0] * 100, modelId: now[1] },
-    { bucket: 'SOON', amountCents: soon[0] * 100, modelId: soon[1] },
-    { bucket: 'LATER', amountCents: later[0] * 100, modelId: later[1] },
-  ];
+/**
+ * Three sleeves in bucket order. Each is `[amountDollars, modelId]` to follow a
+ * model, or `[amountDollars, lines]` for a bucket picked by hand (US-23).
+ */
+type SleeveSpec = [number, string | null] | [number, SleeveLine[]];
+
+function sleeves(now: SleeveSpec, soon: SleeveSpec, later: SleeveSpec): Account['sleeves'] {
+  const one = (bucket: BucketType, [dollars, follows]: SleeveSpec): BucketSleeve =>
+    Array.isArray(follows)
+      ? { bucket, amountCents: dollars * 100, mode: 'MANUAL', modelId: null, lines: follows }
+      : { bucket, amountCents: dollars * 100, mode: 'MODEL', modelId: follows, lines: [] };
+
+  return [one('NOW', now), one('SOON', soon), one('LATER', later)];
 }
 
 /** Buckets land exactly on the workbook's $190,000 / $914,700 / $1,895,300. */
@@ -111,7 +119,14 @@ const ACCUMULATOR_CASE: ClientCase = {
       taxFunnel: 'TAXABLE',
       maskedNumber: '1005',
       balanceCents: 280_000_00,
-      sleeves: sleeves([25_000, '9001'], [0, null], [240_000, '9003']),
+      // Later is picked by hand here, the one manual bucket in the samples.
+      sleeves: sleeves([25_000, '9001'], [0, null], [
+        240_000,
+        [
+          { tickerSymbol: 'VTI', weightBps: 7000 },
+          { tickerSymbol: 'VNQ', weightBps: 3000 },
+        ],
+      ]),
     },
     {
       id: '9005',
