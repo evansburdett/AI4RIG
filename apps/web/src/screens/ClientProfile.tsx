@@ -28,6 +28,7 @@ import type {
   GapEntry,
   ModelPortfolio,
   PlannedExpense,
+  Ticker,
 } from '../domain/types.js';
 import {
   computePlanTotals,
@@ -38,6 +39,10 @@ import {
 interface Props {
   clientCase: ClientCase;
   models: readonly ModelPortfolio[];
+  /** For the symbol picker on a manual bucket (US-23). */
+  tickers: readonly Ticker[];
+  /** Turns a manual bucket into a reusable model. */
+  onSaveAsModel: (model: ModelPortfolio) => Promise<ModelPortfolio>;
   onChange: (next: ClientCase) => void;
   today: Date;
 }
@@ -50,7 +55,14 @@ interface Props {
  * the advisor types. Edits go to a working copy held by the parent; nothing is
  * written until Save.
  */
-export function ClientProfile({ clientCase, models, onChange, today }: Props) {
+export function ClientProfile({
+  clientCase,
+  models,
+  tickers,
+  onChange,
+  onSaveAsModel,
+  today,
+}: Props) {
   const totals = useMemo(() => computePlanTotals(clientCase), [clientCase]);
   const target = useMemo(() => targetAllocation(clientCase, totals), [clientCase, totals]);
   const planYears = householdPlanYears(clientCase.people, today);
@@ -222,6 +234,8 @@ export function ClientProfile({ clientCase, models, onChange, today }: Props) {
             key={account.id}
             account={account}
             models={models}
+            tickers={tickers}
+            onSaveAsModel={onSaveAsModel}
             onChange={(next) =>
               patch({ accounts: clientCase.accounts.map((a) => (a.id === account.id ? next : a)) })
             }
