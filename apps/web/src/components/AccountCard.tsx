@@ -192,6 +192,7 @@ export function AccountCard({
                   <td>
                     <div className="follows">
                       <select
+                        className="follows-mode"
                         aria-label={`${label} follows`}
                         value={sleeve.mode}
                         onChange={(event) =>
@@ -207,7 +208,11 @@ export function AccountCard({
 
                       {sleeve.mode === 'MODEL' && (
                         <select
+                          className="follows-model"
                           aria-label={`${label} model`}
+                          // The name can outrun the column, so it is truncated
+                          // in place; hovering shows it in full.
+                          title={sleeve.modelId === null ? undefined : byId.get(sleeve.modelId)?.name}
                           value={sleeve.modelId ?? ''}
                           onChange={(event) =>
                             patchSleeve(sleeve.bucket, {

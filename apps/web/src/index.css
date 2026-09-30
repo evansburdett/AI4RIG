@@ -484,13 +484,30 @@ tfoot td {
 
 /*
  * US-23: a bucket follows either a model or its own symbols. The two selects
- * sit side by side, and wrap rather than squeeze on a narrow card.
+ * stay on one line. They must not wrap: a model name is as wide as the longest
+ * one in the list, plus a "(for tax-free)" suffix when its funnel differs from
+ * the account's, which is easily wider than the column.
  */
 .follows {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0.3rem;
   align-items: center;
+}
+
+/* Model or Manual is two short words; it never needs to give up space. */
+.follows-mode {
+  flex: 0 0 auto;
+}
+
+/*
+ * The model name takes what is left and truncates. `min-width: 0` is the part
+ * that matters: without it a flex item refuses to shrink below its content,
+ * which is what pushed this select onto its own line.
+ */
+.follows-model {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /*
