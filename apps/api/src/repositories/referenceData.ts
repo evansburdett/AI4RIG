@@ -56,7 +56,11 @@ export function upsertTicker(db: Db, ticker: Ticker): Ticker {
   return ticker;
 }
 
-/** Refused (409) while any model still uses the ticker. */
+/**
+ * Refused (409) while any model or any client's hand-picked bucket still uses
+ * the ticker, naming them. Without the second check the foreign key on
+ * sleeve_lines would refuse the delete anyway, but as an unexplained 500.
+ */
 export function deleteTicker(db: Db, symbol: string): boolean {
   const models = db
     .prepare<[string], { name: string }>(
@@ -68,6 +72,24 @@ export function deleteTicker(db: Db, symbol: string): boolean {
   if (models.length > 0) {
     throw new HttpError(409, `${symbol} is in ${models.join(', ')}. Take it out of those models first.`);
   }
+
+  const cases = db
+    .prepare<[string], { client_number: string }>(
+      `SELECT DISTINCT c.client_number FROM sleeve_lines l
+       JOIN accounts a ON a.id = l.account_id
+       JOIN client_cases c ON c.id = a.client_case_id
+       WHERE l.ticker_symbol = ? ORDER BY c.client_number`,
+    )
+    .all(symbol)
+    .map((row) => row.client_number);
+  if (cases.length > 0) {
+    const noun = cases.length === 1 ? 'case' : 'cases';
+    throw new HttpError(
+      409,
+      `${symbol} is picked by hand in client ${noun} ${cases.join(', ')}. Take it out of those first.`,
+    );
+  }
+
   return db.prepare('DELETE FROM tickers WHERE symbol = ?').run(symbol).changes > 0;
 }
 

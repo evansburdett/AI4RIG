@@ -325,6 +325,29 @@ describe('tickers', () => {
     expect(status).toBe(409);
     expect(body.error).toMatch(/Placeholder Now: Cash/);
   });
+
+  it('refuses to delete a ticker a client case picks by hand, and says which', async () => {
+    await call('PUT', '/api/tickers/SCHD', { symbol: 'SCHD', assetClass: 'EQUITY', defaultBucket: 'LATER' });
+    const { body: original } = await call<ClientCase>('GET', '/api/clients/2317');
+    const edited = {
+      ...original,
+      accounts: original.accounts.map((a, i) =>
+        i === 0
+          ? {
+              ...a,
+              sleeves: a.sleeves.map((s) =>
+                s.bucket === 'LATER' ? { ...s, lines: [{ tickerSymbol: 'SCHD', weightBps: 10_000 }] } : s,
+              ),
+            }
+          : a,
+      ),
+    };
+    expect((await call('PUT', '/api/clients/2317', edited)).status).toBe(200);
+
+    const { status, body } = await call<{ error: string }>('DELETE', '/api/tickers/SCHD');
+    expect(status).toBe(409);
+    expect(body.error).toMatch(/client case 2317/);
+  });
 });
 
 describe('models', () => {
