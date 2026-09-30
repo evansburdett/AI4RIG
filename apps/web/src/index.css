@@ -482,6 +482,59 @@ tfoot td {
   font-size: 0.82rem;
 }
 
+/*
+ * US-23: a bucket follows either a model or its own symbols. The two selects
+ * stay on one line. They must not wrap: a model name is as wide as the longest
+ * one in the list, plus a "(for tax-free)" suffix when its funnel differs from
+ * the account's, which is easily wider than the column.
+ */
+.follows {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.3rem;
+  align-items: center;
+}
+
+/* Model or Manual is two short words; it never needs to give up space. */
+.follows-mode {
+  flex: 0 0 auto;
+}
+
+/*
+ * The model name takes what is left and truncates. `min-width: 0` is the part
+ * that matters: without it a flex item refuses to shrink below its content,
+ * which is what pushed this select onto its own line.
+ */
+.follows-model {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/*
+ * The manual editor is a full-width row under the bucket it belongs to. The
+ * inset border ties it to that row rather than letting it read as a new
+ * section of the account.
+ */
+.sleeve-manual > td {
+  padding: 0.4rem 0 0.9rem 1rem;
+  border-left: 3px solid var(--border-strong);
+}
+
+.sleeve-manual > td > p {
+  margin: 0 0 0.4rem;
+  font-size: 0.8rem;
+}
+
+/* Nested in the sleeves table, so it needs its own width rather than 100%. */
+.sleeve-manual .model-lines {
+  width: auto;
+  min-width: min(26rem, 100%);
+}
+
+.sleeve-manual .button-row input[type='text'] {
+  min-width: 14rem;
+}
+
 .position {
   display: inline-block;
   margin-right: 0.8rem;

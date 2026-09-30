@@ -14,6 +14,7 @@ import {
   HEALTH_CONCERNS,
   LIFE_STAGES,
   MONEY_CYCLE_PHASES,
+  SLEEVE_MODES,
   TAX_BRACKETS,
   TAX_FUNNELS,
 } from '@ai4rig/shared';
@@ -53,11 +54,39 @@ const taxFunnel = z.enum(TAX_FUNNELS);
 /** Database ids travel as strings of digits. */
 const rowId = z.string().regex(/^\d+$/, 'Must be the id of an existing row');
 
-const sleeve = z.object({
-  bucket,
-  amountCents: cents.min(0, 'A bucket amount cannot be negative'),
-  modelId: rowId.nullable(),
+/** A ticker and a weight, in a model or in a manual bucket. */
+const weightedLine = z.object({
+  tickerSymbol: z.string().trim().toUpperCase().min(1).max(10),
+  weightBps: z.int().min(1, 'Each weight must be above 0%').max(10_000),
 });
+
+const sleeve = z
+  .object({
+    bucket,
+    amountCents: cents.min(0, 'A bucket amount cannot be negative'),
+    mode: z.enum(SLEEVE_MODES),
+    modelId: rowId.nullable(),
+    lines: z
+      .array(weightedLine)
+      .refine(
+        (lines) => new Set(lines.map((l) => l.tickerSymbol)).size === lines.length,
+        'A ticker can appear in a bucket only once',
+      )
+      // Deliberately not "exactly 100%": a half-finished bucket has to be
+      // savable. Over 100% is a mistake rather than unfinished work.
+      .refine(
+        (lines) => lines.reduce((sum, l) => sum + l.weightBps, 0) <= 10_000,
+        'Weights in a bucket cannot add up to more than 100%',
+      ),
+  })
+  .refine((s) => s.mode === 'MODEL' || s.modelId === null, {
+    error: 'A manual bucket does not follow a model',
+    path: ['modelId'],
+  })
+  .refine((s) => s.mode === 'MANUAL' || s.lines.length === 0, {
+    error: 'A bucket following a model has no lines of its own',
+    path: ['lines'],
+  });
 
 const account = z.object({
   id: z.string(),
@@ -150,12 +179,7 @@ export const modelPortfolioSchema = z.object({
   bucket,
   taxFunnel: taxFunnel.nullable(),
   lines: z
-    .array(
-      z.object({
-        tickerSymbol: z.string().trim().toUpperCase().min(1).max(10),
-        weightBps: z.int().min(1, 'Each weight must be above 0%').max(10_000),
-      }),
-    )
+    .array(weightedLine)
     .min(1, 'A model needs at least one ticker')
     .refine(
       (lines) => new Set(lines.map((l) => l.tickerSymbol)).size === lines.length,

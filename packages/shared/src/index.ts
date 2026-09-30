@@ -88,15 +88,36 @@ export interface Person {
 }
 
 /**
- * The part of one account's balance that sits in one bucket, and the model
- * that money follows. The advisor types the amount (RIG: "for now, it is
- * entered manually for each account") and picks the model.
+ * How a bucket's money is invested (US-23). Blake, Sept 23: "a dropdown where
+ * you basically either click model or manual."
+ */
+export const SLEEVE_MODES = ['MODEL', 'MANUAL'] as const;
+export type SleeveMode = (typeof SLEEVE_MODES)[number];
+
+/** One ticker in a manual bucket. Basis points, the same unit a model uses. */
+export interface SleeveLine {
+  readonly tickerSymbol: string;
+  readonly weightBps: number;
+}
+
+/**
+ * The part of one account's balance that sits in one bucket, and what that
+ * money follows. The advisor types the amount (RIG: "for now, it is entered
+ * manually for each account") and then either picks a model or lists symbols.
  */
 export interface BucketSleeve {
   readonly bucket: BucketType;
   readonly amountCents: Cents;
-  /** A ModelPortfolio id, or null when no model has been chosen yet. */
+  /** MODEL follows `modelId`. MANUAL follows `lines`. */
+  readonly mode: SleeveMode;
+  /** A ModelPortfolio id, or null when none is chosen. Always null under MANUAL. */
   readonly modelId: string | null;
+  /**
+   * The advisor's own symbols and weights. Used under MANUAL, empty under
+   * MODEL. Unlike a model these need not add up to 100%, so a half-finished
+   * case can still be saved; positions appear once they do add up.
+   */
+  readonly lines: readonly SleeveLine[];
 }
 
 export interface Account {
@@ -142,7 +163,8 @@ export interface ModelPortfolio {
 export interface Holding {
   readonly accountId: string;
   readonly bucket: BucketType;
-  readonly modelId: string;
+  /** The model the position came from, or null when the bucket is manual. */
+  readonly modelId: string | null;
   readonly tickerSymbol: string;
   readonly marketValueCents: Cents;
 }

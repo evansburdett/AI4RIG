@@ -4,9 +4,9 @@
  * each of those follows.
  *
  * Positions ("holdings") are never entered or stored. They come from a
- * bucket's dollars times its model's weights, recomputed on every render
- * (decision D2). US-11 asset class breakdown and the drift against the
- * worksheet both read from here.
+ * bucket's dollars times its weights -- a model's, or the advisor's own under
+ * US-23 -- recomputed on every render (decision D2). US-11 asset class
+ * breakdown and the drift against the worksheet both read from here.
  *
  * Provisional home: this belongs in packages/engine next to splitByWeights.
  * It is pure, so moving it is a file move.
@@ -18,6 +18,7 @@ import { percentOf } from './money.js';
 import { ASSET_CLASSES, BUCKETS } from './types.js';
 import type {
   Account,
+  SleeveLine,
   AccountType,
   AllocationTarget,
   AssetClass,
@@ -43,8 +44,9 @@ export function unallocatedCents(account: Account): Cents {
 }
 
 /**
- * The positions one account's bucket works out to. Empty when the bucket has
- * no money or no model, or the model is missing or does not add up to 100%.
+ * The positions one account's bucket works out to, whether it follows a model
+ * or the advisor's own lines. Empty when the bucket holds no money, has
+ * nothing to follow, or its weights do not add up to 100%.
  */
 export function sleeveHoldings(
   account: Account,
@@ -52,25 +54,40 @@ export function sleeveHoldings(
   models: ReadonlyMap<string, ModelPortfolio>,
 ): Holding[] {
   const sleeve = account.sleeves.find((s) => s.bucket === bucket);
-  if (sleeve === undefined || sleeve.modelId === null || sleeve.amountCents <= 0) return [];
+  if (sleeve === undefined || sleeve.amountCents <= 0) return [];
 
-  const model = models.get(sleeve.modelId);
-  if (model === undefined || model.lines.length === 0) return [];
+  // Both modes come down to the same thing: a list of weights, and the id of
+  // the model they came from when there is one.
+  let lines: readonly SleeveLine[];
+  let modelId: string | null;
+
+  if (sleeve.mode === 'MANUAL') {
+    lines = sleeve.lines;
+    modelId = null;
+  } else {
+    const model = sleeve.modelId === null ? undefined : models.get(sleeve.modelId);
+    if (model === undefined) return [];
+    lines = model.lines;
+    modelId = model.id;
+  }
+
+  if (lines.length === 0) return [];
 
   try {
     return splitByWeights(
       sleeve.amountCents,
-      model.lines.map((line) => ({ key: line.tickerSymbol, weightBps: line.weightBps })),
+      lines.map((line) => ({ key: line.tickerSymbol, weightBps: line.weightBps })),
     ).map((share) => ({
       accountId: account.id,
       bucket,
-      modelId: model.id,
+      modelId,
       tickerSymbol: share.key,
       marketValueCents: share.amountCents,
     }));
   } catch {
-    // A model that does not add up to 100% cannot be saved, so this is only
-    // reachable with bad data. Show the money as unmodeled rather than crash.
+    // Manual lines are allowed to be half-finished, and a model that does not
+    // add up cannot be saved, so this is the normal "not done yet" path. The
+    // money shows as unmodeled rather than as wrong positions.
     return [];
   }
 }
@@ -113,7 +130,7 @@ export interface BucketComposition {
   /** Everything the advisor put in this bucket, with or without a model. */
   readonly valueCents: Cents;
   readonly pctOfPortfolio: number;
-  /** In this bucket but with no model chosen, so no asset class. */
+  /** In this bucket but not yet following anything that adds up, so no asset class. */
   readonly unmodeledCents: Cents;
   readonly slices: readonly Slice[];
 }
@@ -123,7 +140,7 @@ export interface Breakdown {
   readonly totalCents: Cents;
   /** Balance not in any bucket yet, across all accounts. */
   readonly unallocatedCents: Cents;
-  /** Money in a bucket with no model chosen, across all buckets. */
+  /** Money in a bucket that follows nothing adding up to 100%, across all buckets. */
   readonly unmodeledCents: Cents;
   readonly byAssetClass: readonly Slice[];
   readonly byBucket: readonly BucketComposition[];
@@ -286,7 +303,8 @@ export function holdingsInBucket(
           symbol: holding.tickerSymbol,
           accountType: account.accountType,
           maskedNumber: account.maskedNumber,
-          modelName: models.get(holding.modelId)?.name ?? '',
+          modelName:
+            holding.modelId === null ? 'Manual' : (models.get(holding.modelId)?.name ?? ''),
           marketValueCents: holding.marketValueCents,
           assetClass: ticker?.assetClass ?? null,
           outsideDefaultBucket: ticker !== undefined && ticker.defaultBucket !== bucket,

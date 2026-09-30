@@ -4,7 +4,14 @@ import { ApiError } from '../api.js';
 import { Callout } from '../components/Callout.js';
 import { newModel } from '../domain/factory.js';
 import { BUCKET_LABELS, TAX_FUNNEL_LABELS } from '../domain/lifeStage.js';
-import { bpsToPercentInput, formatBps, parsePercentToBps, WHOLE_BPS } from '../domain/percent.js';
+import { formatBps } from '../domain/percent.js';
+import {
+  WeightedLines,
+  draftProblem,
+  toDraftLines,
+  toSleeveLines,
+  type DraftLine,
+} from '../components/WeightedLines.js';
 import { BUCKETS, TAX_FUNNELS } from '../domain/types.js';
 import type { BucketType, ModelPortfolio, TaxFunnel, Ticker } from '../domain/types.js';
 
@@ -86,23 +93,6 @@ export function Models({ models, tickers, onSave, onDelete }: Props) {
   );
 }
 
-/** A line being edited: the weight stays as typed text until it parses. */
-interface DraftLine {
-  readonly key: number;
-  readonly tickerSymbol: string;
-  readonly percentText: string;
-}
-
-let lineKey = 0;
-
-function toDraftLines(model: ModelPortfolio): DraftLine[] {
-  return model.lines.map((line) => ({
-    key: ++lineKey,
-    tickerSymbol: line.tickerSymbol,
-    percentText: bpsToPercentInput(line.weightBps),
-  }));
-}
-
 function ModelEditor({
   model,
   tickers,
@@ -120,7 +110,7 @@ function ModelEditor({
   const [name, setName] = useState(model.name);
   const [bucket, setBucket] = useState<BucketType>(model.bucket);
   const [taxFunnel, setTaxFunnel] = useState<TaxFunnel | null>(model.taxFunnel);
-  const [lines, setLines] = useState<DraftLine[]>(() => toDraftLines(model));
+  const [lines, setLines] = useState<DraftLine[]>(() => toDraftLines(model.lines));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -129,35 +119,19 @@ function ModelEditor({
     setName(model.name);
     setBucket(model.bucket);
     setTaxFunnel(model.taxFunnel);
-    setLines(toDraftLines(model));
+    setLines(toDraftLines(model.lines));
   }, [model]);
 
   const isNew = model.id === '';
-  const weights = lines.map((l) => parsePercentToBps(l.percentText));
-  const totalBps = weights.reduce<number>((sum, w) => sum + (w ?? 0), 0);
-  const unreadable = weights.some((w) => w === null || w === 0);
-  const blankTicker = lines.some((l) => l.tickerSymbol === '');
-  const duplicate = new Set(lines.map((l) => l.tickerSymbol)).size !== lines.length;
-  const tickerBySymbol = new Map(tickers.map((t) => [t.symbol, t]));
 
+  // A reusable model must add up to exactly 100%; a manual bucket need not,
+  // which is the only difference between the two callers of WeightedLines.
   const problem =
     name.trim() === ''
       ? 'Give the model a name.'
       : lines.length === 0
         ? 'Add at least one ticker.'
-        : blankTicker
-          ? 'Choose a ticker on every line.'
-          : duplicate
-            ? 'Each ticker can appear once.'
-            : unreadable
-              ? 'Weights are percentages above 0 with up to two decimals, like 12.5.'
-              : totalBps !== WHOLE_BPS
-                ? `Weights add up to ${formatBps(totalBps)}, not 100%.`
-                : null;
-
-  function patchLine(key: number, changes: Partial<DraftLine>) {
-    setLines((current) => current.map((l) => (l.key === key ? { ...l, ...changes } : l)));
-  }
+        : draftProblem(lines, { requireFull: true });
 
   async function save() {
     setBusy(true);
@@ -168,7 +142,7 @@ function ModelEditor({
         name: name.trim(),
         bucket,
         taxFunnel,
-        lines: lines.map((l, i) => ({ tickerSymbol: l.tickerSymbol, weightBps: weights[i] ?? 0 })),
+        lines: toSleeveLines(lines),
       });
       if (!isNew) setOpen(false);
     } catch (caught: unknown) {
@@ -254,89 +228,9 @@ function ModelEditor({
         </div>
       </div>
 
-      <table className="model-lines">
-        <thead>
-          <tr>
-            <th scope="col">Ticker</th>
-            <th scope="col">Weight</th>
-            <th scope="col">
-              <span className="visually-hidden">Notes</span>
-            </th>
-            <th scope="col" className="row-actions">
-              <span className="visually-hidden">Actions</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {lines.map((line) => {
-            const ticker = tickerBySymbol.get(line.tickerSymbol);
-            return (
-              <tr key={line.key}>
-                <td>
-                  <select
-                    aria-label="Ticker"
-                    value={line.tickerSymbol}
-                    onChange={(event) => patchLine(line.key, { tickerSymbol: event.target.value })}
-                  >
-                    <option value="">Choose…</option>
-                    {tickers.map((t) => (
-                      <option key={t.symbol} value={t.symbol}>
-                        {t.symbol}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td>
-                  <span className="percent-input">
-                    <input
-                      aria-label="Weight"
-                      type="text"
-                      inputMode="decimal"
-                      value={line.percentText}
-                      aria-invalid={parsePercentToBps(line.percentText) === null}
-                      onChange={(event) => patchLine(line.key, { percentText: event.target.value })}
-                    />
-                    <span aria-hidden="true">%</span>
-                  </span>
-                </td>
-                <td>
-                  {ticker !== undefined && ticker.defaultBucket !== bucket && (
-                    <span className="tag" title="RIG's ticker mapping puts this symbol in another bucket">
-                      usually {BUCKET_LABELS[ticker.defaultBucket]}
-                    </span>
-                  )}
-                </td>
-                <td className="row-actions">
-                  <button
-                    type="button"
-                    className="link"
-                    onClick={() => setLines((current) => current.filter((l) => l.key !== line.key))}
-                  >
-                    Remove
-                  </button>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-        <tfoot>
-          <tr>
-            <th scope="row">Total</th>
-            <td className={totalBps === WHOLE_BPS ? '' : 'field-error'}>{formatBps(totalBps)}</td>
-            <td colSpan={2} />
-          </tr>
-        </tfoot>
-      </table>
+      <WeightedLines lines={lines} tickers={tickers} bucket={bucket} onChange={setLines} />
 
       <div className="button-row">
-        <button
-          type="button"
-          onClick={() =>
-            setLines((current) => [...current, { key: ++lineKey, tickerSymbol: '', percentText: '' }])
-          }
-        >
-          Add ticker
-        </button>
         <button type="button" className="primary" disabled={problem !== null || busy} onClick={() => void save()}>
           {busy ? 'Saving…' : isNew ? 'Create model' : 'Save model'}
         </button>

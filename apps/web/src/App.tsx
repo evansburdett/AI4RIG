@@ -330,7 +330,14 @@ export function App() {
         ) : route.screen === 'breakdown' ? (
           <AssetClassBreakdown clientCase={draft} tickers={tickers} models={models} />
         ) : (
-          <ClientProfile clientCase={draft} models={models} onChange={setDraft} today={today} />
+          <ClientProfile
+            clientCase={draft}
+            models={models}
+            tickers={tickers}
+            onChange={setDraft}
+            onSaveAsModel={saveModel}
+            today={today}
+          />
         )}
       </main>
 

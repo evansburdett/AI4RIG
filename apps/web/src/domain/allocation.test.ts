@@ -79,7 +79,7 @@ describe('holdings from models', () => {
     for (const account of WORKBOOK_CASE.accounts) {
       const holdings = accountHoldings(account, MODELS);
       for (const sleeve of account.sleeves) {
-        if (sleeve.modelId === null) continue;
+        if (sleeve.mode === 'MODEL' && sleeve.modelId === null) continue;
         const total = holdings.filter((h) => h.bucket === sleeve.bucket).reduce((t, h) => t + h.marketValueCents, 0);
         expect(total).toBe(sleeve.amountCents);
       }
@@ -165,5 +165,49 @@ describe('modelChoices', () => {
     const later = modelChoices(PLACEHOLDER_MODELS, 'LATER', 'TAX_FREE').map((m) => m.id);
     expect(later).toEqual(['9004', '9003']);
     expect(modelChoices(PLACEHOLDER_MODELS, 'NOW', 'TAX_FREE').map((m) => m.id)).toEqual(['9001']);
+  });
+});
+
+describe('a bucket picked by hand (US-23)', () => {
+  /** The Single account on case 2317: $240,000 of Later, VTI 70% and VNQ 30%. */
+  const single = ACCUMULATOR_CASE.accounts[0]!;
+
+  const manualLater = (lines: { tickerSymbol: string; weightBps: number }[]) => ({
+    ...single,
+    sleeves: single.sleeves.map((s) => (s.bucket === 'LATER' ? { ...s, lines } : s)),
+  });
+
+  it('works out positions from the advisor’s own weights', () => {
+    const holdings = accountHoldings(single, MODELS).filter((h) => h.bucket === 'LATER');
+
+    expect(holdings.map((h) => [h.tickerSymbol, h.marketValueCents])).toEqual([
+      ['VTI', 168_000_00],
+      ['VNQ', 72_000_00],
+    ]);
+    // They came from no model, which is what tells the breakdown to say so.
+    expect(holdings.every((h) => h.modelId === null)).toBe(true);
+  });
+
+  it('adds up to the bucket exactly, the same as a model does', () => {
+    const holdings = accountHoldings(single, MODELS).filter((h) => h.bucket === 'LATER');
+    const total = holdings.reduce((sum, h) => sum + h.marketValueCents, 0);
+    expect(total).toBe(240_000_00);
+  });
+
+  it('places nothing while the weights are short of 100%', () => {
+    const half = manualLater([{ tickerSymbol: 'VTI', weightBps: 4000 }]);
+    expect(accountHoldings(half, MODELS).filter((h) => h.bucket === 'LATER')).toEqual([]);
+
+    // The money is not lost, it is reported as not yet following anything.
+    const breakdown = computeBreakdown(
+      { ...ACCUMULATOR_CASE, accounts: [half, ACCUMULATOR_CASE.accounts[1]!] },
+      PLACEHOLDER_TICKERS,
+      PLACEHOLDER_MODELS,
+    );
+    expect(breakdown.byBucket.find((b) => b.bucket === 'LATER')?.unmodeledCents).toBe(240_000_00);
+  });
+
+  it('places nothing when no symbols have been chosen at all', () => {
+    expect(accountHoldings(manualLater([]), MODELS).filter((h) => h.bucket === 'LATER')).toEqual([]);
   });
 });
