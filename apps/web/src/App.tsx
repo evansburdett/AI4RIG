@@ -11,6 +11,7 @@ import type {
   ModelPortfolio,
   Ticker,
 } from './domain/types.js';
+import { withTicker } from './domain/tickers.js';
 import { hrefFor, isReferenceScreen, useRoute, type Screen } from './routing.js';
 import { AssetClassBreakdown } from './screens/AssetClassBreakdown.js';
 import { BucketAssignments } from './screens/BucketAssignments.js';
@@ -191,6 +192,16 @@ export function App() {
     }
   }, []);
 
+  /**
+   * US-24: a symbol typed on a model or a manual bucket that the universe did
+   * not have. Throws on failure so the message shows where it was typed.
+   */
+  const addTicker = useCallback(async (ticker: Ticker): Promise<Ticker> => {
+    const result = await api.saveTicker(ticker);
+    setTickers((current) => withTicker(current, result));
+    return result;
+  }, []);
+
   /** Throws on failure so the model editor can show the message next to the model. */
   const saveModel = useCallback(async (model: ModelPortfolio): Promise<ModelPortfolio> => {
     const result = await api.saveModel(model);
@@ -311,12 +322,19 @@ export function App() {
         )}
 
         {route.screen === 'models' ? (
-          <Models models={models} tickers={tickers} onSave={saveModel} onDelete={deleteModel} />
+          <Models
+            models={models}
+            tickers={tickers}
+            onSave={saveModel}
+            onDelete={deleteModel}
+            onAddTicker={addTicker}
+          />
         ) : route.screen === 'tickers' ? (
           <BucketAssignments
             tickers={tickers}
             definitions={definitions}
             onSaveTicker={saveTicker}
+            onAddTicker={addTicker}
             onSaveDefinition={saveDefinition}
           />
         ) : caseError !== null ? (
@@ -336,6 +354,7 @@ export function App() {
             tickers={tickers}
             onChange={setDraft}
             onSaveAsModel={saveModel}
+            onAddTicker={addTicker}
             today={today}
           />
         )}

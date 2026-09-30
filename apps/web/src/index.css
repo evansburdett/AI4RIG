@@ -808,3 +808,49 @@ tfoot td {
   gap: 0.6rem;
   margin-top: 0.4rem;
 }
+
+/*
+ * US-24: a symbol not in the universe yet. The asset class and default bucket
+ * sit on one line after the symbol, and wrap under it when the column is
+ * narrow.
+ */
+.symbol-input {
+  width: 6.5rem;
+  text-transform: uppercase;
+}
+
+.new-ticker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: center;
+}
+
+.new-ticker-note {
+  font-size: 0.8rem;
+}
+
+.new-ticker .field-error {
+  flex-basis: 100%;
+}
+
+/* Sits under the line it belongs to, without a rule between them. */
+.model-lines tr:has(+ .new-ticker-row) > td {
+  border-bottom: none;
+}
+
+.new-ticker-row > td {
+  padding-top: 0;
+}
+
+.add-ticker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: flex-end;
+  margin-bottom: 0.8rem;
+}
+
+.add-ticker .field {
+  margin: 0;
+}
