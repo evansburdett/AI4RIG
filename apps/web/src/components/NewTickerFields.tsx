@@ -33,7 +33,8 @@ export function NewTickerFields({ symbol, suggestedBucket, onAdd, onAdded }: Pro
     setBusy(true);
     setError(null);
     try {
-      const saved = await onAdd({ symbol, assetClass, defaultBucket });
+      // No price yet; it is entered on the Tickers screen (US-21).
+      const saved = await onAdd({ symbol, assetClass, defaultBucket, priceCents: null, priceAsOf: null });
       onAdded?.(saved);
     } catch (caught: unknown) {
       setError(caught instanceof Error ? caught.message : String(caught));

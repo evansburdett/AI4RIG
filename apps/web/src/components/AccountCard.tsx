@@ -3,6 +3,7 @@ import { Fragment, useState } from 'react';
 import { formatCents, formatCentsWhole } from '../domain/money.js';
 import { allocatedCents, modelChoices, modelsById, sleeveHoldings, unallocatedCents } from '../domain/breakdown.js';
 import { formatBps } from '../domain/percent.js';
+import { proposedPositions } from '../domain/proposal.js';
 import type { AccountFee } from '../domain/worksheet.js';
 import { ACCOUNT_TYPE_LABELS, BUCKET_LABELS, TAX_FUNNEL_LABELS } from '../domain/lifeStage.js';
 import { ACCOUNT_TYPES, DEFAULT_TAX_FUNNEL, SLEEVE_MODES, TAX_FUNNELS } from '../domain/types.js';
@@ -61,6 +62,7 @@ export function AccountCard({
   const byId = modelsById(models);
   const allocated = allocatedCents(account);
   const unallocated = unallocatedCents(account);
+  const proposed = proposedPositions(account, models, tickers);
 
   /**
    * Manual lines being typed. They live here rather than on the case because a
@@ -254,11 +256,23 @@ export function AccountCard({
                   </td>
                   <td className="works-out">
                     {holdings.length > 0 ? (
-                      holdings.map((h) => (
-                        <span key={h.tickerSymbol} className="position">
-                          <code>{h.tickerSymbol}</code> {formatCentsWhole(h.marketValueCents)}
-                        </span>
-                      ))
+                      holdings.map((h) => {
+                        const position = proposed.find(
+                          (p) => p.bucket === sleeve.bucket && p.tickerSymbol === h.tickerSymbol,
+                        );
+                        return (
+                          <span key={h.tickerSymbol} className="position">
+                            <code>{h.tickerSymbol}</code> {formatCentsWhole(h.marketValueCents)}
+                            {position?.shares != null ? (
+                              <span className="muted"> · {position.shares.toLocaleString('en-US')} sh</span>
+                            ) : (
+                              <span className="tag tag-warn" title="Enter a price on the Tickers screen">
+                                no price
+                              </span>
+                            )}
+                          </span>
+                        );
+                      })
                     ) : sleeve.amountCents <= 0 ? (
                       <span className="muted">—</span>
                     ) : sleeve.mode === 'MANUAL' ? (

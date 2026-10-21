@@ -42,7 +42,6 @@ describe('the repo migrations', () => {
     runMigrations(db);
 
     expect(tableNames()).toEqual([
-      'account_positions',
       'account_sleeves',
       'accounts',
       'advisory_fee_tiers',
@@ -54,6 +53,7 @@ describe('the repo migrations', () => {
       'people',
       'person_health_concerns',
       'planned_expenses',
+      'proposal_positions',
       'schema_migrations',
       'sleeve_lines',
       'tickers',
@@ -91,6 +91,61 @@ describe('the repo migrations', () => {
     expect(
       db.prepare<[], { id: number }>('SELECT id FROM people ORDER BY id').all(),
     ).toEqual([{ id: 1 }, { id: 2 }]);
+  });
+
+  it('take a database that already ran 0005 and 0006 through to the current schema', () => {
+    // f4f483e's two migrations reached main, so teammates' databases have
+    // them: the Other-concern adjustment, typed "actual" positions, and
+    // ticker prices. 0007 and 0009 have to upgrade exactly that.
+    const through0006 = join(workspace, 'through-0006');
+    mkdirSync(through0006);
+    for (const name of [
+      '0001_original_test.sql',
+      '0002_client_case_schema.sql',
+      '0003_multiple_health_concerns.sql',
+      '0004_manual_sleeve_lines.sql',
+      '0005_gender_life_expectancy.sql',
+      '0006_ticker_prices_and_positions.sql',
+    ]) {
+      copyFileSync(join(migrationsDir(), name), join(through0006, name));
+    }
+    runMigrations(db, through0006);
+
+    db.exec(`
+      INSERT INTO client_cases (id, client_number, created_at, updated_at) VALUES (1, '1', 'x', 'x');
+      INSERT INTO people (id, client_case_id, role, gender, life_expectancy_age, other_health_concern_adjustment_years)
+        VALUES (1, 1, 'CLIENT', 'MALE', 88, 3);
+      INSERT INTO people (id, client_case_id, role) VALUES (2, 1, 'SPOUSE');
+      INSERT INTO tickers (symbol, asset_class, default_bucket, price_cents) VALUES ('TST', 'EQUITY', 'LATER', 10000);
+      INSERT INTO accounts (id, client_case_id, account_type) VALUES (1, 1, 'IRA');
+      INSERT INTO account_positions (account_id, bucket, ticker_symbol, shares_micros) VALUES (1, 'LATER', 'TST', 2500000);
+    `);
+
+    runMigrations(db);
+
+    expect(
+      db
+        .prepare<[], { id: number; gender: string | null; age: number | null; source: string | null }>(
+          'SELECT id, gender, life_expectancy_age AS age, life_expectancy_source AS source FROM people ORDER BY id',
+        )
+        .all(),
+    ).toEqual([
+      { id: 1, gender: 'MALE', age: 88, source: 'ADVISOR' },
+      { id: 2, gender: null, age: null, source: null },
+    ]);
+    const peopleColumns = db
+      .prepare<[], { name: string }>("SELECT name FROM pragma_table_info('people')")
+      .all()
+      .map((c) => c.name);
+    expect(peopleColumns).not.toContain('other_health_concern_adjustment_years');
+
+    expect(tableNames()).not.toContain('account_positions');
+    expect(
+      db.prepare<[], { price_cents: number; price_as_of: string | null }>(
+        "SELECT price_cents, price_as_of FROM tickers WHERE symbol = 'TST'",
+      ).get(),
+    ).toMatchObject({ price_cents: 10000, price_as_of: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
+    expect(db.pragma('foreign_key_check')).toEqual([]);
   });
 
   it('ship the three bucket definitions as part of the schema', () => {

@@ -4,6 +4,7 @@ import { AccountCard } from '../components/AccountCard.js';
 import { BucketBar } from '../components/BucketBar.js';
 import { Callout } from '../components/Callout.js';
 import { LifeExpectancyField } from '../components/LifeExpectancyField.js';
+import { ProposalShares } from '../components/ProposalShares.js';
 import {
   CheckboxGroupField,
   DerivedField,
@@ -287,6 +288,8 @@ export function ClientProfile({
 
         <BucketTotals clientCase={clientCase} target={target} />
       </section>
+
+      <ProposalShares clientCase={clientCase} models={models} tickers={tickers} onChange={onChange} />
 
       <section className="card">
         <h3>Fees and cash</h3>

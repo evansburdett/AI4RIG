@@ -175,6 +175,23 @@ export interface Account {
    * half-finished case can still be saved.
    */
   readonly sleeves: readonly BucketSleeve[];
+  /**
+   * Whole share counts locked in for this account's proposal (US-21). Empty
+   * until the advisor locks the proposal in; not recalculated on save.
+   */
+  readonly proposalShares: readonly ProposalShare[];
+}
+
+/**
+ * One locked-in position: how many whole shares of a ticker the proposal puts
+ * in one bucket of one account, and the price they were worked out at.
+ */
+export interface ProposalShare {
+  readonly bucket: BucketType;
+  readonly tickerSymbol: string;
+  readonly shares: number;
+  /** Price per share when locked in. Today's value uses the ticker's current price. */
+  readonly priceCents: Cents;
 }
 
 /** One ticker in a model. Basis points: 100 is 1%, and a model's lines add up to 10000. */
@@ -214,6 +231,14 @@ export interface Ticker {
   readonly symbol: string;
   readonly assetClass: AssetClass;
   readonly defaultBucket: BucketType;
+  /**
+   * Price per share (US-21), typed on the Tickers screen until RIG picks a
+   * price provider. Null when nobody has entered one; shares cannot be worked
+   * out for this ticker until then.
+   */
+  readonly priceCents: Cents | null;
+  /** The day the price was last changed, YYYY-MM-DD. Set by the server. */
+  readonly priceAsOf: string | null;
 }
 
 /**
@@ -305,6 +330,11 @@ export interface ClientCase {
   readonly spareTireCents: Cents;
   readonly nowInputs: NowInputs;
   readonly soonInputs: SoonInputs;
+  /**
+   * When the advisor last locked in the proposal's share counts (US-21), or
+   * null if never. Each account's proposalShares hold what was locked.
+   */
+  readonly proposalLockedAt: string | null;
   readonly updatedAt: string;
 }
 

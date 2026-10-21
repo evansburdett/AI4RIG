@@ -2,8 +2,8 @@
  * Client cases in and out of SQLite.
  *
  * This is the only file that knows how a ClientCase is spread across tables
- * (client_cases, people, accounts, account_sleeves, planned_expenses,
- * gap_entries).
+ * (client_cases, people, accounts, account_sleeves, sleeve_lines,
+ * proposal_positions, planned_expenses, gap_entries).
  * Routes call these functions and deal only in ClientCase objects.
  *
  * Saving replaces the case's child rows wholesale inside one transaction:
@@ -27,6 +27,7 @@ import {
   type LifeExpectancySource,
   type Person,
   type PlannedExpense,
+  type ProposalShare,
 } from '@ai4rig/shared';
 
 import { HttpError } from '../errors.js';
@@ -54,6 +55,7 @@ interface CaseRow {
   annual_income_gap_cents: number;
   income_gap_years: number;
   conservative_reserve_cents: number;
+  proposal_locked_at: string | null;
   updated_at: string;
 }
 
@@ -88,6 +90,14 @@ interface SleeveLineRow {
   bucket: BucketSleeve['bucket'];
   ticker_symbol: string;
   weight_bps: number;
+}
+
+interface ProposalRow {
+  account_id: number;
+  bucket: ProposalShare['bucket'];
+  ticker_symbol: string;
+  shares: number;
+  price_cents: number;
 }
 
 interface ExpenseRow {
@@ -182,6 +192,15 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
     )
     .all(row.id);
 
+  const proposalRows = db
+    .prepare<[number], ProposalRow>(
+      `SELECT p.account_id, p.bucket, p.ticker_symbol, p.shares, p.price_cents
+       FROM proposal_positions p JOIN accounts a ON a.id = p.account_id
+       WHERE a.client_case_id = ?
+       ORDER BY CASE p.bucket WHEN 'NOW' THEN 0 WHEN 'SOON' THEN 1 ELSE 2 END, p.ticker_symbol`,
+    )
+    .all(row.id);
+
   const accounts = db
     .prepare<[number], AccountRow>(
       `SELECT id, account_type, tax_funnel, masked_number, balance_cents
@@ -208,6 +227,14 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
               .map((l) => ({ tickerSymbol: l.ticker_symbol, weightBps: l.weight_bps })),
           };
         }),
+        proposalShares: proposalRows
+          .filter((p) => p.account_id === a.id)
+          .map((p) => ({
+            bucket: p.bucket,
+            tickerSymbol: p.ticker_symbol,
+            shares: p.shares,
+            priceCents: p.price_cents,
+          })),
       }),
     );
 
@@ -267,6 +294,7 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
       forcedWithdrawals: gapsOf('FORCED_WITHDRAWAL'),
       conservativeReserveCents: row.conservative_reserve_cents,
     },
+    proposalLockedAt: row.proposal_locked_at,
     updatedAt: row.updated_at,
   };
 }
@@ -369,6 +397,14 @@ function checkSleeveTickers(db: Db, input: ClientCaseInput): void {
         }
       }
     }
+    for (const share of account.proposalShares) {
+      if (known.get(share.tickerSymbol) === undefined) {
+        throw new HttpError(
+          400,
+          `Account ${index + 1}, ${share.bucket}: locked shares of ${share.tickerSymbol}, which is not in the ticker list`,
+        );
+      }
+    }
   });
 }
 
@@ -406,6 +442,7 @@ export function saveClientCase(
          annual_income_gap_cents = @annualIncomeGapCents,
          income_gap_years = @incomeGapYears,
          conservative_reserve_cents = @conservativeReserveCents,
+         proposal_locked_at = @proposalLockedAt,
          updated_at = @updatedAt
        WHERE id = @caseId`,
     ).run({
@@ -423,6 +460,7 @@ export function saveClientCase(
       annualIncomeGapCents: input.soonInputs.annualIncomeGapCents,
       incomeGapYears: input.soonInputs.incomeGapYears,
       conservativeReserveCents: input.soonInputs.conservativeReserveCents,
+      proposalLockedAt: input.proposalLockedAt,
       updatedAt: now.toISOString(),
     });
 
@@ -464,6 +502,11 @@ export function saveClientCase(
       `INSERT INTO account_sleeves (account_id, bucket, amount_cents, model_id, mode)
        VALUES (?, ?, ?, ?, ?)`,
     );
+    // Locked shares go with their account (cascade), so they are rewritten here too.
+    const addProposalShare = db.prepare(
+      `INSERT INTO proposal_positions (account_id, bucket, ticker_symbol, shares, price_cents)
+       VALUES (?, ?, ?, ?, ?)`,
+    );
     // Lines go with their sleeve (cascade), so there is nothing to clear first.
     const addSleeveLine = db.prepare(
       `INSERT INTO sleeve_lines (account_id, bucket, position, ticker_symbol, weight_bps)
@@ -492,6 +535,9 @@ export function saveClientCase(
         sleeve.lines.forEach((line, position) =>
           addSleeveLine.run(accountId, sleeve.bucket, position, line.tickerSymbol, line.weightBps),
         );
+      }
+      for (const share of account.proposalShares) {
+        addProposalShare.run(accountId, share.bucket, share.tickerSymbol, share.shares, share.priceCents);
       }
     });
 

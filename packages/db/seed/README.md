@@ -25,9 +25,9 @@ not a backup.
 
 | File | What it loads |
 |---|---|
-| `0001_placeholder_tickers.sql` | Ten broad ETFs standing in for RIG's approved universe until they send the Common Investments list |
+| `0001_placeholder_tickers.sql` | Ten broad ETFs standing in for RIG's approved universe until they send the Common Investments list, with round placeholder prices (not quotes) so a proposal can be locked in |
 | `0002_placeholder_models.sql` | Four model portfolios built from those tickers, standing in for RIG's vendor models |
-| `0003_sample_cases.sql` | Two client cases (1042 and 2317). 1042 uses the figures from RIG's workbook and lands exactly on its bucket totals |
+| `0003_sample_cases.sql` | Two client cases (1042 and 2317). 1042 uses the figures from RIG's workbook plus advisory fee cash, and lands exactly on its bucket totals |
 
 The sample cases use ids in the 9000s so they do not collide with cases you
 create in the UI. The bucket definitions are not here: they live in migration

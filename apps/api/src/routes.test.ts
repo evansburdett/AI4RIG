@@ -143,6 +143,7 @@ describe('client cases', () => {
           taxFunnel: 'PRE_TAX',
           maskedNumber: '0042',
           balanceCents: 50_000_00,
+          proposalShares: [],
           sleeves: [
             { bucket: 'NOW', amountCents: 0, mode: 'MODEL', modelId: null, lines: [] },
             { bucket: 'SOON', amountCents: 12_345_67, mode: 'MODEL', modelId: '9002', lines: [] },
@@ -289,7 +290,39 @@ describe('tickers', () => {
   it('lists the universe alphabetically', async () => {
     const { body } = await call<Ticker[]>('GET', '/api/tickers');
     expect(body).toHaveLength(10);
-    expect(body[0]).toEqual({ symbol: 'BIL', assetClass: 'CASH', defaultBucket: 'NOW' });
+    expect(body[0]).toMatchObject({ symbol: 'BIL', assetClass: 'CASH', defaultBucket: 'NOW' });
+  });
+
+  it('stamps a changed price with the day, and keeps it when only the bucket changes', async () => {
+    const priced = await call<Ticker>('PUT', '/api/tickers/SCHD', {
+      symbol: 'SCHD',
+      assetClass: 'EQUITY',
+      defaultBucket: 'LATER',
+      priceCents: 27_50,
+    });
+    expect(priced.body).toMatchObject({ priceCents: 27_50, priceAsOf: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
+
+    // A caller that leaves the price out (US-24's add-a-symbol, a bucket
+    // change) must not wipe it.
+    const moved = await call<Ticker>('PUT', '/api/tickers/SCHD', {
+      symbol: 'SCHD',
+      assetClass: 'EQUITY',
+      defaultBucket: 'SOON',
+    });
+    expect(moved.body).toMatchObject({ defaultBucket: 'SOON', priceCents: 27_50, priceAsOf: priced.body.priceAsOf });
+
+    const cleared = await call<Ticker>('PUT', '/api/tickers/SCHD', { ...moved.body, priceCents: null });
+    expect(cleared.body).toMatchObject({ priceCents: null, priceAsOf: null });
+  });
+
+  it('refuses a price of zero', async () => {
+    const { status } = await call('PUT', '/api/tickers/SCHD', {
+      symbol: 'SCHD',
+      assetClass: 'EQUITY',
+      defaultBucket: 'LATER',
+      priceCents: 0,
+    });
+    expect(status).toBe(400);
   });
 
   it('updates an existing ticker and adds a new one', async () => {
@@ -523,6 +556,57 @@ describe('gender (US-26)', () => {
       people: original.people.map((p) => ({ ...p, gender: 'X' })),
     });
     expect(status).toBe(400);
+  });
+});
+
+describe('locked proposal shares (US-21)', () => {
+  const lockedAt = '2026-10-21T15:00:00.000Z';
+
+  async function lockJoint(shares: { bucket: string; tickerSymbol: string; shares: number; priceCents: number }[]) {
+    const { body: original } = await call<ClientCase>('GET', '/api/clients/1042');
+    return call<ClientCase>('PUT', '/api/clients/1042', {
+      ...original,
+      proposalLockedAt: lockedAt,
+      accounts: original.accounts.map((a, i) => (i === 0 ? { ...a, proposalShares: shares } : a)),
+    });
+  }
+
+  it('saves and reads back whole share counts with the price they were locked at', async () => {
+    const { status, body } = await lockJoint([
+      { bucket: 'NOW', tickerSymbol: 'SGOV', shares: 1230, priceCents: 100_00 },
+      { bucket: 'LATER', tickerSymbol: 'VTI', shares: 1983, priceCents: 300_00 },
+    ]);
+    expect(status).toBe(200);
+    expect(body.proposalLockedAt).toBe(lockedAt);
+    expect(body.accounts[0]?.proposalShares).toEqual([
+      { bucket: 'NOW', tickerSymbol: 'SGOV', shares: 1230, priceCents: 100_00 },
+      { bucket: 'LATER', tickerSymbol: 'VTI', shares: 1983, priceCents: 300_00 },
+    ]);
+    // Typed balances are untouched by locking: shares never derive the balance.
+    expect(body.accounts[0]?.balanceCents).toBe(1_200_000_00);
+  });
+
+  it('refuses a fraction of a share, and shares with no lock time', async () => {
+    expect((await lockJoint([{ bucket: 'NOW', tickerSymbol: 'SGOV', shares: 1.5, priceCents: 100_00 }])).status).toBe(400);
+
+    const { body: original } = await call<ClientCase>('GET', '/api/clients/1042');
+    const { status } = await call('PUT', '/api/clients/1042', {
+      ...original,
+      proposalLockedAt: null,
+      accounts: original.accounts.map((a, i) =>
+        i === 0 ? { ...a, proposalShares: [{ bucket: 'NOW', tickerSymbol: 'SGOV', shares: 1, priceCents: 100_00 }] } : a,
+      ),
+    });
+    expect(status).toBe(400);
+  });
+
+  it('refuses to delete a ticker with locked shares, and says which case', async () => {
+    await call('PUT', '/api/tickers/SCHD', { symbol: 'SCHD', assetClass: 'EQUITY', defaultBucket: 'LATER' });
+    expect((await lockJoint([{ bucket: 'LATER', tickerSymbol: 'SCHD', shares: 10, priceCents: 27_50 }])).status).toBe(200);
+
+    const { status, body } = await call<{ error: string }>('DELETE', '/api/tickers/SCHD');
+    expect(status).toBe(409);
+    expect(body.error).toMatch(/locked in for client case 1042/);
   });
 });
 

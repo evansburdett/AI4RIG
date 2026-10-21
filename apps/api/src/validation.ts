@@ -103,6 +103,19 @@ const account = z.object({
   // Last four only (ADR 0006). Anything longer is a real account number.
   maskedNumber: z.string().trim().max(4, 'Masked number is the last four digits only'),
   balanceCents: cents,
+  proposalShares: z
+    .array(
+      z.object({
+        bucket,
+        tickerSymbol: z.string().trim().toUpperCase().min(1).max(10),
+        shares: z.int().min(0, 'A share count cannot be negative'),
+        priceCents: cents.min(1, 'A locked price has to be above $0'),
+      }),
+    )
+    .refine(
+      (shares) => new Set(shares.map((s) => `${s.bucket}:${s.tickerSymbol}`)).size === shares.length,
+      'A ticker can be locked in once per bucket of an account',
+    ),
   sleeves: z
     .array(sleeve)
     .length(3)
@@ -161,12 +174,19 @@ export const clientCaseSchema = z.object({
     forcedWithdrawals: z.array(gapEntry),
     conservativeReserveCents: cents,
   }),
+  proposalLockedAt: z.iso.datetime().nullable(),
   // Ignored: the server stamps updatedAt on save. Accepted so the client can
   // send back exactly what it received.
   updatedAt: z.string().optional(),
 });
 
 export type ClientCaseInput = z.infer<typeof clientCaseSchema>;
+
+/** Locked shares mean nothing without the moment they were locked. */
+export const checkedClientCaseSchema = clientCaseSchema.refine(
+  (c) => c.proposalLockedAt !== null || c.accounts.every((a) => a.proposalShares.length === 0),
+  { error: 'Share counts can only be saved with the time they were locked in', path: ['proposalLockedAt'] },
+);
 
 /** Only what US-28 sends to the model. Extra keys are dropped, not passed on. */
 export const lifeExpectancyRequestSchema = z.object({
@@ -188,6 +208,11 @@ export const tickerSchema = z.object({
     .regex(/^[A-Z0-9.-]+$/, 'Letters, digits, dots, and dashes only'),
   assetClass: z.enum(ASSET_CLASSES),
   defaultBucket: bucket,
+  // Optional so a caller that only changes the bucket cannot wipe the price
+  // by leaving it out. null clears it.
+  priceCents: cents.min(1, 'A price has to be above $0').nullable().optional(),
+  // Ignored: the server stamps it when the price changes.
+  priceAsOf: z.string().nullable().optional(),
 });
 
 export const modelPortfolioSchema = z.object({

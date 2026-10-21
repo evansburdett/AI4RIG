@@ -70,6 +70,7 @@ const WORKBOOK_CASE: ClientCase = {
       taxFunnel: 'TAXABLE',
       maskedNumber: '4417',
       balanceCents: 1_200_000_00,
+      proposalShares: [],
       sleeves: sleeves([205_000, '9001'], [400_000, '9002'], [595_000, '9003']),
     },
     {
@@ -78,6 +79,7 @@ const WORKBOOK_CASE: ClientCase = {
       taxFunnel: 'PRE_TAX',
       maskedNumber: '8830',
       balanceCents: 1_500_000_00,
+      proposalShares: [],
       sleeves: sleeves([18_750, '9001'], [514_700, '9002'], [966_550, '9003']),
     },
     {
@@ -86,6 +88,7 @@ const WORKBOOK_CASE: ClientCase = {
       taxFunnel: 'TAX_FREE',
       maskedNumber: '2291',
       balanceCents: 300_000_00,
+      proposalShares: [],
       sleeves: sleeves([5_250, '9001'], [0, null], [294_750, '9004']),
     },
   ],
@@ -109,6 +112,7 @@ const WORKBOOK_CASE: ClientCase = {
     forcedWithdrawals: [],
     conservativeReserveCents: 100_000_00,
   },
+  proposalLockedAt: null,
   updatedAt: '2026-09-15T14:02:00.000Z',
 };
 
@@ -141,6 +145,7 @@ const ACCUMULATOR_CASE: ClientCase = {
       taxFunnel: 'TAXABLE',
       maskedNumber: '1005',
       balanceCents: 280_000_00,
+      proposalShares: [],
       // Later is picked by hand here, the one manual bucket in the samples.
       sleeves: sleeves([25_000, '9001'], [0, null], [
         240_000,
@@ -156,6 +161,7 @@ const ACCUMULATOR_CASE: ClientCase = {
       taxFunnel: 'TAX_FREE',
       maskedNumber: '7742',
       balanceCents: 240_000_00,
+      proposalShares: [],
       sleeves: sleeves([0, null], [60_000, null], [180_000, '9004']),
     },
   ],
@@ -176,6 +182,7 @@ const ACCUMULATOR_CASE: ClientCase = {
     forcedWithdrawals: [],
     conservativeReserveCents: 75_000_00,
   },
+  proposalLockedAt: null,
   updatedAt: '2026-09-11T09:20:00.000Z',
 };
 

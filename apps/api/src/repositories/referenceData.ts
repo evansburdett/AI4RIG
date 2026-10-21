@@ -13,6 +13,8 @@ interface TickerRow {
   symbol: string;
   asset_class: Ticker['assetClass'];
   default_bucket: Ticker['defaultBucket'];
+  price_cents: number | null;
+  price_as_of: string | null;
 }
 
 interface DefinitionRow {
@@ -26,6 +28,8 @@ const toTicker = (row: TickerRow): Ticker => ({
   symbol: row.symbol,
   assetClass: row.asset_class,
   defaultBucket: row.default_bucket,
+  priceCents: row.price_cents,
+  priceAsOf: row.price_as_of,
 });
 
 const toDefinition = (row: DefinitionRow): BucketDefinition => ({
@@ -37,29 +41,73 @@ const toDefinition = (row: DefinitionRow): BucketDefinition => ({
 
 export function listTickers(db: Db): Ticker[] {
   return db
-    .prepare<[], TickerRow>('SELECT symbol, asset_class, default_bucket FROM tickers ORDER BY symbol')
+    .prepare<[], TickerRow>(
+      'SELECT symbol, asset_class, default_bucket, price_cents, price_as_of FROM tickers ORDER BY symbol',
+    )
     .all()
     .map(toTicker);
+}
+
+function getTicker(db: Db, symbol: string): Ticker | null {
+  const row = db
+    .prepare<[string], TickerRow>(
+      'SELECT symbol, asset_class, default_bucket, price_cents, price_as_of FROM tickers WHERE symbol = ?',
+    )
+    .get(symbol);
+  return row === undefined ? null : toTicker(row);
+}
+
+/** What a caller may send: the price is optional, and its date is the server's to set. */
+export interface TickerInput {
+  readonly symbol: string;
+  readonly assetClass: Ticker['assetClass'];
+  readonly defaultBucket: Ticker['defaultBucket'];
+  /** Undefined leaves the stored price alone; null clears it. */
+  readonly priceCents?: number | null | undefined;
 }
 
 /**
  * Insert or update one ticker. The default bucket is RIG's mapping of which
  * bucket the symbol belongs in; a model that puts it elsewhere is flagged on
  * the Models screen, not refused.
+ *
+ * A changed price is stamped with today's date (US-21), so the screens can
+ * show how old a price is. `today` is a parameter for tests.
  */
-export function upsertTicker(db: Db, ticker: Ticker): Ticker {
+export function upsertTicker(db: Db, ticker: TickerInput, today: Date = new Date()): Ticker {
+  const existing = getTicker(db, ticker.symbol);
+  const priceCents = ticker.priceCents === undefined ? (existing?.priceCents ?? null) : ticker.priceCents;
+  const priceAsOf =
+    priceCents === null
+      ? null
+      : priceCents === existing?.priceCents
+        ? existing.priceAsOf
+        : today.toISOString().slice(0, 10);
+
   db.prepare(
-    `INSERT INTO tickers (symbol, asset_class, default_bucket) VALUES (@symbol, @assetClass, @defaultBucket)
+    `INSERT INTO tickers (symbol, asset_class, default_bucket, price_cents, price_as_of)
+     VALUES (@symbol, @assetClass, @defaultBucket, @priceCents, @priceAsOf)
      ON CONFLICT (symbol) DO UPDATE SET
        asset_class = excluded.asset_class,
-       default_bucket = excluded.default_bucket`,
-  ).run(ticker);
-  return ticker;
+       default_bucket = excluded.default_bucket,
+       price_cents = excluded.price_cents,
+       price_as_of = excluded.price_as_of`,
+  ).run({
+    symbol: ticker.symbol,
+    assetClass: ticker.assetClass,
+    defaultBucket: ticker.defaultBucket,
+    priceCents,
+    priceAsOf,
+  });
+
+  const saved = getTicker(db, ticker.symbol);
+  if (saved === null) throw new Error(`Saved ${ticker.symbol} and then could not read it back`);
+  return saved;
 }
 
 /**
- * Refused (409) while any model or any client's hand-picked bucket still uses
- * the ticker, naming them. Without the second check the foreign key on
+ * Refused (409) while any model, any client's hand-picked bucket, or any
+ * locked-in proposal still uses the ticker, naming them. Without the second check the foreign key on
  * sleeve_lines would refuse the delete anyway, but as an unexplained 500.
  */
 export function deleteTicker(db: Db, symbol: string): boolean {
@@ -88,6 +136,24 @@ export function deleteTicker(db: Db, symbol: string): boolean {
     throw new HttpError(
       409,
       `${symbol} is picked by hand in client ${noun} ${cases.join(', ')}. Take it out of those first.`,
+    );
+  }
+
+  const locked = db
+    .prepare<[string], { client_number: string }>(
+      `SELECT DISTINCT c.client_number FROM proposal_positions p
+       JOIN accounts a ON a.id = p.account_id
+       JOIN client_cases c ON c.id = a.client_case_id
+       WHERE p.ticker_symbol = ? ORDER BY c.client_number`,
+    )
+    .all(symbol)
+    .map((row) => row.client_number);
+  if (locked.length > 0) {
+    const noun = locked.length === 1 ? 'case' : 'cases';
+    throw new HttpError(
+      409,
+      `${symbol} has shares locked in for client ${noun} ${locked.join(', ')}. ` +
+        'Lock those proposals in again without it first.',
     );
   }
 
