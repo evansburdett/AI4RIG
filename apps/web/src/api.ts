@@ -11,6 +11,8 @@ import type {
   BucketDefinition,
   ClientCase,
   ClientSummary,
+  LifeExpectancyEstimate,
+  LifeExpectancyRequest,
   ModelPortfolio,
   Ticker,
 } from './domain/types.js';
@@ -94,6 +96,8 @@ export interface Health {
   apiHost: string;
   apiPort: number;
   nodeEnv: string;
+  /** Whether this machine has an OpenAI key for US-28. */
+  lifeExpectancyEstimates: boolean;
   time: string;
 }
 
@@ -139,4 +143,8 @@ export const api = {
 
   saveBucketDefinition: (definition: BucketDefinition) =>
     send<BucketDefinition>(`/api/bucket-definitions/${definition.bucket}`, 'PUT', definition),
+
+  /** US-28. Nothing is saved; the answer goes in the person's field. */
+  estimateLifeExpectancy: (request: LifeExpectancyRequest) =>
+    send<LifeExpectancyEstimate>('/api/life-expectancy/estimate', 'POST', request),
 };

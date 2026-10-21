@@ -854,3 +854,15 @@ tfoot td {
 .add-ticker .field {
   margin: 0;
 }
+
+/* US-28: the life expectancy age with its estimate button beside it. */
+.inline-action {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.inline-action input {
+  width: 6rem;
+}

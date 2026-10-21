@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import { AccountCard } from '../components/AccountCard.js';
 import { BucketBar } from '../components/BucketBar.js';
 import { Callout } from '../components/Callout.js';
+import { LifeExpectancyField } from '../components/LifeExpectancyField.js';
 import {
   CheckboxGroupField,
   DerivedField,
@@ -33,6 +34,8 @@ import type {
   AllocationTarget,
   ClientCase,
   GapEntry,
+  LifeExpectancyEstimate,
+  LifeExpectancyRequest,
   ModelPortfolio,
   PlannedExpense,
   Ticker,
@@ -51,6 +54,8 @@ interface Props {
   /** Turns a manual bucket into a reusable model. */
   onSaveAsModel: (model: ModelPortfolio) => Promise<ModelPortfolio>;
   onAddTicker: (ticker: Ticker) => Promise<Ticker>;
+  /** US-28: an AI suggestion for one person's life expectancy. */
+  onEstimateLifeExpectancy: (request: LifeExpectancyRequest) => Promise<LifeExpectancyEstimate>;
   onChange: (next: ClientCase) => void;
   today: Date;
 }
@@ -70,6 +75,7 @@ export function ClientProfile({
   onChange,
   onSaveAsModel,
   onAddTicker,
+  onEstimateLifeExpectancy,
   today,
 }: Props) {
   const totals = useMemo(() => computePlanTotals(clientCase), [clientCase]);
@@ -145,13 +151,11 @@ export function ClientProfile({
                     onChange={(healthConcernOther) => updatePerson({ healthConcernOther })}
                   />
                 )}
-                <NumberField
-                  label="Life expectancy age"
-                  value={person.lifeExpectancyAge}
-                  min={0}
-                  max={130}
-                  hint="Entered by the advisor. The worksheet wants this estimated from age and health."
-                  onChange={(lifeExpectancyAge) => updatePerson({ lifeExpectancyAge })}
+                <LifeExpectancyField
+                  person={person}
+                  age={age}
+                  onChange={updatePerson}
+                  onEstimate={onEstimateLifeExpectancy}
                 />
                 {person.role === 'SPOUSE' && (
                   <button
@@ -180,6 +184,7 @@ export function ClientProfile({
                         healthConcerns: [],
                         healthConcernOther: '',
                         lifeExpectancyAge: null,
+                        lifeExpectancySource: null,
                       },
                     ],
                   })

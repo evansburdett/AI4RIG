@@ -38,6 +38,13 @@ export type LifeStage = (typeof LIFE_STAGES)[number];
 export const GENDERS = ['MALE', 'FEMALE'] as const;
 export type Gender = (typeof GENDERS)[number];
 
+/**
+ * Where a person's life expectancy age came from (US-28): an AI estimate the
+ * advisor accepted, or a figure the advisor typed or changed.
+ */
+export const LIFE_EXPECTANCY_SOURCES = ['AI', 'ADVISOR'] as const;
+export type LifeExpectancySource = (typeof LIFE_EXPECTANCY_SOURCES)[number];
+
 export const MONEY_CYCLE_PHASES = ['ACCUMULATION', 'PRESERVATION', 'DISTRIBUTION'] as const;
 export type MoneyCyclePhase = (typeof MONEY_CYCLE_PHASES)[number];
 
@@ -94,7 +101,31 @@ export interface Person {
    * condition and nothing else — never anything identifying (ADR 0006).
    */
   readonly healthConcernOther: string;
+  /** The age the plan has to last to. Null until estimated or typed. */
   readonly lifeExpectancyAge: number | null;
+  /** Null exactly when lifeExpectancyAge is. */
+  readonly lifeExpectancySource: LifeExpectancySource | null;
+}
+
+/**
+ * Everything the life expectancy estimate is given (US-28). Age rather than
+ * birth year, and nothing that identifies the person: no case number, no
+ * initials (ADR 0006).
+ */
+export interface LifeExpectancyRequest {
+  readonly age: number;
+  readonly gender: Gender;
+  readonly healthConcerns: readonly HealthConcern[];
+  /** The OTHER description, or ''. */
+  readonly healthConcernOther: string;
+}
+
+export interface LifeExpectancyEstimate {
+  readonly lifeExpectancyAge: number;
+  /** One or two sentences from the model on how it got there. */
+  readonly explanation: string;
+  /** The model that answered, for the record. */
+  readonly model: string;
 }
 
 /**

@@ -13,6 +13,7 @@ import {
   BUCKETS,
   GENDERS,
   HEALTH_CONCERNS,
+  LIFE_EXPECTANCY_SOURCES,
   LIFE_STAGES,
   MONEY_CYCLE_PHASES,
   SLEEVE_MODES,
@@ -43,12 +44,17 @@ const person = z
       ),
     healthConcernOther: z.string().trim().max(200),
     lifeExpectancyAge: z.int().min(0).max(130).nullable(),
+    lifeExpectancySource: z.enum(LIFE_EXPECTANCY_SOURCES).nullable(),
   })
   // Free text with no OTHER ticked describes nothing, and would sit in the
   // database unreachable from the screen that wrote it.
   .refine((p) => p.healthConcernOther === '' || p.healthConcerns.includes('OTHER'), {
     error: 'Describe an "other" health concern only when Other is selected',
     path: ['healthConcernOther'],
+  })
+  .refine((p) => (p.lifeExpectancyAge === null) === (p.lifeExpectancySource === null), {
+    error: 'A life expectancy age and where it came from go together',
+    path: ['lifeExpectancySource'],
   });
 
 const taxFunnel = z.enum(TAX_FUNNELS);
@@ -161,6 +167,16 @@ export const clientCaseSchema = z.object({
 });
 
 export type ClientCaseInput = z.infer<typeof clientCaseSchema>;
+
+/** Only what US-28 sends to the model. Extra keys are dropped, not passed on. */
+export const lifeExpectancyRequestSchema = z.object({
+  age: z.int().min(0).max(120),
+  gender: z.enum(GENDERS),
+  healthConcerns: z
+    .array(z.enum(HEALTH_CONCERNS))
+    .refine((concerns) => new Set(concerns).size === concerns.length, 'A health concern can only be listed once'),
+  healthConcernOther: z.string().trim().max(200),
+});
 
 export const tickerSchema = z.object({
   symbol: z

@@ -24,6 +24,7 @@ import {
   type GapEntry,
   type Gender,
   type HealthConcern,
+  type LifeExpectancySource,
   type Person,
   type PlannedExpense,
 } from '@ai4rig/shared';
@@ -63,6 +64,7 @@ interface PersonRow {
   gender: Gender | null;
   health_concern_other: string;
   life_expectancy_age: number | null;
+  life_expectancy_source: LifeExpectancySource | null;
 }
 
 interface AccountRow {
@@ -132,7 +134,8 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
 
   const personRows = db
     .prepare<[number], PersonRow>(
-      `SELECT id, role, birth_year, gender, health_concern_other, life_expectancy_age
+      `SELECT id, role, birth_year, gender, health_concern_other, life_expectancy_age,
+              life_expectancy_source
        FROM people WHERE client_case_id = ? ORDER BY role`,
     )
     .all(row.id);
@@ -158,6 +161,7 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
       ),
       healthConcernOther: p.health_concern_other,
       lifeExpectancyAge: p.life_expectancy_age,
+      lifeExpectancySource: p.life_expectancy_source,
     }),
   );
 
@@ -428,8 +432,10 @@ export function saveClientCase(
     }
 
     const addPerson = db.prepare(
-      `INSERT INTO people (client_case_id, role, birth_year, gender, health_concern_other, life_expectancy_age)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO people (
+         client_case_id, role, birth_year, gender, health_concern_other,
+         life_expectancy_age, life_expectancy_source
+       ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
     );
     // Deleting the people above already cascaded their concerns away.
     const addConcern = db.prepare(
@@ -443,6 +449,7 @@ export function saveClientCase(
         person.gender,
         person.healthConcernOther,
         person.lifeExpectancyAge,
+        person.lifeExpectancySource,
       );
       for (const concern of person.healthConcerns) {
         addConcern.run(Number(lastInsertRowid), concern);

@@ -355,6 +355,7 @@ export function App() {
             onChange={setDraft}
             onSaveAsModel={saveModel}
             onAddTicker={addTicker}
+            onEstimateLifeExpectancy={api.estimateLifeExpectancy}
             today={today}
           />
         )}

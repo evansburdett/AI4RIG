@@ -13,6 +13,7 @@ function person(birthYear: number | null, lifeExpectancyAge: number | null): Per
     healthConcerns: [],
     healthConcernOther: '',
     lifeExpectancyAge,
+    lifeExpectancySource: lifeExpectancyAge === null ? null : 'ADVISOR',
   };
 }
 

@@ -7,6 +7,7 @@ import type { BucketDefinition, ClientCase, ClientSummary, ModelPortfolio, Ticke
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { createApp } from './app.js';
+import { HttpError } from './errors.js';
 
 /**
  * Every route against a temp database built from the real migrations and
@@ -35,6 +36,11 @@ beforeEach(async () => {
   const { app } = createApp({
     config: { host: '127.0.0.1', port: 0, webOrigins: [], nodeEnv: 'test' },
     db,
+    // Stands in for OpenAI: 84, or a 503 for anyone over 100, so both paths run.
+    estimator: async (request) => {
+      if (request.age > 100) throw new HttpError(503, 'not set up');
+      return { lifeExpectancyAge: 84, explanation: `Estimated for ${request.age}.`, model: 'stub' };
+    },
   });
 
   await new Promise<void>((resolve) => {
@@ -477,6 +483,57 @@ describe('gender (US-26)', () => {
       people: original.people.map((p) => ({ ...p, gender: 'X' })),
     });
     expect(status).toBe(400);
+  });
+});
+
+describe('life expectancy (US-28)', () => {
+  it('passes age, gender, and concerns to the estimator and returns its answer', async () => {
+    const { status, body } = await call('POST', '/api/life-expectancy/estimate', {
+      age: 63,
+      gender: 'FEMALE',
+      healthConcerns: ['HEART'],
+      healthConcernOther: '',
+    });
+    expect(status).toBe(200);
+    expect(body).toEqual({ lifeExpectancyAge: 84, explanation: 'Estimated for 63.', model: 'stub' });
+  });
+
+  it('refuses a request without a gender', async () => {
+    const { status } = await call('POST', '/api/life-expectancy/estimate', {
+      age: 63,
+      healthConcerns: [],
+      healthConcernOther: '',
+    });
+    expect(status).toBe(400);
+  });
+
+  it('passes the estimator\'s own failure through', async () => {
+    const { status, body } = await call<{ error: string }>('POST', '/api/life-expectancy/estimate', {
+      age: 101,
+      gender: 'MALE',
+      healthConcerns: [],
+      healthConcernOther: '',
+    });
+    expect(status).toBe(503);
+    expect(body.error).toBe('not set up');
+  });
+
+  it('saves where the age came from, and refuses a source with no age', async () => {
+    const { body: original } = await call<ClientCase>('GET', '/api/clients/1042');
+    expect(original.people.map((p) => p.lifeExpectancySource)).toEqual(['ADVISOR', 'AI']);
+
+    const cleared = await call('PUT', '/api/clients/1042', {
+      ...original,
+      people: original.people.map((p) => ({ ...p, lifeExpectancyAge: null })),
+    });
+    expect(cleared.status).toBe(400);
+
+    const { status, body } = await call<ClientCase>('PUT', '/api/clients/1042', {
+      ...original,
+      people: original.people.map((p) => ({ ...p, lifeExpectancyAge: null, lifeExpectancySource: null })),
+    });
+    expect(status).toBe(200);
+    expect(body.people.map((p) => p.lifeExpectancyAge)).toEqual([null, null]);
   });
 });
 

@@ -43,6 +43,7 @@ const WORKBOOK_CASE: ClientCase = {
       healthConcerns: [],
       healthConcernOther: '',
       lifeExpectancyAge: 88,
+      lifeExpectancySource: 'ADVISOR',
     },
     {
       role: 'SPOUSE',
@@ -52,6 +53,7 @@ const WORKBOOK_CASE: ClientCase = {
       healthConcerns: ['HEART', 'OTHER'],
       healthConcernOther: 'Managed hypertension',
       lifeExpectancyAge: 85,
+      lifeExpectancySource: 'AI',
     },
   ],
   moneyCyclePhase: 'DISTRIBUTION',
@@ -122,6 +124,7 @@ const ACCUMULATOR_CASE: ClientCase = {
       healthConcerns: [],
       healthConcernOther: '',
       lifeExpectancyAge: 90,
+      lifeExpectancySource: 'ADVISOR',
     },
   ],
   moneyCyclePhase: 'ACCUMULATION',
