@@ -1,29 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  ageFromBirthYear,
-  estimatedLifeExpectancyAge,
-  householdPlanYears,
-  planYears,
-} from './lifeStage.js';
-import type { Gender, HealthConcern, Person } from './types.js';
+import { ageFromBirthYear, householdPlanYears, planYears } from './lifeStage.js';
+import type { Person } from './types.js';
 
 const TODAY = new Date('2026-09-17T00:00:00Z');
 
-function person(
-  birthYear: number | null,
-  gender: Gender | null = 'MALE',
-  healthConcerns: readonly HealthConcern[] = [],
-  otherHealthConcernAdjustmentYears: number | null = null,
-): Person {
-  return {
-    role: 'CLIENT',
-    birthYear,
-    gender,
-    healthConcerns,
-    healthConcernOther: '',
-    otherHealthConcernAdjustmentYears,
-  };
+function person(birthYear: number | null, lifeExpectancyAge: number | null): Person {
+  return { role: 'CLIENT', birthYear, healthConcerns: [], healthConcernOther: '', lifeExpectancyAge };
 }
 
 describe('ageFromBirthYear', () => {
@@ -39,39 +22,27 @@ describe('ageFromBirthYear', () => {
 });
 
 describe('planYears', () => {
-  it('uses the SSA remaining life expectancy for age and gender', () => {
-    expect(estimatedLifeExpectancyAge(person(1961, 'MALE'), TODAY)).toBe(82);
-    expect(estimatedLifeExpectancyAge(person(1961, 'FEMALE'), TODAY)).toBe(85);
-    expect(planYears(person(1961, 'MALE'), TODAY)).toBe(17);
+  it('is life expectancy minus current age', () => {
+    expect(planYears(person(1960, 88), TODAY)).toBe(22);
   });
 
-  it('subtracts three years for each standard concern and the custom Other adjustment', () => {
-    expect(
-      estimatedLifeExpectancyAge(person(1961, 'MALE', ['CANCER', 'HEART']), TODAY),
-    ).toBe(76);
-    expect(
-      estimatedLifeExpectancyAge(person(1961, 'MALE', ['HEART', 'OTHER'], 2.5), TODAY),
-    ).toBe(77);
+  it('never goes negative', () => {
+    expect(planYears(person(1930, 88), TODAY)).toBe(0);
   });
 
-  it('does not estimate without age, gender, or the Other adjustment', () => {
-    expect(estimatedLifeExpectancyAge(person(null), TODAY)).toBeNull();
-    expect(estimatedLifeExpectancyAge(person(1960, null), TODAY)).toBeNull();
-    expect(estimatedLifeExpectancyAge(person(1960, 'MALE', ['OTHER']), TODAY)).toBeNull();
-  });
-
-  it('never estimates an age earlier than the current age', () => {
-    expect(estimatedLifeExpectancyAge(person(1930, 'MALE', ['CANCER', 'STROKE', 'HEART']), TODAY))
-      .toBe(96);
+  it('is null until both halves are entered', () => {
+    expect(planYears(person(1960, null), TODAY)).toBeNull();
+    expect(planYears(person(null, 88), TODAY)).toBeNull();
   });
 });
 
 describe('householdPlanYears', () => {
   it('takes the longer horizon, because the plan outlasts both', () => {
-    expect(householdPlanYears([person(1960, 'MALE'), person(1964, 'FEMALE')], TODAY)).toBe(23);
+    expect(householdPlanYears([person(1960, 88), person(1964, 92)], TODAY)).toBe(30);
   });
 
   it('ignores a person who is not filled in yet', () => {
-    expect(householdPlanYears([person(1960, 'MALE'), person(null)], TODAY)).toBe(17);
+    expect(householdPlanYears([person(1960, 88), person(null, null)], TODAY)).toBe(22);
   });
 });
+

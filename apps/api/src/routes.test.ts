@@ -77,17 +77,12 @@ describe('client cases', () => {
 
     expect(status).toBe(200);
     expect(body.people.map((p) => p.role)).toEqual(['CLIENT', 'SPOUSE']);
-    expect(body.people.map((p) => [p.gender, p.otherHealthConcernAdjustmentYears])).toEqual([
-      ['MALE', null],
-      ['FEMALE', 3],
-    ]);
     expect(body.taxBracketPct).toBe(22);
     expect(body.accounts.map((a) => [a.accountType, a.taxFunnel, a.balanceCents])).toEqual([
-      ['JOINT', 'TAXABLE', 0],
-      ['IRA', 'PRE_TAX', 0],
-      ['ROTH_IRA', 'TAX_FREE', 0],
+      ['JOINT', 'TAXABLE', 1_200_000_00],
+      ['IRA', 'PRE_TAX', 1_500_000_00],
+      ['ROTH_IRA', 'TAX_FREE', 300_000_00],
     ]);
-    expect(body.accounts.every((account) => account.positions.length === 0)).toBe(true);
     expect(body.accounts[0]?.sleeves).toEqual([
       { bucket: 'NOW', amountCents: 190_000_00, mode: 'MODEL', modelId: '9001', lines: [] },
       { bucket: 'SOON', amountCents: 400_000_00, mode: 'MODEL', modelId: '9002', lines: [] },
@@ -141,8 +136,7 @@ describe('client cases', () => {
           accountType: 'OTHER',
           taxFunnel: 'PRE_TAX',
           maskedNumber: '0042',
-          balanceCents: 0,
-          positions: [],
+          balanceCents: 50_000_00,
           sleeves: [
             { bucket: 'NOW', amountCents: 0, mode: 'MODEL', modelId: null, lines: [] },
             { bucket: 'SOON', amountCents: 12_345_67, mode: 'MODEL', modelId: '9002', lines: [] },
@@ -168,7 +162,7 @@ describe('client cases', () => {
     expect(reread.lifeStage).toBe('PRESERVATION');
     expect(reread.taxBracketPct).toBe(24);
     expect(reread.accounts).toHaveLength(3);
-    expect(reread.accounts[2]).toMatchObject({ accountType: 'OTHER', taxFunnel: 'PRE_TAX', balanceCents: 0 });
+    expect(reread.accounts[2]).toMatchObject({ accountType: 'OTHER', taxFunnel: 'PRE_TAX', balanceCents: 50_000_00 });
     expect(reread.accounts[2]?.sleeves[1]).toEqual({
       bucket: 'SOON',
       amountCents: 12_345_67,
@@ -179,45 +173,6 @@ describe('client cases', () => {
     // Local ids are replaced by database ids.
     expect(reread.accounts[2]?.id).not.toBe('acct-local-1');
     expect(reread.soonInputs.forcedWithdrawals[0]?.multiplier).toBe(1.15);
-  });
-
-  it('derives account balances from actual shares and current ticker prices', async () => {
-    await call('PUT', '/api/tickers/SGOV', {
-      symbol: 'SGOV',
-      assetClass: 'CASH',
-      defaultBucket: 'NOW',
-      priceCents: 10_000,
-    });
-    const { body: original } = await call<ClientCase>('GET', '/api/clients/1042');
-    const edited: ClientCase = {
-      ...original,
-      accounts: original.accounts.map((account, index) =>
-        index === 0
-          ? {
-              ...account,
-              balanceCents: 1,
-              positions: [{ bucket: 'NOW', tickerSymbol: 'SGOV', sharesMicros: 2_500_000 }],
-            }
-          : account,
-      ),
-    };
-
-    const saved = await call<ClientCase>('PUT', '/api/clients/1042', edited);
-    expect(saved.status).toBe(200);
-    expect(saved.body.accounts[0]).toMatchObject({
-      balanceCents: 25_000,
-      positions: [{ bucket: 'NOW', tickerSymbol: 'SGOV', sharesMicros: 2_500_000 }],
-    });
-
-    const refreshedPrice = await call('PUT', '/api/tickers/SGOV', {
-      symbol: 'SGOV',
-      assetClass: 'CASH',
-      defaultBucket: 'NOW',
-      priceCents: 12_000,
-    });
-    expect(refreshedPrice.status).toBe(200);
-    const reread = await call<ClientCase>('GET', '/api/clients/1042');
-    expect(reread.body.accounts[0]?.balanceCents).toBe(30_000);
   });
 
   it('can remove every account and line from a case', async () => {
@@ -328,12 +283,7 @@ describe('tickers', () => {
   it('lists the universe alphabetically', async () => {
     const { body } = await call<Ticker[]>('GET', '/api/tickers');
     expect(body).toHaveLength(10);
-    expect(body[0]).toEqual({
-      symbol: 'BIL',
-      assetClass: 'CASH',
-      defaultBucket: 'NOW',
-      priceCents: null,
-    });
+    expect(body[0]).toEqual({ symbol: 'BIL', assetClass: 'CASH', defaultBucket: 'NOW' });
   });
 
   it('updates an existing ticker and adds a new one', async () => {
@@ -341,7 +291,6 @@ describe('tickers', () => {
       symbol: 'GLD',
       assetClass: 'ALTERNATIVE',
       defaultBucket: 'LATER',
-      priceCents: 15_000,
     });
     expect(updated.status).toBe(200);
 
@@ -349,15 +298,11 @@ describe('tickers', () => {
       symbol: 'schd',
       assetClass: 'EQUITY',
       defaultBucket: 'LATER',
-      priceCents: null,
     });
     expect(added.body.symbol).toBe('SCHD');
 
     const { body } = await call<Ticker[]>('GET', '/api/tickers');
-    expect(body.find((t) => t.symbol === 'GLD')).toMatchObject({
-      assetClass: 'ALTERNATIVE',
-      priceCents: 15_000,
-    });
+    expect(body.find((t) => t.symbol === 'GLD')).toMatchObject({ assetClass: 'ALTERNATIVE' });
     expect(body).toHaveLength(11);
   });
 
@@ -366,7 +311,6 @@ describe('tickers', () => {
       symbol: 'GLD',
       assetClass: 'CRYPTO',
       defaultBucket: 'LATER',
-      priceCents: null,
     });
     expect(status).toBe(400);
   });
@@ -533,7 +477,6 @@ describe('health concerns (US-27)', () => {
         // Deliberately not in HEALTH_CONCERNS order.
         healthConcerns: ['OTHER', 'CANCER', 'STROKE'],
         healthConcernOther: 'Family history',
-        otherHealthConcernAdjustmentYears: 3,
       })),
     };
 
@@ -550,12 +493,7 @@ describe('health concerns (US-27)', () => {
     const { body: original } = await call<ClientCase>('GET', '/api/clients/1042');
     const cleared = {
       ...original,
-      people: original.people.map((p) => ({
-        ...p,
-        healthConcerns: [],
-        healthConcernOther: '',
-        otherHealthConcernAdjustmentYears: null,
-      })),
+      people: original.people.map((p) => ({ ...p, healthConcerns: [], healthConcernOther: '' })),
     };
 
     const { status, body } = await call<ClientCase>('PUT', '/api/clients/1042', cleared);
@@ -585,26 +523,6 @@ describe('health concerns (US-27)', () => {
 
     expect(status).toBe(400);
     expect(body.issues.some((i) => i.path.endsWith('healthConcernOther'))).toBe(true);
-  });
-
-  it('requires a custom life-expectancy adjustment for Other', async () => {
-    const { body: original } = await call<ClientCase>('GET', '/api/clients/1042');
-    const { status, body } = await call<{ issues: { path: string; message: string }[] }>(
-      'PUT',
-      '/api/clients/1042',
-      {
-        ...original,
-        people: original.people.map((person) =>
-          person.role === 'SPOUSE'
-            ? { ...person, otherHealthConcernAdjustmentYears: null }
-            : person,
-        ),
-      },
-    );
-
-    expect(status).toBe(400);
-    expect(body.issues.some((issue) => issue.path.endsWith('otherHealthConcernAdjustmentYears')))
-      .toBe(true);
   });
 
   it('refuses the same concern twice', async () => {

@@ -30,9 +30,6 @@ export const LIFE_STAGES = [
 ] as const;
 export type LifeStage = (typeof LIFE_STAGES)[number];
 
-export const GENDERS = ['MALE', 'FEMALE'] as const;
-export type Gender = (typeof GENDERS)[number];
-
 export const MONEY_CYCLE_PHASES = ['ACCUMULATION', 'PRESERVATION', 'DISTRIBUTION'] as const;
 export type MoneyCyclePhase = (typeof MONEY_CYCLE_PHASES)[number];
 
@@ -79,8 +76,6 @@ export interface Person {
   readonly role: 'CLIENT' | 'SPOUSE';
   /** Year only. Age is all the planning needs; a full date of birth is PII. */
   readonly birthYear: number | null;
-  /** Used to select the corresponding SSA period life-table estimate. */
-  readonly gender: Gender | null;
   /** Any combination, kept in HEALTH_CONCERNS order. Empty means nothing reported. */
   readonly healthConcerns: readonly HealthConcern[];
   /**
@@ -89,8 +84,7 @@ export interface Person {
    * condition and nothing else — never anything identifying (ADR 0006).
    */
   readonly healthConcernOther: string;
-  /** Advisor-entered years subtracted for an OTHER health concern. */
-  readonly otherHealthConcernAdjustmentYears: number | null;
+  readonly lifeExpectancyAge: number | null;
 }
 
 /**
@@ -132,23 +126,14 @@ export interface Account {
   readonly taxFunnel: TaxFunnel;
   /** Last four only, as RIG masks them today. */
   readonly maskedNumber: string;
-  /** Derived from the current prices of the account's priced positions. */
+  /** Typed by the advisor, as on RIG's profile sheet. */
   readonly balanceCents: Cents;
-  /** Actual positions, each assigned to one Now / Soon / Later bucket. */
-  readonly positions: readonly AccountPosition[];
   /**
    * Exactly three, Now then Soon then Later. Their amounts should add up to the
    * balance; anything left over shows as unallocated. Not enforced, so a
    * half-finished case can still be saved.
    */
   readonly sleeves: readonly BucketSleeve[];
-}
-
-/** A ticker position and its bucket, stored as millionths of a share. */
-export interface AccountPosition {
-  readonly bucket: BucketType;
-  readonly tickerSymbol: string;
-  readonly sharesMicros: number;
 }
 
 /** One ticker in a model. Basis points: 100 is 1%, and a model's lines add up to 10000. */
@@ -188,8 +173,6 @@ export interface Ticker {
   readonly symbol: string;
   readonly assetClass: AssetClass;
   readonly defaultBucket: BucketType;
-  /** Manually maintained quote in cents per share; null means no quote entered. */
-  readonly priceCents: Cents | null;
 }
 
 export interface BucketDefinition {

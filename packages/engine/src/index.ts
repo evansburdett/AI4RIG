@@ -47,22 +47,4 @@ export function addCents(...amounts: Cents[]): Cents {
   return total;
 }
 
-/** Share quantities are represented in millionths to retain fractional shares exactly. */
-export const SHARES_SCALE = 1_000_000;
-
-export function positionValueCents(sharesMicros: number, priceCents: Cents): Cents {
-  if (!Number.isSafeInteger(sharesMicros) || sharesMicros < 0) {
-    throw new MoneyError(`sharesMicros must be a non-negative safe integer (got ${sharesMicros}).`);
-  }
-  assertCents(priceCents, 'priceCents');
-  if (priceCents < 0) throw new MoneyError(`priceCents must not be negative (got ${priceCents}).`);
-
-  const product = BigInt(sharesMicros) * BigInt(priceCents);
-  const value = (product + BigInt(SHARES_SCALE / 2)) / BigInt(SHARES_SCALE);
-  if (value > BigInt(Number.MAX_SAFE_INTEGER)) {
-    throw new MoneyError('Position value is outside the safe integer range.');
-  }
-  return Number(value);
-}
-
 export { splitByWeights, WHOLE_BPS, type Share, type Weighted } from './split.js';

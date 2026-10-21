@@ -12,7 +12,6 @@ interface TickerRow {
   symbol: string;
   asset_class: Ticker['assetClass'];
   default_bucket: Ticker['defaultBucket'];
-  price_cents: Ticker['priceCents'];
 }
 
 interface DefinitionRow {
@@ -26,7 +25,6 @@ const toTicker = (row: TickerRow): Ticker => ({
   symbol: row.symbol,
   assetClass: row.asset_class,
   defaultBucket: row.default_bucket,
-  priceCents: row.price_cents,
 });
 
 const toDefinition = (row: DefinitionRow): BucketDefinition => ({
@@ -38,9 +36,7 @@ const toDefinition = (row: DefinitionRow): BucketDefinition => ({
 
 export function listTickers(db: Db): Ticker[] {
   return db
-    .prepare<[], TickerRow>(
-      'SELECT symbol, asset_class, default_bucket, price_cents FROM tickers ORDER BY symbol',
-    )
+    .prepare<[], TickerRow>('SELECT symbol, asset_class, default_bucket FROM tickers ORDER BY symbol')
     .all()
     .map(toTicker);
 }
@@ -52,12 +48,10 @@ export function listTickers(db: Db): Ticker[] {
  */
 export function upsertTicker(db: Db, ticker: Ticker): Ticker {
   db.prepare(
-    `INSERT INTO tickers (symbol, asset_class, default_bucket, price_cents)
-     VALUES (@symbol, @assetClass, @defaultBucket, @priceCents)
+    `INSERT INTO tickers (symbol, asset_class, default_bucket) VALUES (@symbol, @assetClass, @defaultBucket)
      ON CONFLICT (symbol) DO UPDATE SET
        asset_class = excluded.asset_class,
-       default_bucket = excluded.default_bucket,
-       price_cents = excluded.price_cents`,
+       default_bucket = excluded.default_bucket`,
   ).run(ticker);
   return ticker;
 }

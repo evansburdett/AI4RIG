@@ -323,26 +323,20 @@ see what a request and response look like.
 |---|---|
 | `client_cases` | Case. Its number, life stage, cash figures, and the single-value Now and Soon inputs |
 | `people` | Client or spouse on a case (birth year only, never a date) |
-| `accounts` | Account on a case: type, tax funnel, derived priced-position balance, last four digits only |
-| `account_positions` | Actual ticker shares held in a particular account and bucket |
-| `account_sleeves` | Account and bucket: target amount for Now, Soon, or Later, and model guidance. Always three per account |
+| `accounts` | Account on a case: type, tax funnel, balance, last four digits only |
+| `account_sleeves` | Account and bucket: how much of the balance is in Now, Soon, or Later, and which model it follows. Always three per account |
 | `model_portfolios` | Model: a name, a bucket, and optionally the tax funnel it is meant for |
 | `model_lines` | Ticker in a model, with its weight in basis points (100 = 1%) |
 | `planned_expenses` | Now "large upcoming expenses" and Soon "miscellaneous costs" lines |
 | `gap_entries` | Social Security bridge, healthcare gap, and forced withdrawal lines |
-| `tickers` | Symbol in the approved universe, with its default bucket and optional manually maintained price per share |
+| `tickers` | Symbol in the approved universe, with its default bucket |
 | `bucket_definitions` | Bucket (always exactly three rows) |
 
-Actual holdings are stored in `account_positions`, separately from the target
-amounts and model guidance in `account_sleeves`. Advisors enter actual shares
-by account, ticker, and bucket; the account balance and bucket totals are
-derived from shares multiplied by the ticker's manually maintained price.
-Positions without a ticker price remain visible but are excluded from value
-totals until priced. Existing dollar-only balances are reset to zero by
-migration 0006 rather than converted into guessed share counts.
-
-Models continue to describe target guidance; they do not create actual
-holdings. `apps/web/src/domain/breakdown.ts` handles priced positions.
+There is no holdings table. RIG's flow is: type the account balance, split it
+across the buckets, pick a model for each, and let the app work out the
+symbols and amounts. Those positions are computed from the model every time
+(`apps/web/src/domain/breakdown.ts`, using `splitByWeights` from
+`packages/engine`), never stored.
 
 Saving a case rewrites its child rows, so account ids change on every save.
 Nothing should store one.
@@ -384,18 +378,11 @@ There is no allocation algorithm to invent. RIG confirmed the bucket targets
 come straight out of their worksheet inputs, and the rest is arithmetic and
 lookups:
 
-- **Bucket targets**: `apps/web/src/domain/worksheet.ts`, based on RIG's Inputs
-  tab with tests pinned to its numbers. The Now bucket also includes an annual
-  advisory fee of 1% of total account balances.
+- **Bucket targets**: `apps/web/src/domain/worksheet.ts`, a line-for-line copy
+  of RIG's Inputs tab, with tests pinned to their numbers.
 - **Positions from a model**: `splitByWeights` in `packages/engine`, which
   splits a dollar amount across weights to the exact cent.
 - **Breakdown, drift, per-account view**: `apps/web/src/domain/breakdown.ts`.
-- **Household life expectancy**: `apps/web/src/domain/lifeStage.ts`, using the
-  SSA 2022 period life table (the 2022 table currently published at the linked
-  SSA source). The estimate subtracts three years per selected
-  Cancer, Stroke, or Heart concern, plus an advisor-entered adjustment for
-  Other. This is a population-based planning estimate, not a personal or
-  medical prediction. Source: <https://www.ssa.gov/oact/STATS/table4c6.html>.
 
 The worksheet and breakdown code runs in the browser today because it only
 needs the case on screen. It is pure, so moving it into `packages/engine` is a

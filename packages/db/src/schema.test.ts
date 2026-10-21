@@ -72,7 +72,7 @@ describe('the repo migrations', () => {
     db.exec(`
       INSERT INTO client_cases (id, client_number, created_at, updated_at) VALUES (1, '1', 'x', 'x');
       INSERT INTO people (id, client_case_id, role, health_concern) VALUES (1, 1, 'CLIENT', 'HEART');
-      INSERT INTO people (id, client_case_id, role, health_concern) VALUES (2, 1, 'SPOUSE', 'OTHER');
+      INSERT INTO people (id, client_case_id, role, health_concern) VALUES (2, 1, 'SPOUSE', 'NONE');
     `);
 
     runMigrations(db);
@@ -84,20 +84,12 @@ describe('the repo migrations', () => {
           'SELECT person_id, concern FROM person_health_concerns ORDER BY person_id',
         )
         .all(),
-    ).toEqual([
-      { person_id: 1, concern: 'HEART' },
-      { person_id: 2, concern: 'OTHER' },
-    ]);
+    ).toEqual([{ person_id: 1, concern: 'HEART' }]);
 
     // Both people survive the rebuild, ids and all.
     expect(
       db.prepare<[], { id: number }>('SELECT id FROM people ORDER BY id').all(),
     ).toEqual([{ id: 1 }, { id: 2 }]);
-    expect(
-      db.prepare<[], { adjustment: number | null }>(
-        'SELECT other_health_concern_adjustment_years AS adjustment FROM people WHERE id = 2',
-      ).get()?.adjustment,
-    ).toBe(3);
   });
 
   it('ship the three bucket definitions as part of the schema', () => {

@@ -14,17 +14,14 @@
  */
 
 import type { Db } from '@ai4rig/db';
-import { addCents, positionValueCents } from '@ai4rig/engine';
 import {
   BUCKETS,
   HEALTH_CONCERNS,
   type Account,
-  type AccountPosition,
   type BucketSleeve,
   type ClientCase,
   type ClientSummary,
   type GapEntry,
-  type Gender,
   type HealthConcern,
   type Person,
   type PlannedExpense,
@@ -62,9 +59,8 @@ interface PersonRow {
   id: number;
   role: Person['role'];
   birth_year: number | null;
-  gender: Gender | null;
   health_concern_other: string;
-  other_health_concern_adjustment_years: number | null;
+  life_expectancy_age: number | null;
 }
 
 interface AccountRow {
@@ -88,14 +84,6 @@ interface SleeveLineRow {
   bucket: BucketSleeve['bucket'];
   ticker_symbol: string;
   weight_bps: number;
-}
-
-interface PositionRow {
-  account_id: number;
-  bucket: AccountPosition['bucket'];
-  ticker_symbol: string;
-  shares_micros: number;
-  price_cents: number | null;
 }
 
 interface ExpenseRow {
@@ -142,8 +130,7 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
 
   const personRows = db
     .prepare<[number], PersonRow>(
-      `SELECT id, role, birth_year, gender, health_concern_other,
-              other_health_concern_adjustment_years
+      `SELECT id, role, birth_year, health_concern_other, life_expectancy_age
        FROM people WHERE client_case_id = ? ORDER BY role`,
     )
     .all(row.id);
@@ -161,14 +148,13 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
     (p): Person => ({
       role: p.role,
       birthYear: p.birth_year,
-      gender: p.gender,
       // Filtering HEALTH_CONCERNS rather than mapping the rows keeps the order
       // the same every read, whatever order the advisor ticked them in.
       healthConcerns: HEALTH_CONCERNS.filter((concern) =>
         concernRows.some((c) => c.person_id === p.id && c.concern === concern),
       ),
       healthConcernOther: p.health_concern_other,
-      otherHealthConcernAdjustmentYears: p.other_health_concern_adjustment_years,
+      lifeExpectancyAge: p.life_expectancy_age,
     }),
   );
 
@@ -189,17 +175,6 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
     )
     .all(row.id);
 
-  const positionRows = db
-    .prepare<[number], PositionRow>(
-      `SELECT p.account_id, p.bucket, p.ticker_symbol, p.shares_micros, t.price_cents
-       FROM account_positions p
-       JOIN accounts a ON a.id = p.account_id
-       JOIN tickers t ON t.symbol = p.ticker_symbol
-       WHERE a.client_case_id = ?
-       ORDER BY p.bucket, p.ticker_symbol`,
-    )
-    .all(row.id);
-
   const accounts = db
     .prepare<[number], AccountRow>(
       `SELECT id, account_type, tax_funnel, masked_number, balance_cents
@@ -212,22 +187,7 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
         accountType: a.account_type,
         taxFunnel: a.tax_funnel,
         maskedNumber: a.masked_number,
-        positions: positionRows
-          .filter((position) => position.account_id === a.id)
-          .map((position) => ({
-            bucket: position.bucket,
-            tickerSymbol: position.ticker_symbol,
-            sharesMicros: position.shares_micros,
-          })),
-        balanceCents: addCents(
-          ...positionRows
-            .filter((position) => position.account_id === a.id && position.price_cents !== null)
-            .flatMap((position) =>
-              position.price_cents === null
-                ? []
-                : [positionValueCents(position.shares_micros, position.price_cents)],
-            ),
-        ),
+        balanceCents: a.balance_cents,
         // Always Now, Soon, Later, even if a row is somehow missing.
         sleeves: BUCKETS.map((bucket): BucketSleeve => {
           const sleeve = sleeveRows.find((s) => s.account_id === a.id && s.bucket === bucket);
@@ -392,14 +352,6 @@ function checkSleeveTickers(db: Db, input: ClientCaseInput): void {
     'SELECT symbol FROM tickers WHERE symbol = ?',
   );
   input.accounts.forEach((account, index) => {
-    for (const position of account.positions) {
-      if (known.get(position.tickerSymbol) === undefined) {
-        throw new HttpError(
-          400,
-          `Account ${index + 1}, ${position.bucket}: ${position.tickerSymbol} is not in the ticker list`,
-        );
-      }
-    }
     for (const sleeve of account.sleeves) {
       for (const line of sleeve.lines) {
         if (known.get(line.tickerSymbol) === undefined) {
@@ -473,10 +425,8 @@ export function saveClientCase(
     }
 
     const addPerson = db.prepare(
-      `INSERT INTO people (
-         client_case_id, role, birth_year, gender, health_concern_other,
-         other_health_concern_adjustment_years
-       ) VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO people (client_case_id, role, birth_year, health_concern_other, life_expectancy_age)
+       VALUES (?, ?, ?, ?, ?)`,
     );
     // Deleting the people above already cascaded their concerns away.
     const addConcern = db.prepare(
@@ -487,9 +437,8 @@ export function saveClientCase(
         caseId,
         person.role,
         person.birthYear,
-        person.gender,
         person.healthConcernOther,
-        person.otherHealthConcernAdjustmentYears,
+        person.lifeExpectancyAge,
       );
       for (const concern of person.healthConcerns) {
         addConcern.run(Number(lastInsertRowid), concern);
@@ -509,41 +458,16 @@ export function saveClientCase(
       `INSERT INTO sleeve_lines (account_id, bucket, position, ticker_symbol, weight_bps)
        VALUES (?, ?, ?, ?, ?)`,
     );
-    const addPosition = db.prepare(
-      `INSERT INTO account_positions (account_id, bucket, ticker_symbol, shares_micros)
-       VALUES (?, ?, ?, ?)`,
-    );
-    const getTickerPrice = db.prepare<[string], { price_cents: number | null }>(
-      'SELECT price_cents FROM tickers WHERE symbol = ?',
-    );
     input.accounts.forEach((account, position) => {
-      const balanceCents = addCents(
-        ...account.positions.flatMap((actualPosition) => {
-          const ticker = getTickerPrice.get(actualPosition.tickerSymbol);
-          if (ticker === undefined) {
-            throw new HttpError(400, `Ticker ${actualPosition.tickerSymbol} is not in the ticker list`);
-          }
-          if (ticker.price_cents === null) return [];
-          return [positionValueCents(actualPosition.sharesMicros, ticker.price_cents)];
-        }),
-      );
       const { lastInsertRowid } = addAccount.run(
         caseId,
         position,
         account.accountType,
         account.taxFunnel,
         account.maskedNumber,
-        balanceCents,
+        account.balanceCents,
       );
       const accountId = Number(lastInsertRowid);
-      for (const actualPosition of account.positions) {
-        addPosition.run(
-          accountId,
-          actualPosition.bucket,
-          actualPosition.tickerSymbol,
-          actualPosition.sharesMicros,
-        );
-      }
       for (const sleeve of account.sleeves) {
         addSleeve.run(
           accountId,

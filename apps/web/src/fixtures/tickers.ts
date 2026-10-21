@@ -8,16 +8,16 @@
 import type { BucketDefinition, ModelPortfolio, Ticker } from '../domain/types.js';
 
 export const PLACEHOLDER_TICKERS: readonly Ticker[] = [
-  { symbol: 'SGOV', assetClass: 'CASH', defaultBucket: 'NOW', priceCents: 10_000 },
-  { symbol: 'BIL', assetClass: 'CASH', defaultBucket: 'NOW', priceCents: 10_000 },
-  { symbol: 'SHY', assetClass: 'FIXED_INCOME', defaultBucket: 'SOON', priceCents: 10_000 },
-  { symbol: 'BND', assetClass: 'FIXED_INCOME', defaultBucket: 'SOON', priceCents: 10_000 },
-  { symbol: 'TIP', assetClass: 'FIXED_INCOME', defaultBucket: 'SOON', priceCents: 10_000 },
-  { symbol: 'VTI', assetClass: 'EQUITY', defaultBucket: 'LATER', priceCents: 10_000 },
-  { symbol: 'VOO', assetClass: 'EQUITY', defaultBucket: 'LATER', priceCents: 10_000 },
-  { symbol: 'VXUS', assetClass: 'EQUITY', defaultBucket: 'LATER', priceCents: 10_000 },
-  { symbol: 'VNQ', assetClass: 'REAL_ASSET', defaultBucket: 'LATER', priceCents: 10_000 },
-  { symbol: 'GLD', assetClass: 'REAL_ASSET', defaultBucket: 'SOON', priceCents: 10_000 },
+  { symbol: 'SGOV', assetClass: 'CASH', defaultBucket: 'NOW' },
+  { symbol: 'BIL', assetClass: 'CASH', defaultBucket: 'NOW' },
+  { symbol: 'SHY', assetClass: 'FIXED_INCOME', defaultBucket: 'SOON' },
+  { symbol: 'BND', assetClass: 'FIXED_INCOME', defaultBucket: 'SOON' },
+  { symbol: 'TIP', assetClass: 'FIXED_INCOME', defaultBucket: 'SOON' },
+  { symbol: 'VTI', assetClass: 'EQUITY', defaultBucket: 'LATER' },
+  { symbol: 'VOO', assetClass: 'EQUITY', defaultBucket: 'LATER' },
+  { symbol: 'VXUS', assetClass: 'EQUITY', defaultBucket: 'LATER' },
+  { symbol: 'VNQ', assetClass: 'REAL_ASSET', defaultBucket: 'LATER' },
+  { symbol: 'GLD', assetClass: 'REAL_ASSET', defaultBucket: 'SOON' },
 ];
 
 /** Worded from RIG's description of the three buckets. Editable under US-08. */

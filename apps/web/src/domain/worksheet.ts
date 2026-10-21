@@ -19,8 +19,6 @@ import type {
   SoonInputs,
 } from './types.js';
 
-export const ANNUAL_ADVISORY_FEE_PERCENT = 1;
-
 export interface WorksheetLine {
   readonly label: string;
   readonly amountCents: Cents;
@@ -40,7 +38,6 @@ export interface PlanTotals {
   readonly soon: BucketWorksheet;
   readonly later: BucketWorksheet;
   readonly investableAssetsCents: Cents;
-  readonly advisoryFeeCents: Cents;
   /** Later goes negative when Now and Soon exceed the portfolio. Not clamped. */
   readonly isOverfunded: boolean;
 }
@@ -53,8 +50,8 @@ function sumGapEntries(entries: readonly GapEntry[]): Cents {
   );
 }
 
-/** E16 with the separately calculated annual advisory fee. */
-export function computeNow(inputs: NowInputs, advisoryFeeCents: Cents): BucketWorksheet {
+/** E16 */
+export function computeNow(inputs: NowInputs): BucketWorksheet {
   const lines: WorksheetLine[] = [
     {
       label: `Income draw from investable assets (${inputs.incomeDrawMonths} months)`,
@@ -70,11 +67,6 @@ export function computeNow(inputs: NowInputs, advisoryFeeCents: Cents): BucketWo
       label: 'Large upcoming planned expenses',
       amountCents: addCents(...inputs.plannedExpenses.map((e) => e.costCents)),
       cell: 'E15',
-    },
-    {
-      label: `Annual advisory fee (${ANNUAL_ADVISORY_FEE_PERCENT}% of total account balances)`,
-      amountCents: advisoryFeeCents,
-      cell: 'Fee',
     },
   ];
 
@@ -149,20 +141,12 @@ export function investableAssets(clientCase: ClientCase): Cents {
 }
 
 export function computePlanTotals(clientCase: ClientCase): PlanTotals {
-  const assets = investableAssets(clientCase);
-  const advisoryFeeCents = multiplyCents(assets, ANNUAL_ADVISORY_FEE_PERCENT / 100);
-  const now = computeNow(clientCase.nowInputs, advisoryFeeCents);
+  const now = computeNow(clientCase.nowInputs);
   const soon = computeSoon(clientCase.soonInputs);
+  const assets = investableAssets(clientCase);
   const later = computeLater(assets, now.totalCents, soon.totalCents);
 
-  return {
-    now,
-    soon,
-    later,
-    investableAssetsCents: assets,
-    advisoryFeeCents,
-    isOverfunded: later.totalCents < 0,
-  };
+  return { now, soon, later, investableAssetsCents: assets, isOverfunded: later.totalCents < 0 };
 }
 
 /**

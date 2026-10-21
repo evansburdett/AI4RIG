@@ -346,7 +346,7 @@ export function App() {
         ) : draft === null ? (
           <p className="empty">Loading…</p>
         ) : route.screen === 'breakdown' ? (
-          <AssetClassBreakdown clientCase={draft} tickers={tickers} />
+          <AssetClassBreakdown clientCase={draft} tickers={tickers} models={models} />
         ) : (
           <ClientProfile
             clientCase={draft}
