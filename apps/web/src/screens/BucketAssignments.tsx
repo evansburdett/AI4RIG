@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Callout } from '../components/Callout.js';
 import { ASSET_CLASS_LABELS, BUCKET_LABELS } from '../domain/lifeStage.js';
+import { centsToInput, parseCents } from '../domain/money.js';
 import { ASSET_CLASSES, BUCKETS } from '../domain/types.js';
 import type { AssetClass, BucketDefinition, BucketType, Ticker } from '../domain/types.js';
 
@@ -77,6 +78,7 @@ export function BucketAssignments({
               <th scope="col">Symbol</th>
               <th scope="col">Asset class</th>
               <th scope="col">Default bucket</th>
+              <th scope="col">Price per share</th>
               <th scope="col">
                 <span className="visually-hidden">Save state</span>
               </th>
@@ -122,6 +124,13 @@ export function BucketAssignments({
                     ))}
                   </select>
                 </td>
+                <td>
+                  <TickerPriceEditor
+                    ticker={ticker}
+                    saving={savingSymbol === ticker.symbol}
+                    onSave={(priceCents) => updateTicker(ticker, { priceCents })}
+                  />
+                </td>
                 <td className="muted">{savingSymbol === ticker.symbol ? 'Saving…' : ''}</td>
               </tr>
             ))}
@@ -148,6 +157,52 @@ export function BucketAssignments({
         <code>ClassificationRule</code> maps a whole asset class to a bucket. The table does not
         exist yet; per-ticker defaults cover the same ground for a universe this size.
       </Callout>
+    </div>
+  );
+}
+
+function TickerPriceEditor({
+  ticker,
+  saving,
+  onSave,
+}: {
+  ticker: Ticker;
+  saving: boolean;
+  onSave: (priceCents: Ticker['priceCents']) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState(
+    ticker.priceCents === null ? '' : centsToInput(ticker.priceCents),
+  );
+  const parsed = draft.trim() === '' ? null : parseCents(draft);
+  const invalid = draft.trim() !== '' && parsed === null;
+  const dirty = parsed !== ticker.priceCents;
+
+  useEffect(() => {
+    setDraft(ticker.priceCents === null ? '' : centsToInput(ticker.priceCents));
+  }, [ticker.priceCents]);
+
+  return (
+    <div className="field">
+      <div className="money-input">
+        <span aria-hidden="true">$</span>
+        <input
+          type="text"
+          inputMode="decimal"
+          aria-label={`${ticker.symbol} price per share`}
+          aria-invalid={invalid}
+          placeholder="Not set"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+        />
+      </div>
+      {invalid && <p className="field-error">Enter a price like 123.45</p>}
+      <button
+        type="button"
+        disabled={!dirty || invalid || saving}
+        onClick={() => void onSave(parsed)}
+      >
+        Save price
+      </button>
     </div>
   );
 }

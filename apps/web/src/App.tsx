@@ -11,6 +11,7 @@ import type {
   ModelPortfolio,
   Ticker,
 } from './domain/types.js';
+import { revalueClientCase } from './domain/breakdown.js';
 import { hrefFor, isReferenceScreen, useRoute, type Screen } from './routing.js';
 import { AssetClassBreakdown } from './screens/AssetClassBreakdown.js';
 import { BucketAssignments } from './screens/BucketAssignments.js';
@@ -184,12 +185,18 @@ export function App() {
   const saveTicker = useCallback(async (ticker: Ticker) => {
     try {
       const result = await api.saveTicker(ticker);
-      setTickers((current) => current.map((t) => (t.symbol === result.symbol ? result : t)));
+      const nextTickers = tickers.map((t) => (t.symbol === result.symbol ? result : t));
+      const wasClean = draft === saved;
+      const nextDraft = draft === null ? null : revalueClientCase(draft, nextTickers);
+      const nextSaved = wasClean ? nextDraft : saved === null ? null : revalueClientCase(saved, nextTickers);
+      setTickers(nextTickers);
+      setDraft(nextDraft);
+      setSaved(nextSaved);
       setReferenceError(null);
     } catch (error: unknown) {
       setReferenceError(describeError(error));
     }
-  }, []);
+  }, [draft, saved, tickers]);
 
   /** Throws on failure so the model editor can show the message next to the model. */
   const saveModel = useCallback(async (model: ModelPortfolio): Promise<ModelPortfolio> => {
@@ -328,7 +335,7 @@ export function App() {
         ) : draft === null ? (
           <p className="empty">Loading…</p>
         ) : route.screen === 'breakdown' ? (
-          <AssetClassBreakdown clientCase={draft} tickers={tickers} models={models} />
+          <AssetClassBreakdown clientCase={draft} tickers={tickers} />
         ) : (
           <ClientProfile
             clientCase={draft}

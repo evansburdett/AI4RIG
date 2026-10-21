@@ -1,7 +1,15 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 
+import { SHARES_SCALE } from '@ai4rig/engine';
 import { formatCents, formatCentsWhole } from '../domain/money.js';
-import { allocatedCents, modelChoices, modelsById, sleeveHoldings, unallocatedCents } from '../domain/breakdown.js';
+import {
+  accountValueCents,
+  allocatedCents,
+  modelChoices,
+  modelsById,
+  sleeveHoldings,
+  valuedPositions,
+} from '../domain/breakdown.js';
 import { ACCOUNT_TYPE_LABELS, BUCKET_LABELS, TAX_FUNNEL_LABELS } from '../domain/lifeStage.js';
 import { ACCOUNT_TYPES, DEFAULT_TAX_FUNNEL, SLEEVE_MODES, TAX_FUNNELS } from '../domain/types.js';
 import type {
@@ -38,9 +46,8 @@ const MODE_LABELS: Record<BucketSleeve['mode'], string> = {
 };
 
 /**
- * One account, following RIG's flow: type the balance, decide how much of it
- * goes in Now, Soon, and Later, then for each either pick a model or list the
- * symbols yourself (US-23), and the app works out the dollar amounts.
+ * Target amounts and model guidance stay separate from actual positions, whose
+ * account value is derived from shares multiplied by the ticker's price.
  */
 export function AccountCard({
   account,
@@ -52,7 +59,7 @@ export function AccountCard({
 }: Props) {
   const byId = modelsById(models);
   const allocated = allocatedCents(account);
-  const unallocated = unallocatedCents(account);
+  const positions = valuedPositions(account, tickers);
 
   /**
    * Manual lines being typed. They live here rather than on the case because a
@@ -104,7 +111,8 @@ export function AccountCard({
   }
 
   function patch(changes: Partial<Account>) {
-    onChange({ ...account, ...changes });
+    const next = { ...account, ...changes };
+    onChange({ ...next, balanceCents: accountValueCents(next, tickers) });
   }
 
   function patchSleeve(bucket: BucketType, changes: Partial<BucketSleeve>) {
@@ -135,11 +143,19 @@ export function AccountCard({
           placeholder="Last four"
           onChange={(maskedNumber) => patch({ maskedNumber })}
         />
-        <MoneyInput
-          label="Account balance"
-          valueCents={account.balanceCents}
-          onChange={(balanceCents) => patch({ balanceCents })}
-        />
+        <div className="field">
+          <span className="field-label">Priced position value</span>
+          <output className="derived">{formatCents(account.balanceCents)}</output>
+        </div>
+        <div className="field">
+          <span className="field-label">Positions with no price</span>
+          <output className="derived">
+            {
+              positions.filter((position) => position.sharesMicros > 0 && position.priceCents === null)
+                .length
+            }
+          </output>
+        </div>
         <div className="field">
           <button type="button" className="danger" onClick={onRemove}>
             Remove account
@@ -151,9 +167,9 @@ export function AccountCard({
         <thead>
           <tr>
             <th scope="col">Bucket</th>
-            <th scope="col">Amount</th>
-            <th scope="col">Follows</th>
-            <th scope="col">Works out to</th>
+            <th scope="col">Target amount</th>
+            <th scope="col">Model guidance</th>
+            <th scope="col">Target mix</th>
           </tr>
         </thead>
         <tbody>
@@ -300,33 +316,191 @@ export function AccountCard({
         </tbody>
         <tfoot>
           <tr>
-            <th scope="row">Allocated</th>
+            <th scope="row">Planned target amounts</th>
             <td colSpan={3}>
-              {formatCents(allocated)} of {formatCents(account.balanceCents)}
-              {unallocated > 0 && (
-                <>
-                  <span className="tag tag-warn">{formatCentsWhole(unallocated)} not in a bucket</span>
-                  <button
-                    type="button"
-                    className="link"
-                    onClick={() => {
-                      const later = account.sleeves.find((s) => s.bucket === 'LATER');
-                      patchSleeve('LATER', { amountCents: (later?.amountCents ?? 0) + unallocated });
-                    }}
-                  >
-                    Put the rest in Later
-                  </button>
-                </>
-              )}
-              {unallocated < 0 && (
-                <span className="tag tag-warn">
-                  Buckets are {formatCentsWhole(-unallocated)} more than the balance
-                </span>
-              )}
+              {formatCents(allocated)}
             </td>
+          </tr>
+          <tr>
+            <th scope="row">Actual position value</th>
+            <td colSpan={3}>{formatCents(account.balanceCents)}</td>
           </tr>
         </tfoot>
       </table>
+
+      <section className="card">
+        <h4>Actual ticker shares by bucket</h4>
+        <p className="muted">
+          Enter actual shares here. Values use the manually maintained ticker price above; model
+          guidance remains a separate target.
+        </p>
+        {account.sleeves.map((sleeve) => {
+          const bucketPositions = positions.filter((position) => position.bucket === sleeve.bucket);
+          const bucketValue = bucketPositions.reduce(
+            (sum, position) => sum + (position.marketValueCents ?? 0),
+            0,
+          );
+          const available = tickers.filter(
+            (ticker) =>
+              !bucketPositions.some((position) => position.tickerSymbol === ticker.symbol),
+          );
+
+          return (
+            <fieldset className="rows" key={sleeve.bucket}>
+              <legend>{BUCKET_LABELS[sleeve.bucket]} — {formatCents(bucketValue)} priced</legend>
+              {bucketPositions.map((position) => {
+                const choices = tickers.filter(
+                  (ticker) =>
+                    ticker.symbol === position.tickerSymbol ||
+                    !bucketPositions.some((other) => other.tickerSymbol === ticker.symbol),
+                );
+                return (
+                  <div className="row" key={`${position.bucket}:${position.tickerSymbol}`}>
+                    <div className="field">
+                      <label htmlFor={`position-symbol-${account.id}-${position.bucket}-${position.tickerSymbol}`}>
+                        Ticker
+                      </label>
+                      <select
+                        id={`position-symbol-${account.id}-${position.bucket}-${position.tickerSymbol}`}
+                        value={position.tickerSymbol}
+                        onChange={(event) => {
+                          const tickerSymbol = event.target.value;
+                          patch({
+                            positions: account.positions.map((entry) =>
+                              entry.bucket === position.bucket &&
+                              entry.tickerSymbol === position.tickerSymbol
+                                ? { ...entry, tickerSymbol }
+                                : entry,
+                            ),
+                          });
+                        }}
+                      >
+                        {choices.map((ticker) => (
+                          <option key={ticker.symbol} value={ticker.symbol}>
+                            {ticker.symbol}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label htmlFor={`position-shares-${account.id}-${position.bucket}-${position.tickerSymbol}`}>
+                        Shares
+                      </label>
+                      <ShareInput
+                        id={`position-shares-${account.id}-${position.bucket}-${position.tickerSymbol}`}
+                        sharesMicros={position.sharesMicros}
+                        onChange={(sharesMicros) =>
+                          patch({
+                            positions: account.positions.map((entry) =>
+                              entry.bucket === position.bucket &&
+                              entry.tickerSymbol === position.tickerSymbol
+                                ? { ...entry, sharesMicros }
+                                : entry,
+                            ),
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="field">
+                      <span className="field-label">Price / value</span>
+                      <output className="derived">
+                        {position.priceCents === null
+                          ? 'Ticker price not entered'
+                          : `${formatCents(position.priceCents)} / ${formatCents(position.marketValueCents ?? 0)}`}
+                      </output>
+                    </div>
+                    <button
+                      type="button"
+                      className="danger"
+                      onClick={() =>
+                        patch({
+                          positions: account.positions.filter(
+                            (entry) =>
+                              entry.bucket !== position.bucket ||
+                              entry.tickerSymbol !== position.tickerSymbol,
+                          ),
+                        })
+                      }
+                    >
+                      Remove
+                    </button>
+                  </div>
+                );
+              })}
+              <button
+                type="button"
+                disabled={available.length === 0}
+                onClick={() => {
+                  const ticker =
+                    available.find((candidate) => candidate.defaultBucket === sleeve.bucket) ??
+                    available[0];
+                  if (ticker === undefined) return;
+                  patch({
+                    positions: [
+                      ...account.positions,
+                      { bucket: sleeve.bucket, tickerSymbol: ticker.symbol, sharesMicros: 0 },
+                    ],
+                  });
+                }}
+              >
+                Add actual ticker
+              </button>
+            </fieldset>
+          );
+        })}
+      </section>
     </div>
   );
+}
+
+function formatShares(sharesMicros: number): string {
+  return (sharesMicros / SHARES_SCALE).toFixed(6).replace(/\.?0+$/, '');
+}
+
+function ShareInput({
+  id,
+  sharesMicros,
+  onChange,
+}: {
+  id: string;
+  sharesMicros: number;
+  onChange: (sharesMicros: number) => void;
+}) {
+  const [draft, setDraft] = useState(formatShares(sharesMicros));
+
+  useEffect(() => {
+    setDraft(formatShares(sharesMicros));
+  }, [sharesMicros]);
+
+  function commit() {
+    const parsed = parseSharesMicros(draft);
+    if (parsed === null) {
+      setDraft(formatShares(sharesMicros));
+      return;
+    }
+    onChange(parsed);
+    setDraft(formatShares(parsed));
+  }
+
+  return (
+    <input
+      id={id}
+      type="text"
+      inputMode="decimal"
+      aria-invalid={parseSharesMicros(draft) === null}
+      value={draft}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+    />
+  );
+}
+
+function parseSharesMicros(value: string): number | null {
+  const match = /^(?:(\d+)(?:\.(\d{0,6}))?|\.(\d{1,6}))$/.exec(value.trim());
+  if (match === null) return null;
+
+  const whole = match[1] ?? '0';
+  const fractional = (match[2] ?? match[3] ?? '').padEnd(6, '0');
+  const sharesMicros = BigInt(whole) * BigInt(SHARES_SCALE) + BigInt(fractional || '0');
+  return sharesMicros <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(sharesMicros) : null;
 }

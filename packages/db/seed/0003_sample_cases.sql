@@ -1,9 +1,10 @@
 -- Two sample client cases. Client numbers and initials are invented. The
 -- figures on case 1042 come from RIG's Bucket Plan Deliverable workbook:
--- $3,000,000 investable, and the accounts are split so the buckets land
--- exactly on the worksheet's $190,000 / $914,700 / $1,895,300. Case 2317 is an
--- early accumulator whose split is deliberately off target, with $15,000 not
--- yet placed in any bucket and one slice with no model chosen.
+-- $3,000,000 investable, and the target amounts land exactly on the worksheet's
+-- $190,000 / $914,700 / $1,895,300. Case 2317 is an early accumulator whose
+-- target split is deliberately off target, with $15,000 not yet placed in a
+-- target bucket and one slice with no model chosen. No actual shares or ticker
+-- prices are seeded; those must be entered by the advisor.
 --
 -- These match apps/web/src/fixtures/clients.ts, which the front-end unit tests
 -- use. Keep the two in step if you change either.
@@ -30,10 +31,13 @@ INSERT OR REPLACE INTO client_cases (
      0, 10, 7500000,
      '2026-09-11T09:20:00.000Z', '2026-09-11T09:20:00.000Z');
 
-INSERT OR REPLACE INTO people (id, client_case_id, role, birth_year, health_concern_other, life_expectancy_age) VALUES
-    (9001, 9001, 'CLIENT', 1960, '',                      88),
-    (9002, 9001, 'SPOUSE', 1963, 'Managed hypertension',  85),
-    (9003, 9002, 'CLIENT', 1988, '',                      90);
+INSERT OR REPLACE INTO people (
+    id, client_case_id, role, birth_year, health_concern_other, life_expectancy_age,
+    gender, other_health_concern_adjustment_years
+) VALUES
+    (9001, 9001, 'CLIENT', 1960, '',                      88, 'MALE',   NULL),
+    (9002, 9001, 'SPOUSE', 1963, 'Managed hypertension',  85, 'FEMALE', 3),
+    (9003, 9002, 'CLIENT', 1988, '',                      90, 'MALE',   NULL);
 
 -- US-27: a person carries any combination of concerns, so these are rows
 -- rather than a column. No rows means nothing reported. The spouse on case
@@ -45,11 +49,11 @@ INSERT OR REPLACE INTO person_health_concerns (person_id, concern) VALUES
     (9002, 'OTHER');
 
 INSERT OR REPLACE INTO accounts (id, client_case_id, position, account_type, tax_funnel, masked_number, balance_cents) VALUES
-    (9001, 9001, 0, 'JOINT',    'TAXABLE',  '4417', 120000000),
-    (9002, 9001, 1, 'IRA',      'PRE_TAX',  '8830', 150000000),
-    (9003, 9001, 2, 'ROTH_IRA', 'TAX_FREE', '2291',  30000000),
-    (9004, 9002, 0, 'SINGLE',   'TAXABLE',  '1005',  28000000),
-    (9005, 9002, 1, 'ROTH_IRA', 'TAX_FREE', '7742',  24000000);
+    (9001, 9001, 0, 'JOINT',    'TAXABLE',  '4417', 0),
+    (9002, 9001, 1, 'IRA',      'PRE_TAX',  '8830', 0),
+    (9003, 9001, 2, 'ROTH_IRA', 'TAX_FREE', '2291', 0),
+    (9004, 9002, 0, 'SINGLE',   'TAXABLE',  '1005', 0),
+    (9005, 9002, 1, 'ROTH_IRA', 'TAX_FREE', '7742', 0);
 
 INSERT OR REPLACE INTO account_sleeves (account_id, bucket, amount_cents, model_id, mode) VALUES
     -- 1042: Now 190,000 / Soon 400,000 + 514,700 / Later 610,000 + 985,300 + 300,000

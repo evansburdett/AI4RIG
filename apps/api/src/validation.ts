@@ -11,6 +11,7 @@ import {
   ACCOUNT_TYPES,
   ASSET_CLASSES,
   BUCKETS,
+  GENDERS,
   HEALTH_CONCERNS,
   LIFE_STAGES,
   MONEY_CYCLE_PHASES,
@@ -33,6 +34,7 @@ const person = z
   .object({
     role: z.enum(['CLIENT', 'SPOUSE']),
     birthYear: z.int().min(1900).max(2100).nullable(),
+    gender: z.enum(GENDERS).nullable(),
     healthConcerns: z
       .array(z.enum(HEALTH_CONCERNS))
       .refine(
@@ -40,14 +42,23 @@ const person = z
         'A health concern can only be selected once',
       ),
     healthConcernOther: z.string().trim().max(200),
-    lifeExpectancyAge: z.int().min(0).max(130).nullable(),
+    otherHealthConcernAdjustmentYears: z.number().finite().min(0).max(130).nullable(),
   })
   // Free text with no OTHER ticked describes nothing, and would sit in the
   // database unreachable from the screen that wrote it.
   .refine((p) => p.healthConcernOther === '' || p.healthConcerns.includes('OTHER'), {
     error: 'Describe an "other" health concern only when Other is selected',
     path: ['healthConcernOther'],
-  });
+  })
+  .refine(
+    (p) =>
+      p.healthConcerns.includes('OTHER') ===
+      (p.otherHealthConcernAdjustmentYears !== null),
+    {
+      error: 'A custom life-expectancy adjustment is required only when Other is selected',
+      path: ['otherHealthConcernAdjustmentYears'],
+    },
+  );
 
 const taxFunnel = z.enum(TAX_FUNNELS);
 
@@ -95,6 +106,20 @@ const account = z.object({
   // Last four only (ADR 0006). Anything longer is a real account number.
   maskedNumber: z.string().trim().max(4, 'Masked number is the last four digits only'),
   balanceCents: cents,
+  positions: z
+    .array(
+      z.object({
+        bucket,
+        tickerSymbol: z.string().trim().toUpperCase().min(1).max(10),
+        sharesMicros: z.int().min(0),
+      }),
+    )
+    .refine(
+      (positions) =>
+        new Set(positions.map((position) => `${position.bucket}:${position.tickerSymbol}`)).size ===
+        positions.length,
+      'A ticker can appear only once per account and bucket',
+    ),
   sleeves: z
     .array(sleeve)
     .length(3)
@@ -170,6 +195,7 @@ export const tickerSchema = z.object({
     .regex(/^[A-Z0-9.-]+$/, 'Letters, digits, dots, and dashes only'),
   assetClass: z.enum(ASSET_CLASSES),
   defaultBucket: bucket,
+  priceCents: cents.min(0).nullable(),
 });
 
 export const modelPortfolioSchema = z.object({

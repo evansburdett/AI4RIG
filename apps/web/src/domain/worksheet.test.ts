@@ -37,10 +37,15 @@ const WORKBOOK_SOON: SoonInputs = {
 };
 
 describe('Now bucket', () => {
-  it('matches cell E16', () => {
-    const now = computeNow(WORKBOOK_NOW);
-    expect(now.lines.map((l) => l.amountCents)).toEqual([50_000_00, 100_000_00, 40_000_00]);
-    expect(now.totalCents).toBe(190_000_00);
+  it('adds the annual advisory fee to the workbook inputs', () => {
+    const now = computeNow(WORKBOOK_NOW, 3_000_000_00 * 0.01);
+    expect(now.lines.map((l) => l.amountCents)).toEqual([
+      50_000_00,
+      100_000_00,
+      40_000_00,
+      30_000_00,
+    ]);
+    expect(now.totalCents).toBe(220_000_00);
   });
 
   it('is zero, not NaN, on an empty case', () => {
@@ -49,7 +54,7 @@ describe('Now bucket', () => {
       incomeDrawMonths: 0,
       bankReserveCents: 0,
       plannedExpenses: [],
-    });
+    }, 0);
     expect(now.totalCents).toBe(0);
   });
 });

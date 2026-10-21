@@ -1,23 +1,16 @@
 /**
- * Where a client's money sits, worked out from what the advisor entered: each
- * account's balance, how much of it is in Now / Soon / Later, and the model
- * each of those follows.
- *
- * Positions ("holdings") are never entered or stored. They come from a
- * bucket's dollars times its weights -- a model's, or the advisor's own under
- * US-23 -- recomputed on every render (decision D2). US-11 asset class
- * breakdown and the drift against the worksheet both read from here.
- *
- * Provisional home: this belongs in packages/engine next to splitByWeights.
- * It is pure, so moving it is a file move.
+ * Actual account and bucket values come from stored shares multiplied by
+ * manually maintained ticker prices. Model-weighted holdings are calculated
+ * separately as target guidance and never substitute for actual positions.
  */
 
-import { addCents, splitByWeights, type Cents } from '@ai4rig/engine';
+import { addCents, positionValueCents, splitByWeights, type Cents } from '@ai4rig/engine';
 
 import { percentOf } from './money.js';
 import { ASSET_CLASSES, BUCKETS } from './types.js';
 import type {
   Account,
+  AccountPosition,
   SleeveLine,
   AccountType,
   AllocationTarget,
@@ -38,9 +31,36 @@ export function allocatedCents(account: Account): Cents {
   return addCents(...account.sleeves.map((s) => s.amountCents));
 }
 
-/** Balance not yet placed in any bucket. Negative when the buckets add up to more than the balance. */
-export function unallocatedCents(account: Account): Cents {
-  return account.balanceCents - allocatedCents(account);
+export interface ValuedPosition extends AccountPosition {
+  readonly priceCents: Cents | null;
+  readonly marketValueCents: Cents | null;
+}
+
+export function valuedPositions(
+  account: Account,
+  tickerList: readonly Ticker[],
+): ValuedPosition[] {
+  const tickers = new Map(tickerList.map((ticker) => [ticker.symbol, ticker]));
+  return account.positions.map((position) => {
+    const priceCents = tickers.get(position.tickerSymbol)?.priceCents ?? null;
+    return {
+      ...position,
+      priceCents,
+      marketValueCents:
+        priceCents === null
+          ? null
+          : positionValueCents(position.sharesMicros, priceCents),
+    };
+  });
+}
+
+export function accountValueCents(account: Account, tickerList: readonly Ticker[]): Cents {
+  return addCents(
+    ...valuedPositions(account, tickerList)
+      .flatMap((position) =>
+        position.marketValueCents === null ? [] : [position.marketValueCents],
+      ),
+  );
 }
 
 /**
@@ -127,27 +147,23 @@ export interface Slice {
 
 export interface BucketComposition {
   readonly bucket: BucketType;
-  /** Everything the advisor put in this bucket, with or without a model. */
+  /** Sum of priced actual positions assigned to this bucket. */
   readonly valueCents: Cents;
   readonly pctOfPortfolio: number;
-  /** In this bucket but not yet following anything that adds up, so no asset class. */
-  readonly unmodeledCents: Cents;
   readonly slices: readonly Slice[];
 }
 
 export interface Breakdown {
-  /** Sum of account balances. */
+  /** Sum of priced actual positions. */
   readonly totalCents: Cents;
-  /** Balance not in any bucket yet, across all accounts. */
-  readonly unallocatedCents: Cents;
-  /** Money in a bucket that follows nothing adding up to 100%, across all buckets. */
-  readonly unmodeledCents: Cents;
+  /** Positive-share positions whose ticker has no price yet. */
+  readonly unpricedPositionCount: number;
   readonly byAssetClass: readonly Slice[];
   readonly byBucket: readonly BucketComposition[];
 }
 
 function slice(
-  holdings: readonly Holding[],
+  holdings: readonly Pick<Holding, 'tickerSymbol' | 'marketValueCents'>[],
   tickers: ReadonlyMap<string, Ticker>,
   totalCents: Cents,
 ): readonly Slice[] {
@@ -168,34 +184,43 @@ function slice(
 export function computeBreakdown(
   clientCase: ClientCase,
   tickerList: readonly Ticker[],
-  modelList: readonly ModelPortfolio[],
 ): Breakdown {
   const tickers = new Map(tickerList.map((t) => [t.symbol, t]));
-  const models = modelsById(modelList);
-  const holdings = clientCase.accounts.flatMap((account) => accountHoldings(account, models));
-  const totalCents = addCents(...clientCase.accounts.map((a) => a.balanceCents));
+  const valued = clientCase.accounts.flatMap((account) =>
+    valuedPositions(account, tickerList).map((position) => ({ account, position })),
+  );
+  const holdings = valued.flatMap(({ account, position }) =>
+    position.marketValueCents === null
+      ? []
+      : [{
+          accountId: account.id,
+          bucket: position.bucket,
+          tickerSymbol: position.tickerSymbol,
+          marketValueCents: position.marketValueCents,
+        }],
+  );
+  const totalCents = addCents(...holdings.map((holding) => holding.marketValueCents));
 
   const byBucket = BUCKETS.map((bucket): BucketComposition => {
     const valueCents = addCents(
-      ...clientCase.accounts.map((a) => a.sleeves.find((s) => s.bucket === bucket)?.amountCents ?? 0),
+      ...holdings
+        .filter((holding) => holding.bucket === bucket)
+        .map((holding) => holding.marketValueCents),
     );
     const inBucket = holdings.filter((h) => h.bucket === bucket);
-    const modeledCents = addCents(...inBucket.map((h) => h.marketValueCents));
     return {
       bucket,
       valueCents,
       pctOfPortfolio: percentOf(valueCents, totalCents),
-      unmodeledCents: valueCents - modeledCents,
       slices: slice(inBucket, tickers, valueCents),
     };
   });
 
-  const allocated = addCents(...byBucket.map((b) => b.valueCents));
-
   return {
     totalCents,
-    unallocatedCents: totalCents - allocated,
-    unmodeledCents: addCents(...byBucket.map((b) => b.unmodeledCents)),
+    unpricedPositionCount: valued.filter(
+      ({ position }) => position.sharesMicros > 0 && position.marketValueCents === null,
+    ).length,
     byAssetClass: slice(holdings, tickers, totalCents),
     byBucket,
   };
@@ -243,8 +268,8 @@ export interface AccountBuckets {
   readonly nowCents: Cents;
   readonly soonCents: Cents;
   readonly laterCents: Cents;
-  readonly unallocatedCents: Cents;
   readonly balanceCents: Cents;
+  readonly unpricedPositionCount: number;
 }
 
 /**
@@ -253,10 +278,17 @@ export interface AccountBuckets {
  * the detail per account, then nice clean summary that is the total of all the
  * accounts."
  */
-export function bucketsByAccount(clientCase: ClientCase): AccountBuckets[] {
+export function bucketsByAccount(
+  clientCase: ClientCase,
+  tickerList: readonly Ticker[],
+): AccountBuckets[] {
   return clientCase.accounts.map((account) => {
     const amount = (bucket: BucketType) =>
-      account.sleeves.find((s) => s.bucket === bucket)?.amountCents ?? 0;
+      addCents(
+        ...valuedPositions(account, tickerList)
+          .filter((position) => position.bucket === bucket && position.marketValueCents !== null)
+          .map((position) => position.marketValueCents ?? 0),
+      );
 
     return {
       accountId: account.id,
@@ -266,8 +298,10 @@ export function bucketsByAccount(clientCase: ClientCase): AccountBuckets[] {
       nowCents: amount('NOW'),
       soonCents: amount('SOON'),
       laterCents: amount('LATER'),
-      unallocatedCents: unallocatedCents(account),
-      balanceCents: account.balanceCents,
+      balanceCents: accountValueCents(account, tickerList),
+      unpricedPositionCount: valuedPositions(account, tickerList).filter(
+        (position) => position.sharesMicros > 0 && position.marketValueCents === null,
+      ).length,
     };
   });
 }
@@ -277,39 +311,53 @@ export interface BucketHolding {
   readonly symbol: string;
   readonly accountType: AccountType;
   readonly maskedNumber: string;
-  readonly modelName: string;
-  readonly marketValueCents: Cents;
+  readonly sharesMicros: number;
+  readonly priceCents: Cents | null;
+  readonly marketValueCents: Cents | null;
   readonly assetClass: AssetClass | null;
-  /** RIG's mapping puts this ticker in a different bucket than the model does. */
+  /** RIG's default mapping puts this ticker in a different bucket than assigned. */
   readonly outsideDefaultBucket: boolean;
 }
 
-/** The positions in one bucket, across every account, largest first. */
+/** Actual positions in one bucket, across every account, largest first. */
 export function holdingsInBucket(
   clientCase: ClientCase,
   tickerList: readonly Ticker[],
-  modelList: readonly ModelPortfolio[],
   bucket: BucketType,
 ): BucketHolding[] {
   const tickers = new Map(tickerList.map((t) => [t.symbol, t]));
-  const models = modelsById(modelList);
 
   return clientCase.accounts
     .flatMap((account) =>
-      sleeveHoldings(account, bucket, models).map((holding) => {
-        const ticker = tickers.get(holding.tickerSymbol);
-        return {
-          key: `${account.id}:${bucket}:${holding.tickerSymbol}`,
-          symbol: holding.tickerSymbol,
-          accountType: account.accountType,
-          maskedNumber: account.maskedNumber,
-          modelName:
-            holding.modelId === null ? 'Manual' : (models.get(holding.modelId)?.name ?? ''),
-          marketValueCents: holding.marketValueCents,
-          assetClass: ticker?.assetClass ?? null,
-          outsideDefaultBucket: ticker !== undefined && ticker.defaultBucket !== bucket,
-        };
-      }),
+      valuedPositions(account, tickerList)
+        .filter((position) => position.bucket === bucket)
+        .map((position) => {
+          const ticker = tickers.get(position.tickerSymbol);
+          return {
+            key: `${account.id}:${bucket}:${position.tickerSymbol}`,
+            symbol: position.tickerSymbol,
+            accountType: account.accountType,
+            maskedNumber: account.maskedNumber,
+            sharesMicros: position.sharesMicros,
+            priceCents: position.priceCents,
+            marketValueCents: position.marketValueCents,
+            assetClass: ticker?.assetClass ?? null,
+            outsideDefaultBucket: ticker !== undefined && ticker.defaultBucket !== bucket,
+          };
+        }),
     )
-    .sort((a, b) => b.marketValueCents - a.marketValueCents);
+    .sort((a, b) => (b.marketValueCents ?? 0) - (a.marketValueCents ?? 0));
+}
+
+export function revalueClientCase(
+  clientCase: ClientCase,
+  tickerList: readonly Ticker[],
+): ClientCase {
+  return {
+    ...clientCase,
+    accounts: clientCase.accounts.map((account) => ({
+      ...account,
+      balanceCents: accountValueCents(account, tickerList),
+    })),
+  };
 }

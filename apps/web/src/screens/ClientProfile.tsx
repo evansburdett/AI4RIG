@@ -19,9 +19,16 @@ import {
   MONEY_CYCLE_LABELS,
   ageFromBirthYear,
   householdPlanYears,
+  estimatedLifeExpectancyAge,
 } from '../domain/lifeStage.js';
 import { formatCents, formatCentsWhole, formatPercent } from '../domain/money.js';
-import { HEALTH_CONCERNS, LIFE_STAGES, MONEY_CYCLE_PHASES, TAX_BRACKETS } from '../domain/types.js';
+import {
+  GENDERS,
+  HEALTH_CONCERNS,
+  LIFE_STAGES,
+  MONEY_CYCLE_PHASES,
+  TAX_BRACKETS,
+} from '../domain/types.js';
 import type {
   AllocationTarget,
   ClientCase,
@@ -31,6 +38,7 @@ import type {
   Ticker,
 } from '../domain/types.js';
 import {
+  ANNUAL_ADVISORY_FEE_PERCENT,
   computePlanTotals,
   targetAllocation,
   type BucketWorksheet,
@@ -89,6 +97,10 @@ export function ClientProfile({
         <div className="grid two">
           {clientCase.people.map((person, index) => {
             const age = ageFromBirthYear(person.birthYear, today);
+            const lifeExpectancyAge = estimatedLifeExpectancyAge(person, today);
+            let estimatePrompt = 'Enter the Other concern adjustment';
+            if (age === null) estimatePrompt = 'Enter a valid birth year';
+            else if (person.gender === null) estimatePrompt = 'Select gender';
             const updatePerson = (changes: Partial<(typeof clientCase.people)[number]>) =>
               patch({
                 people: clientCase.people.map((p, i) => (i === index ? { ...p, ...changes } : p)),
@@ -106,6 +118,24 @@ export function ClientProfile({
                   onChange={(birthYear) => updatePerson({ birthYear })}
                 />
                 <DerivedField label="Age" value={age === null ? '—' : String(age)} />
+                <div className="field">
+                  <label htmlFor={`gender-${person.role}`}>Gender</label>
+                  <select
+                    id={`gender-${person.role}`}
+                    value={person.gender ?? ''}
+                    onChange={(event) => {
+                      const gender = GENDERS.find((option) => option === event.target.value) ?? null;
+                      updatePerson({ gender });
+                    }}
+                  >
+                    <option value="">Select gender</option>
+                    {GENDERS.map((gender) => (
+                      <option key={gender} value={gender}>
+                        {gender === 'MALE' ? 'Male' : 'Female'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <CheckboxGroupField
                   legend="Health concerns"
                   values={person.healthConcerns}
@@ -116,7 +146,12 @@ export function ClientProfile({
                     updatePerson({
                       healthConcerns,
                       // The description goes with the box that explained it.
-                      ...(healthConcerns.includes('OTHER') ? {} : { healthConcernOther: '' }),
+                      ...(healthConcerns.includes('OTHER')
+                        ? {
+                            otherHealthConcernAdjustmentYears:
+                              person.otherHealthConcernAdjustmentYears ?? 3,
+                          }
+                        : { healthConcernOther: '', otherHealthConcernAdjustmentYears: null }),
                     })
                   }
                 />
@@ -129,13 +164,23 @@ export function ClientProfile({
                     onChange={(healthConcernOther) => updatePerson({ healthConcernOther })}
                   />
                 )}
-                <NumberField
-                  label="Life expectancy age"
-                  value={person.lifeExpectancyAge}
-                  min={0}
-                  max={130}
-                  hint="Entered by the advisor. The worksheet wants this estimated from age and health."
-                  onChange={(lifeExpectancyAge) => updatePerson({ lifeExpectancyAge })}
+                {person.healthConcerns.includes('OTHER') && (
+                  <NumberField
+                    label="Other concern adjustment (years)"
+                    value={person.otherHealthConcernAdjustmentYears}
+                    min={0}
+                    max={130}
+                    step={0.5}
+                    hint="Custom years subtracted from the baseline; starts at 3 years."
+                    onChange={(otherHealthConcernAdjustmentYears) =>
+                      updatePerson({ otherHealthConcernAdjustmentYears })
+                    }
+                  />
+                )}
+                <DerivedField
+                  label="Estimated life expectancy age"
+                  value={lifeExpectancyAge === null ? estimatePrompt : String(lifeExpectancyAge)}
+                  hint="SSA 2022 U.S. period-table estimate. Cancer, Stroke, and Heart each subtract 3 years; Other uses the custom adjustment. This is a planning estimate, not a personal prediction."
                 />
                 {person.role === 'SPOUSE' && (
                   <button
@@ -160,9 +205,10 @@ export function ClientProfile({
                       {
                         role: 'SPOUSE',
                         birthYear: null,
+                        gender: null,
                         healthConcerns: [],
                         healthConcernOther: '',
-                        lifeExpectancyAge: null,
+                        otherHealthConcernAdjustmentYears: null,
                       },
                     ],
                   })
@@ -243,7 +289,7 @@ export function ClientProfile({
           />
         ))}
 
-        <BucketTotals clientCase={clientCase} target={target} />
+        <BucketTotals clientCase={clientCase} tickers={tickers} target={target} />
       </section>
 
       <section className="card">
@@ -265,9 +311,9 @@ export function ClientProfile({
           />
         </div>
 
-        <Callout tone="blocked" title="Advisory fee tiers not supplied">
-          The worksheet derives the fee from account balance tiers. RIG has not sent the tier table,
-          so the fee and the cash needed to cover it are left out.
+        <Callout tone="info" title="Annual advisory fee">
+          Calculated at {ANNUAL_ADVISORY_FEE_PERCENT}% of total account balances (
+          {formatCents(totals.advisoryFeeCents)}) and included in the Now bucket.
         </Callout>
       </section>
 
@@ -431,9 +477,17 @@ const TAX_BRACKET_LABELS: Record<string, string> = Object.fromEntries(
  * says the client needs there. The same comparison as the Breakdown screen,
  * kept here so the advisor sees it while splitting the accounts.
  */
-function BucketTotals({ clientCase, target }: { clientCase: ClientCase; target: AllocationTarget }) {
+function BucketTotals({
+  clientCase,
+  tickers,
+  target,
+}: {
+  clientCase: ClientCase;
+  tickers: readonly Ticker[];
+  target: AllocationTarget;
+}) {
   if (clientCase.accounts.length === 0) return null;
-  const rows = bucketsByAccount(clientCase);
+  const rows = bucketsByAccount(clientCase, tickers);
   const sum = (pick: (r: (typeof rows)[number]) => number) => rows.reduce((t, r) => t + pick(r), 0);
   const lines = [
     { label: 'Now', actual: sum((r) => r.nowCents), target: target.nowCents },
@@ -447,7 +501,7 @@ function BucketTotals({ clientCase, target }: { clientCase: ClientCase; target: 
         <tr>
           <th scope="col">All accounts</th>
           <th scope="col" className="amount">
-            In accounts
+            Actual positions
           </th>
           <th scope="col" className="amount">
             Worksheet says

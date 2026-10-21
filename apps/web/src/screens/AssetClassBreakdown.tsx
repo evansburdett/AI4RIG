@@ -16,30 +16,28 @@ import {
   TAX_FUNNEL_LABELS,
 } from '../domain/lifeStage.js';
 import { formatCents, formatCentsWhole, formatPercent } from '../domain/money.js';
-import type { ClientCase, ModelPortfolio, Ticker } from '../domain/types.js';
+import type { ClientCase, Ticker } from '../domain/types.js';
 import type { Slice } from '../domain/breakdown.js';
 import { computePlanTotals, targetAllocation } from '../domain/worksheet.js';
 
 interface Props {
   clientCase: ClientCase;
   tickers: readonly Ticker[];
-  models: readonly ModelPortfolio[];
 }
 
 /**
- * US-11 asset class distribution, overall and per bucket, plus where the
- * advisor's split sits against the worksheet. Everything here is derived from
- * the account balances, the bucket amounts, and the chosen models.
+ * Asset-class distribution of priced actual positions, overall and per bucket,
+ * plus where actual bucket values sit against worksheet targets.
  */
-export function AssetClassBreakdown({ clientCase, tickers, models }: Props) {
+export function AssetClassBreakdown({ clientCase, tickers }: Props) {
   const breakdown = useMemo(
-    () => computeBreakdown(clientCase, tickers, models),
-    [clientCase, tickers, models],
+    () => computeBreakdown(clientCase, tickers),
+    [clientCase, tickers],
   );
   const totals = useMemo(() => computePlanTotals(clientCase), [clientCase]);
   const target = useMemo(() => targetAllocation(clientCase, totals), [clientCase, totals]);
   const drift = useMemo(() => computeDrift(target, breakdown), [target, breakdown]);
-  const perAccount = useMemo(() => bucketsByAccount(clientCase), [clientCase]);
+  const perAccount = useMemo(() => bucketsByAccount(clientCase, tickers), [clientCase, tickers]);
 
   return (
     <div>
@@ -51,19 +49,10 @@ export function AssetClassBreakdown({ clientCase, tickers, models }: Props) {
         </p>
       </header>
 
-      {breakdown.unallocatedCents !== 0 && (
-        <Callout tone="warning" title="Not all of the money is in a bucket">
-          {breakdown.unallocatedCents > 0
-            ? `${formatCentsWhole(breakdown.unallocatedCents)} of the account balances is not in Now, Soon, or Later yet.`
-            : `The bucket amounts add up to ${formatCentsWhole(-breakdown.unallocatedCents)} more than the account balances.`}{' '}
-          Fix it on the Profile screen.
-        </Callout>
-      )}
-
-      {breakdown.unmodeledCents > 0 && (
-        <Callout tone="info" title="Some money has no model">
-          {formatCentsWhole(breakdown.unmodeledCents)} is in a bucket with no model chosen, so it has
-          no positions or asset class yet. It still counts toward the bucket totals.
+      {breakdown.unpricedPositionCount > 0 && (
+        <Callout tone="warning" title="Some actual positions have no price">
+          {breakdown.unpricedPositionCount} position(s) are excluded from portfolio and bucket totals
+          until their ticker prices are entered on the Tickers screen.
         </Callout>
       )}
 
@@ -72,7 +61,6 @@ export function AssetClassBreakdown({ clientCase, tickers, models }: Props) {
         <SliceTable
           slices={breakdown.byAssetClass}
           totalCents={breakdown.totalCents}
-          otherCents={breakdown.unmodeledCents + Math.max(breakdown.unallocatedCents, 0)}
         />
       </section>
 
@@ -158,7 +146,7 @@ export function AssetClassBreakdown({ clientCase, tickers, models }: Props) {
                 Later
               </th>
               <th scope="col" className="amount">
-                Not in a bucket
+                Missing prices
               </th>
               <th scope="col" className="amount">
                 Balance
@@ -176,13 +164,7 @@ export function AssetClassBreakdown({ clientCase, tickers, models }: Props) {
                 <td className="amount">{formatCentsWhole(account.nowCents)}</td>
                 <td className="amount">{formatCentsWhole(account.soonCents)}</td>
                 <td className="amount">{formatCentsWhole(account.laterCents)}</td>
-                <td className="amount">
-                  {account.unallocatedCents === 0 ? (
-                    <span className="muted">—</span>
-                  ) : (
-                    formatCentsWhole(account.unallocatedCents)
-                  )}
-                </td>
+                <td className="amount">{account.unpricedPositionCount}</td>
                 <td className="amount">{formatCentsWhole(account.balanceCents)}</td>
               </tr>
             ))}
@@ -200,7 +182,7 @@ export function AssetClassBreakdown({ clientCase, tickers, models }: Props) {
                 {formatCentsWhole(perAccount.reduce((t, a) => t + a.laterCents, 0))}
               </td>
               <td className="amount">
-                {formatCentsWhole(perAccount.reduce((t, a) => t + a.unallocatedCents, 0))}
+                {perAccount.reduce((t, a) => t + a.unpricedPositionCount, 0)}
               </td>
               <td className="amount">
                 {formatCentsWhole(perAccount.reduce((t, a) => t + a.balanceCents, 0))}
@@ -212,7 +194,7 @@ export function AssetClassBreakdown({ clientCase, tickers, models }: Props) {
 
       {breakdown.byBucket.map((composition) => {
         const bucketDrift = drift.find((d) => d.bucket === composition.bucket);
-        const holdings = holdingsInBucket(clientCase, tickers, models, composition.bucket);
+        const holdings = holdingsInBucket(clientCase, tickers, composition.bucket);
 
         return (
           <section className="card" key={composition.bucket}>
@@ -241,7 +223,6 @@ export function AssetClassBreakdown({ clientCase, tickers, models }: Props) {
               <SliceTable
                 slices={composition.slices}
                 totalCents={composition.valueCents}
-                otherCents={composition.unmodeledCents}
               />
             )}
 
@@ -249,8 +230,8 @@ export function AssetClassBreakdown({ clientCase, tickers, models }: Props) {
             {holdings.length === 0 ? (
               <p className="empty">
                 {composition.valueCents === 0
-                  ? 'No money in this bucket.'
-                  : 'No model chosen for the money in this bucket yet.'}
+                  ? 'No priced actual holdings in this bucket yet.'
+                  : 'No actual holdings in this bucket yet.'}
               </p>
             ) : (
               <table>
@@ -258,7 +239,8 @@ export function AssetClassBreakdown({ clientCase, tickers, models }: Props) {
                   <tr>
                     <th scope="col">Symbol</th>
                     <th scope="col">Account</th>
-                    <th scope="col">Model</th>
+                    <th scope="col" className="amount">Shares</th>
+                    <th scope="col" className="amount">Price / share</th>
                     <th scope="col">Asset class</th>
                     <th scope="col" className="amount">
                       Value
@@ -280,13 +262,20 @@ export function AssetClassBreakdown({ clientCase, tickers, models }: Props) {
                         {ACCOUNT_TYPE_LABELS[holding.accountType]}
                         {holding.maskedNumber === '' ? '' : ` ····${holding.maskedNumber}`}
                       </td>
-                      <td className="muted">{holding.modelName}</td>
+                      <td className="amount">{formatShares(holding.sharesMicros)}</td>
+                      <td className="amount">
+                        {holding.priceCents === null ? 'Price not set' : formatCents(holding.priceCents)}
+                      </td>
                       <td className="muted">
                         {holding.assetClass === null
                           ? '—'
                           : ASSET_CLASS_LABELS[holding.assetClass]}
                       </td>
-                      <td className="amount">{formatCents(holding.marketValueCents)}</td>
+                      <td className="amount">
+                        {holding.marketValueCents === null
+                          ? '—'
+                          : formatCents(holding.marketValueCents)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -302,17 +291,17 @@ export function AssetClassBreakdown({ clientCase, tickers, models }: Props) {
   );
 }
 
+function formatShares(sharesMicros: number): string {
+  return (sharesMicros / 1_000_000).toFixed(6).replace(/\.?0+$/, '');
+}
+
 function SliceTable({
   slices,
   totalCents,
-  otherCents = 0,
 }: {
   slices: readonly Slice[];
   totalCents: number;
-  /** Money with no asset class: no model chosen, or not in a bucket. */
-  otherCents?: number;
 }) {
-  const otherPct = totalCents === 0 ? 0 : Math.round((otherCents / totalCents) * 1000) / 10;
   return (
     <table>
       <thead>
@@ -338,26 +327,12 @@ function SliceTable({
             </td>
           </tr>
         ))}
-        {otherCents > 0 && (
-          <tr>
-            <th scope="row" className="muted">
-              No asset class yet
-            </th>
-            <td className="amount">{formatCents(otherCents)}</td>
-            <td className="amount">{formatPercent(otherPct)}</td>
-            <td className="meter-cell">
-              <div className="meter">
-                <div className="meter-fill meter-other" style={{ width: `${otherPct}%` }} />
-              </div>
-            </td>
-          </tr>
-        )}
       </tbody>
       <tfoot>
         <tr>
           <th scope="row">Total</th>
           <td className="amount">{formatCents(totalCents)}</td>
-          <td className="amount">100.0%</td>
+          <td className="amount">{formatPercent(totalCents > 0 ? 100 : 0)}</td>
           <td />
         </tr>
       </tfoot>

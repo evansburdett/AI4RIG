@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  accountValueCents,
   accountHoldings,
   bucketsByAccount,
   computeBreakdown,
@@ -8,7 +9,6 @@ import {
   holdingsInBucket,
   modelChoices,
   modelsById,
-  unallocatedCents,
 } from './breakdown.js';
 import { SAMPLE_CASES } from '../fixtures/clients.js';
 import { PLACEHOLDER_MODELS, PLACEHOLDER_TICKERS } from '../fixtures/tickers.js';
@@ -18,22 +18,23 @@ const WORKBOOK_CASE = SAMPLE_CASES[0]!;
 const ACCUMULATOR_CASE = SAMPLE_CASES[1]!;
 const MODELS = modelsById(PLACEHOLDER_MODELS);
 
-const breakdownOf = (c = WORKBOOK_CASE) => computeBreakdown(c, PLACEHOLDER_TICKERS, PLACEHOLDER_MODELS);
+const breakdownOf = (c = WORKBOOK_CASE) => computeBreakdown(c, PLACEHOLDER_TICKERS);
 
 describe('targetAllocation', () => {
   it('derives the split from the client inputs, not from a table', () => {
     const totals = computePlanTotals(WORKBOOK_CASE);
     const target = targetAllocation(WORKBOOK_CASE, totals);
 
-    // $190,000 / $914,700 / $1,895,300 of $3,000,000 in typed account balances.
+    // $220,000 / $914,700 / $1,865,300 of $3,000,000 in typed account balances.
     expect(totals.investableAssetsCents).toBe(3_000_000_00);
-    expect(target.nowCents).toBe(190_000_00);
+    expect(totals.advisoryFeeCents).toBe(30_000_00);
+    expect(target.nowCents).toBe(220_000_00);
     expect(target.soonCents).toBe(914_700_00);
-    expect(target.laterCents).toBe(1_895_300_00);
+    expect(target.laterCents).toBe(1_865_300_00);
 
-    expect(target.nowPct).toBe(6.3);
+    expect(target.nowPct).toBe(7.3);
     expect(target.soonPct).toBe(30.5);
-    expect(target.laterPct).toBe(63.2);
+    expect(target.laterPct).toBe(62.2);
   });
 
   it('gives an accumulator a small Soon bucket without weighting anything', () => {
@@ -93,70 +94,76 @@ describe('holdings from models', () => {
 });
 
 describe('computeBreakdown', () => {
-  it('puts the workbook case exactly on target with nothing unallocated', () => {
+  it('includes the advisory fee in the target and reports the resulting drift', () => {
     const breakdown = breakdownOf();
     expect(breakdown.totalCents).toBe(3_000_000_00);
-    expect(breakdown.unallocatedCents).toBe(0);
-    expect(breakdown.unmodeledCents).toBe(0);
+    expect(breakdown.unpricedPositionCount).toBe(0);
 
     const drift = computeDrift(targetAllocation(WORKBOOK_CASE, computePlanTotals(WORKBOOK_CASE)), breakdown);
-    expect(drift.map((d) => d.deltaCents)).toEqual([0, 0, 0]);
+    expect(drift.map((d) => d.deltaCents)).toEqual([-30_000_00, 0, 30_000_00]);
   });
 
-  it('reports unallocated and unmodeled money separately', () => {
+  it('values actual holdings even when their target sleeves are unallocated or unmodeled', () => {
     const breakdown = breakdownOf(ACCUMULATOR_CASE);
-    expect(breakdown.unallocatedCents).toBe(15_000_00);
-    expect(breakdown.unmodeledCents).toBe(60_000_00);
-    expect(breakdown.byBucket.find((b) => b.bucket === 'SOON')?.unmodeledCents).toBe(60_000_00);
+    expect(breakdown.totalCents).toBe(520_000_00);
+    expect(breakdown.byBucket.map(({ bucket, valueCents }) => [bucket, valueCents])).toEqual([
+      ['NOW', 25_000_00],
+      ['SOON', 60_000_00],
+      ['LATER', 435_000_00],
+    ]);
   });
 
   it('shows drift against the worksheet for an off-target case', () => {
     const target = targetAllocation(ACCUMULATOR_CASE, computePlanTotals(ACCUMULATOR_CASE));
     const drift = Object.fromEntries(computeDrift(target, breakdownOf(ACCUMULATOR_CASE)).map((d) => [d.bucket, d]));
 
-    // Worksheet: Now $30,000 (bank reserve), Soon $75,000 (conservative reserve).
-    expect(drift.NOW?.deltaCents).toBe(-5_000_00);
+    // Worksheet: Now $35,200 (bank reserve plus fee), Soon $75,000.
+    expect(drift.NOW?.deltaCents).toBe(-10_200_00);
     expect(drift.SOON?.deltaCents).toBe(-15_000_00);
   });
 
-  it('classifies modeled money by asset class', () => {
+  it('classifies actual holdings by asset class', () => {
     const now = breakdownOf().byBucket.find((b) => b.bucket === 'NOW');
     expect(now?.slices).toEqual([{ assetClass: 'CASH', valueCents: 190_000_00, pct: 100 }]);
+  });
+
+  it('excludes unpriced positions from totals but counts them for the warning', () => {
+    const withoutVtiPrice = PLACEHOLDER_TICKERS.map((ticker) =>
+      ticker.symbol === 'VTI' ? { ...ticker, priceCents: null } : ticker,
+    );
+    const breakdown = computeBreakdown(WORKBOOK_CASE, withoutVtiPrice);
+    expect(breakdown.totalCents).toBe(1_104_700_00);
+    expect(breakdown.unpricedPositionCount).toBe(3);
   });
 });
 
 describe('bucketsByAccount', () => {
   it('splits each account into Now, Soon, and Later', () => {
-    const joint = bucketsByAccount(WORKBOOK_CASE)[0]!;
+    const joint = bucketsByAccount(WORKBOOK_CASE, PLACEHOLDER_TICKERS)[0]!;
     expect(joint).toMatchObject({
       nowCents: 190_000_00,
       soonCents: 400_000_00,
       laterCents: 610_000_00,
-      unallocatedCents: 0,
+      unpricedPositionCount: 0,
       balanceCents: 1_200_000_00,
     });
   });
 
-  it('shows what is left over in an account', () => {
-    expect(unallocatedCents(ACCUMULATOR_CASE.accounts[0]!)).toBe(15_000_00);
+  it('derives account balances from the priced positions', () => {
+    const account = {
+      ...WORKBOOK_CASE.accounts[0]!,
+      balanceCents: 999_999_00,
+    };
+    expect(accountValueCents(account, PLACEHOLDER_TICKERS)).toBe(1_200_000_00);
   });
 });
 
 describe('holdingsInBucket', () => {
   it('lists the largest position first, across accounts', () => {
-    const values = holdingsInBucket(WORKBOOK_CASE, PLACEHOLDER_TICKERS, PLACEHOLDER_MODELS, 'LATER').map(
-      (h) => h.marketValueCents,
+    const values = holdingsInBucket(WORKBOOK_CASE, PLACEHOLDER_TICKERS, 'LATER').map(
+      (h) => h.marketValueCents ?? 0,
     );
     expect(values).toEqual([...values].sort((a, b) => b - a));
-  });
-
-  it('flags a ticker the model puts outside the bucket RIG maps it to', () => {
-    const customised = [
-      ...PLACEHOLDER_MODELS.filter((m) => m.id !== '9002'),
-      { ...PLACEHOLDER_MODELS[1]!, lines: [{ tickerSymbol: 'VTI', weightBps: 10_000 }] },
-    ];
-    const soon = holdingsInBucket(WORKBOOK_CASE, PLACEHOLDER_TICKERS, customised, 'SOON');
-    expect(soon.every((h) => h.outsideDefaultBucket)).toBe(true);
   });
 });
 
@@ -202,9 +209,8 @@ describe('a bucket picked by hand (US-23)', () => {
     const breakdown = computeBreakdown(
       { ...ACCUMULATOR_CASE, accounts: [half, ACCUMULATOR_CASE.accounts[1]!] },
       PLACEHOLDER_TICKERS,
-      PLACEHOLDER_MODELS,
     );
-    expect(breakdown.byBucket.find((b) => b.bucket === 'LATER')?.unmodeledCents).toBe(240_000_00);
+    expect(breakdown.byBucket.find((b) => b.bucket === 'LATER')?.valueCents).toBe(435_000_00);
   });
 
   it('places nothing when no symbols have been chosen at all', () => {

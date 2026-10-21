@@ -10,6 +10,7 @@ import type {
   Person,
   TaxFunnel,
 } from './types.js';
+import { SSA_2022_REMAINING_YEARS } from './ssaLifeTable.js';
 
 /** `today` is a parameter so tests can pin the year. */
 export function ageFromBirthYear(birthYear: number | null, today: Date): number | null {
@@ -18,10 +19,33 @@ export function ageFromBirthYear(birthYear: number | null, today: Date): number 
   return age >= 0 && age < 130 ? age : null;
 }
 
+export function estimatedLifeExpectancyAge(person: Person, today: Date): number | null {
+  const age = ageFromBirthYear(person.birthYear, today);
+  if (age === null || person.gender === null) return null;
+  if (person.healthConcerns.includes('OTHER') && person.otherHealthConcernAdjustmentYears === null) {
+    return null;
+  }
+
+  const tableAge = Math.min(age, 119);
+  const remainingYears = SSA_2022_REMAINING_YEARS[person.gender][tableAge];
+  if (remainingYears === undefined) {
+    throw new Error(`Missing SSA life-table value for ${person.gender} at age ${tableAge}`);
+  }
+
+  const standardConcernYears =
+    person.healthConcerns.filter((concern) => concern !== 'OTHER').length * 3;
+  const otherConcernYears = person.healthConcerns.includes('OTHER')
+    ? (person.otherHealthConcernAdjustmentYears ?? 0)
+    : 0;
+
+  return Math.max(age, Math.round(age + remainingYears - standardConcernYears - otherConcernYears));
+}
+
 export function planYears(person: Person, today: Date): number | null {
   const age = ageFromBirthYear(person.birthYear, today);
-  if (age === null || person.lifeExpectancyAge === null) return null;
-  return Math.max(0, person.lifeExpectancyAge - age);
+  const lifeExpectancyAge = estimatedLifeExpectancyAge(person, today);
+  if (age === null || lifeExpectancyAge === null) return null;
+  return Math.max(0, lifeExpectancyAge - age);
 }
 
 /** The longer of the two horizons — the plan has to outlast both. */

@@ -30,20 +30,40 @@ function sleeves(now: SleeveSpec, soon: SleeveSpec, later: SleeveSpec): Account[
   return [one('NOW', now), one('SOON', soon), one('LATER', later)];
 }
 
+function testPositions(
+  nowCents: number,
+  soonCents: number,
+  laterCents: number,
+): Account['positions'] {
+  return [
+    { bucket: 'NOW', tickerSymbol: 'SGOV', sharesMicros: nowCents * 100 },
+    { bucket: 'SOON', tickerSymbol: 'BND', sharesMicros: soonCents * 100 },
+    { bucket: 'LATER', tickerSymbol: 'VTI', sharesMicros: laterCents * 100 },
+  ];
+}
+
 /** Buckets land exactly on the workbook's $190,000 / $914,700 / $1,895,300. */
 const WORKBOOK_CASE: ClientCase = {
   clientNumber: '1042',
   initials: 'A.B.',
   planNumber: 1,
   people: [
-    { role: 'CLIENT', birthYear: 1960, healthConcerns: [], healthConcernOther: '', lifeExpectancyAge: 88 },
+    {
+      role: 'CLIENT',
+      birthYear: 1960,
+      gender: 'MALE',
+      healthConcerns: [],
+      healthConcernOther: '',
+      otherHealthConcernAdjustmentYears: null,
+    },
     {
       role: 'SPOUSE',
       birthYear: 1963,
+      gender: 'FEMALE',
       // Two concerns plus a description, to exercise US-27 on the profile screen.
       healthConcerns: ['HEART', 'OTHER'],
       healthConcernOther: 'Managed hypertension',
-      lifeExpectancyAge: 85,
+      otherHealthConcernAdjustmentYears: 3,
     },
   ],
   moneyCyclePhase: 'DISTRIBUTION',
@@ -56,6 +76,7 @@ const WORKBOOK_CASE: ClientCase = {
       taxFunnel: 'TAXABLE',
       maskedNumber: '4417',
       balanceCents: 1_200_000_00,
+      positions: testPositions(190_000_00, 400_000_00, 610_000_00),
       sleeves: sleeves([190_000, '9001'], [400_000, '9002'], [610_000, '9003']),
     },
     {
@@ -64,6 +85,7 @@ const WORKBOOK_CASE: ClientCase = {
       taxFunnel: 'PRE_TAX',
       maskedNumber: '8830',
       balanceCents: 1_500_000_00,
+      positions: testPositions(0, 514_700_00, 985_300_00),
       sleeves: sleeves([0, null], [514_700, '9002'], [985_300, '9003']),
     },
     {
@@ -72,6 +94,7 @@ const WORKBOOK_CASE: ClientCase = {
       taxFunnel: 'TAX_FREE',
       maskedNumber: '2291',
       balanceCents: 300_000_00,
+      positions: testPositions(0, 0, 300_000_00),
       sleeves: sleeves([0, null], [0, null], [300_000, '9004']),
     },
   ],
@@ -107,7 +130,14 @@ const ACCUMULATOR_CASE: ClientCase = {
   initials: 'C.D.',
   planNumber: 1,
   people: [
-    { role: 'CLIENT', birthYear: 1988, healthConcerns: [], healthConcernOther: '', lifeExpectancyAge: 90 },
+    {
+      role: 'CLIENT',
+      birthYear: 1988,
+      gender: 'MALE',
+      healthConcerns: [],
+      healthConcernOther: '',
+      otherHealthConcernAdjustmentYears: null,
+    },
   ],
   moneyCyclePhase: 'ACCUMULATION',
   lifeStage: 'ACCUMULATION_PEAK_EARNINGS',
@@ -119,6 +149,7 @@ const ACCUMULATOR_CASE: ClientCase = {
       taxFunnel: 'TAXABLE',
       maskedNumber: '1005',
       balanceCents: 280_000_00,
+      positions: testPositions(25_000_00, 0, 255_000_00),
       // Later is picked by hand here, the one manual bucket in the samples.
       sleeves: sleeves([25_000, '9001'], [0, null], [
         240_000,
@@ -134,6 +165,7 @@ const ACCUMULATOR_CASE: ClientCase = {
       taxFunnel: 'TAX_FREE',
       maskedNumber: '7742',
       balanceCents: 240_000_00,
+      positions: testPositions(0, 60_000_00, 180_000_00),
       sleeves: sleeves([0, null], [60_000, null], [180_000, '9004']),
     },
   ],
