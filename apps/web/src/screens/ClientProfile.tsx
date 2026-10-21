@@ -51,6 +51,7 @@ interface Props {
   tickers: readonly Ticker[];
   /** Turns a manual bucket into a reusable model. */
   onSaveAsModel: (model: ModelPortfolio) => Promise<ModelPortfolio>;
+  onAddTicker: (ticker: Ticker) => Promise<Ticker>;
   onChange: (next: ClientCase) => void;
   today: Date;
 }
@@ -69,6 +70,7 @@ export function ClientProfile({
   tickers,
   onChange,
   onSaveAsModel,
+  onAddTicker,
   today,
 }: Props) {
   const totals = useMemo(() => computePlanTotals(clientCase), [clientCase]);
@@ -282,6 +284,7 @@ export function ClientProfile({
             models={models}
             tickers={tickers}
             onSaveAsModel={onSaveAsModel}
+            onAddTicker={onAddTicker}
             onChange={(next) =>
               patch({ accounts: clientCase.accounts.map((a) => (a.id === account.id ? next : a)) })
             }

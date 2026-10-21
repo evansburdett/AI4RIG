@@ -11,7 +11,7 @@ import type {
   ModelPortfolio,
   Ticker,
 } from './domain/types.js';
-import { revalueClientCase } from './domain/breakdown.js';
+import { withTicker } from './domain/tickers.js';
 import { hrefFor, isReferenceScreen, useRoute, type Screen } from './routing.js';
 import { AssetClassBreakdown } from './screens/AssetClassBreakdown.js';
 import { BucketAssignments } from './screens/BucketAssignments.js';
@@ -185,18 +185,22 @@ export function App() {
   const saveTicker = useCallback(async (ticker: Ticker) => {
     try {
       const result = await api.saveTicker(ticker);
-      const nextTickers = tickers.map((t) => (t.symbol === result.symbol ? result : t));
-      const wasClean = draft === saved;
-      const nextDraft = draft === null ? null : revalueClientCase(draft, nextTickers);
-      const nextSaved = wasClean ? nextDraft : saved === null ? null : revalueClientCase(saved, nextTickers);
-      setTickers(nextTickers);
-      setDraft(nextDraft);
-      setSaved(nextSaved);
+      setTickers((current) => current.map((t) => (t.symbol === result.symbol ? result : t)));
       setReferenceError(null);
     } catch (error: unknown) {
       setReferenceError(describeError(error));
     }
-  }, [draft, saved, tickers]);
+  }, []);
+
+  /**
+   * US-24: a symbol typed on a model or a manual bucket that the universe did
+   * not have. Throws on failure so the message shows where it was typed.
+   */
+  const addTicker = useCallback(async (ticker: Ticker): Promise<Ticker> => {
+    const result = await api.saveTicker(ticker);
+    setTickers((current) => withTicker(current, result));
+    return result;
+  }, []);
 
   /** Throws on failure so the model editor can show the message next to the model. */
   const saveModel = useCallback(async (model: ModelPortfolio): Promise<ModelPortfolio> => {
@@ -318,12 +322,19 @@ export function App() {
         )}
 
         {route.screen === 'models' ? (
-          <Models models={models} tickers={tickers} onSave={saveModel} onDelete={deleteModel} />
+          <Models
+            models={models}
+            tickers={tickers}
+            onSave={saveModel}
+            onDelete={deleteModel}
+            onAddTicker={addTicker}
+          />
         ) : route.screen === 'tickers' ? (
           <BucketAssignments
             tickers={tickers}
             definitions={definitions}
             onSaveTicker={saveTicker}
+            onAddTicker={addTicker}
             onSaveDefinition={saveDefinition}
           />
         ) : caseError !== null ? (
@@ -343,6 +354,7 @@ export function App() {
             tickers={tickers}
             onChange={setDraft}
             onSaveAsModel={saveModel}
+            onAddTicker={addTicker}
             today={today}
           />
         )}

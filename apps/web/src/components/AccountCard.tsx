@@ -38,6 +38,8 @@ interface Props {
   onRemove: () => void;
   /** Turns a manual bucket into a reusable model. Resolves to the saved model. */
   onSaveAsModel: (model: ModelPortfolio) => Promise<ModelPortfolio>;
+  /** Adds a symbol typed on a manual bucket to the universe (US-24). */
+  onAddTicker: (ticker: Ticker) => Promise<Ticker>;
 }
 
 const MODE_LABELS: Record<BucketSleeve['mode'], string> = {
@@ -56,6 +58,7 @@ export function AccountCard({
   onChange,
   onRemove,
   onSaveAsModel,
+  onAddTicker,
 }: Props) {
   const byId = modelsById(models);
   const allocated = allocatedCents(account);
@@ -280,6 +283,7 @@ export function AccountCard({
                         tickers={tickers}
                         bucket={sleeve.bucket}
                         onChange={(next) => setDraft(sleeve.bucket, next)}
+                        onAddTicker={onAddTicker}
                         addLabel="Add symbol"
                       />
 
