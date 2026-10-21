@@ -304,8 +304,8 @@ The shapes on both ends (`ClientCase`, `Ticker`, ...) are defined once, in
 | `GET /api/clients/:clientNumber` | One whole case: people, accounts with their Now/Soon/Later amounts and models, Now and Soon inputs |
 | `PUT /api/clients/:clientNumber` | Save the whole case |
 | `DELETE /api/clients/:clientNumber` | Delete the case and everything under it |
-| `GET /api/tickers` | The ticker universe |
-| `PUT /api/tickers/:symbol` | Add or update a ticker |
+| `GET /api/tickers` | The ticker universe, with each price and the day it was set |
+| `PUT /api/tickers/:symbol` | Add or update a ticker. Leaving `priceCents` out keeps the stored price; `null` clears it |
 | `DELETE /api/tickers/:symbol` | Remove a ticker |
 | `GET /api/models` | Every model portfolio with its tickers and weights |
 | `POST /api/models` | New model (weights must add up to 100%) |
@@ -313,6 +313,9 @@ The shapes on both ends (`ClientCase`, `Ticker`, ...) are defined once, in
 | `DELETE /api/models/:id` | Delete a model. Accounts using it keep the money, with no model |
 | `GET /api/bucket-definitions` | Now, Soon, Later |
 | `PUT /api/bucket-definitions/:bucket` | Edit one bucket's label, horizon, and wording |
+| `GET /api/advisory-fee-tiers` | RIG's fee schedule, lowest balance first |
+| `PUT /api/advisory-fee-tiers` | Replace the whole schedule (first tier starts at $0) |
+| `POST /api/life-expectancy/estimate` | US-28 AI estimate from `{ age, gender, healthConcerns, healthConcernOther }`. Saves nothing. 503 without `OPENAI_API_KEY` |
 
 `apps/api/src/routes.test.ts` has a test for each, and is the quickest way to
 see what a request and response look like.
@@ -322,21 +325,28 @@ see what a request and response look like.
 | Table | One row per |
 |---|---|
 | `client_cases` | Case. Its number, life stage, cash figures, and the single-value Now and Soon inputs |
-| `people` | Client or spouse on a case (birth year only, never a date) |
-| `accounts` | Account on a case: type, tax funnel, balance, last four digits only |
+| `people` | Client or spouse on a case: birth year (never a date), gender, life expectancy age and whether it was an AI estimate or the advisor's |
+| `accounts` | Account on a case: type, tax funnel, typed balance, last four digits only |
 | `account_sleeves` | Account and bucket: how much of the balance is in Now, Soon, or Later, and which model it follows. Always three per account |
 | `model_portfolios` | Model: a name, a bucket, and optionally the tax funnel it is meant for |
 | `model_lines` | Ticker in a model, with its weight in basis points (100 = 1%) |
 | `planned_expenses` | Now "large upcoming expenses" and Soon "miscellaneous costs" lines |
 | `gap_entries` | Social Security bridge, healthcare gap, and forced withdrawal lines |
-| `tickers` | Symbol in the approved universe, with its default bucket |
+| `proposal_positions` | Whole share count locked in for one ticker in one bucket of one account, with the price it was worked out at (US-21) |
+| `tickers` | Symbol in the approved universe, with its default bucket and its price per share |
 | `bucket_definitions` | Bucket (always exactly three rows) |
+| `advisory_fee_tiers` | Row of RIG's fee schedule: a starting balance and a rate in basis points (US-19) |
 
-There is no holdings table. RIG's flow is: type the account balance, split it
-across the buckets, pick a model for each, and let the app work out the
-symbols and amounts. Those positions are computed from the model every time
-(`apps/web/src/domain/breakdown.ts`, using `splitByWeights` from
-`packages/engine`), never stored.
+The app builds a proposed portfolio; it does not track what a client holds
+today. RIG's flow is: answer the questionnaire, type each account's balance,
+split the plan's totals across the accounts, pick a model (or symbols) for
+each, and let the app work out the symbols, dollars, and whole shares. Those
+positions are computed from the plan every time
+(`apps/web/src/domain/breakdown.ts` and `proposal.ts`, using `splitByWeights`
+and `wholeShares` from `packages/engine`). The only thing stored is the share
+counts the advisor locks in, so the same shares can be valued at today's
+prices when the client comes back. Balances are always typed, never derived
+from shares.
 
 Saving a case rewrites its child rows, so account ids change on every save.
 Nothing should store one.
@@ -379,10 +389,22 @@ come straight out of their worksheet inputs, and the rest is arithmetic and
 lookups:
 
 - **Bucket targets**: `apps/web/src/domain/worksheet.ts`, a line-for-line copy
-  of RIG's Inputs tab, with tests pinned to their numbers.
+  of RIG's Inputs tab, with tests pinned to their numbers, plus a year of
+  advisory fee cash in Now.
+- **Advisory fee**: `advisoryFeeCents` in `packages/engine`. RIG's schedule is
+  a breakpoint schedule: the tier a balance falls in sets the rate for the
+  whole balance. Whether the tier comes from each account or the household
+  total is not confirmed; `FEE_TIER_BASIS` in `worksheet.ts` is the switch.
 - **Positions from a model**: `splitByWeights` in `packages/engine`, which
   splits a dollar amount across weights to the exact cent.
+- **Shares**: `wholeShares` in `packages/engine` (whole shares only, the rest
+  as cash) and `apps/web/src/domain/proposal.ts` (lock in, value at today's
+  prices).
 - **Breakdown, drift, per-account view**: `apps/web/src/domain/breakdown.ts`.
+- **Life expectancy**: an AI estimate the advisor can override
+  (`apps/api/src/lifeExpectancy.ts`). Only age, gender, and health concerns
+  are sent. It needs `OPENAI_API_KEY` in your own `.env` (see `.env.example`);
+  without it the button says so and the age is typed in.
 
 The worksheet and breakdown code runs in the browser today because it only
 needs the case on screen. It is pure, so moving it into `packages/engine` is a
