@@ -457,6 +457,29 @@ describe('bucket definitions', () => {
   });
 });
 
+describe('gender (US-26)', () => {
+  it('reads back and saves each person\'s gender', async () => {
+    const { body: original } = await call<ClientCase>('GET', '/api/clients/1042');
+    expect(original.people.map((p) => p.gender)).toEqual(['MALE', 'FEMALE']);
+
+    const { status, body } = await call<ClientCase>('PUT', '/api/clients/1042', {
+      ...original,
+      people: original.people.map((p) => (p.role === 'SPOUSE' ? { ...p, gender: null } : p)),
+    });
+    expect(status).toBe(200);
+    expect(body.people.map((p) => p.gender)).toEqual(['MALE', null]);
+  });
+
+  it('refuses a value that is not on the list', async () => {
+    const { body: original } = await call<ClientCase>('GET', '/api/clients/1042');
+    const { status } = await call('PUT', '/api/clients/1042', {
+      ...original,
+      people: original.people.map((p) => ({ ...p, gender: 'X' })),
+    });
+    expect(status).toBe(400);
+  });
+});
+
 describe('health concerns (US-27)', () => {
   it('reads back every concern a person has', async () => {
     const { body } = await call<ClientCase>('GET', '/api/clients/1042');

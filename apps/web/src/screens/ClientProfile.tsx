@@ -14,6 +14,7 @@ import { MoneyInput } from '../components/MoneyInput.js';
 import { bucketsByAccount } from '../domain/breakdown.js';
 import { newAccount, newExpense, newGapEntry } from '../domain/factory.js';
 import {
+  GENDER_LABELS,
   HEALTH_CONCERN_LABELS,
   LIFE_STAGE_LABELS,
   MONEY_CYCLE_LABELS,
@@ -21,7 +22,13 @@ import {
   householdPlanYears,
 } from '../domain/lifeStage.js';
 import { formatCents, formatCentsWhole, formatPercent } from '../domain/money.js';
-import { HEALTH_CONCERNS, LIFE_STAGES, MONEY_CYCLE_PHASES, TAX_BRACKETS } from '../domain/types.js';
+import {
+  GENDERS,
+  HEALTH_CONCERNS,
+  LIFE_STAGES,
+  MONEY_CYCLE_PHASES,
+  TAX_BRACKETS,
+} from '../domain/types.js';
 import type {
   AllocationTarget,
   ClientCase,
@@ -108,6 +115,13 @@ export function ClientProfile({
                   onChange={(birthYear) => updatePerson({ birthYear })}
                 />
                 <DerivedField label="Age" value={age === null ? '—' : String(age)} />
+                <SelectField
+                  label="Gender"
+                  value={person.gender ?? ''}
+                  options={GENDER_OPTIONS}
+                  labels={GENDER_OPTION_LABELS}
+                  onChange={(value) => updatePerson({ gender: value === '' ? null : value })}
+                />
                 <CheckboxGroupField
                   legend="Health concerns"
                   values={person.healthConcerns}
@@ -162,6 +176,7 @@ export function ClientProfile({
                       {
                         role: 'SPOUSE',
                         birthYear: null,
+                        gender: null,
                         healthConcerns: [],
                         healthConcernOther: '',
                         lifeExpectancyAge: null,
@@ -423,6 +438,12 @@ export function ClientProfile({
     </div>
   );
 }
+
+const GENDER_OPTIONS = ['', ...GENDERS] as const;
+const GENDER_OPTION_LABELS: Record<(typeof GENDER_OPTIONS)[number], string> = {
+  '': 'Not entered',
+  ...GENDER_LABELS,
+};
 
 const TAX_BRACKET_OPTIONS = ['', ...TAX_BRACKETS.map(String)] as const;
 const TAX_BRACKET_LABELS: Record<string, string> = Object.fromEntries(

@@ -30,6 +30,14 @@ export const LIFE_STAGES = [
 ] as const;
 export type LifeStage = (typeof LIFE_STAGES)[number];
 
+/**
+ * US-26. Picks the baseline the life expectancy estimate starts from. Two
+ * options because that is what RIG's profile sheet and the period life tables
+ * the estimate leans on both use.
+ */
+export const GENDERS = ['MALE', 'FEMALE'] as const;
+export type Gender = (typeof GENDERS)[number];
+
 export const MONEY_CYCLE_PHASES = ['ACCUMULATION', 'PRESERVATION', 'DISTRIBUTION'] as const;
 export type MoneyCyclePhase = (typeof MONEY_CYCLE_PHASES)[number];
 
@@ -76,6 +84,8 @@ export interface Person {
   readonly role: 'CLIENT' | 'SPOUSE';
   /** Year only. Age is all the planning needs; a full date of birth is PII. */
   readonly birthYear: number | null;
+  /** Null until the advisor picks one. */
+  readonly gender: Gender | null;
   /** Any combination, kept in HEALTH_CONCERNS order. Empty means nothing reported. */
   readonly healthConcerns: readonly HealthConcern[];
   /**

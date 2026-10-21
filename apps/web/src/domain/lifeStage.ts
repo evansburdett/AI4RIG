@@ -4,6 +4,7 @@ import type {
   AccountType,
   AssetClass,
   BucketType,
+  Gender,
   HealthConcern,
   LifeStage,
   MoneyCyclePhase,
@@ -58,6 +59,11 @@ export const HEALTH_CONCERN_LABELS: Record<HealthConcern, string> = {
   STROKE: 'Stroke',
   HEART: 'Heart',
   OTHER: 'Other',
+};
+
+export const GENDER_LABELS: Record<Gender, string> = {
+  MALE: 'Male',
+  FEMALE: 'Female',
 };
 
 export const ASSET_CLASS_LABELS: Record<AssetClass, string> = {

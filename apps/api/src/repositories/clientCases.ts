@@ -22,6 +22,7 @@ import {
   type ClientCase,
   type ClientSummary,
   type GapEntry,
+  type Gender,
   type HealthConcern,
   type Person,
   type PlannedExpense,
@@ -59,6 +60,7 @@ interface PersonRow {
   id: number;
   role: Person['role'];
   birth_year: number | null;
+  gender: Gender | null;
   health_concern_other: string;
   life_expectancy_age: number | null;
 }
@@ -130,7 +132,7 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
 
   const personRows = db
     .prepare<[number], PersonRow>(
-      `SELECT id, role, birth_year, health_concern_other, life_expectancy_age
+      `SELECT id, role, birth_year, gender, health_concern_other, life_expectancy_age
        FROM people WHERE client_case_id = ? ORDER BY role`,
     )
     .all(row.id);
@@ -148,6 +150,7 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
     (p): Person => ({
       role: p.role,
       birthYear: p.birth_year,
+      gender: p.gender,
       // Filtering HEALTH_CONCERNS rather than mapping the rows keeps the order
       // the same every read, whatever order the advisor ticked them in.
       healthConcerns: HEALTH_CONCERNS.filter((concern) =>
@@ -425,8 +428,8 @@ export function saveClientCase(
     }
 
     const addPerson = db.prepare(
-      `INSERT INTO people (client_case_id, role, birth_year, health_concern_other, life_expectancy_age)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO people (client_case_id, role, birth_year, gender, health_concern_other, life_expectancy_age)
+       VALUES (?, ?, ?, ?, ?, ?)`,
     );
     // Deleting the people above already cascaded their concerns away.
     const addConcern = db.prepare(
@@ -437,6 +440,7 @@ export function saveClientCase(
         caseId,
         person.role,
         person.birthYear,
+        person.gender,
         person.healthConcernOther,
         person.lifeExpectancyAge,
       );

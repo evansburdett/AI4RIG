@@ -11,6 +11,7 @@ import {
   ACCOUNT_TYPES,
   ASSET_CLASSES,
   BUCKETS,
+  GENDERS,
   HEALTH_CONCERNS,
   LIFE_STAGES,
   MONEY_CYCLE_PHASES,
@@ -33,6 +34,7 @@ const person = z
   .object({
     role: z.enum(['CLIENT', 'SPOUSE']),
     birthYear: z.int().min(1900).max(2100).nullable(),
+    gender: z.enum(GENDERS).nullable(),
     healthConcerns: z
       .array(z.enum(HEALTH_CONCERNS))
       .refine(

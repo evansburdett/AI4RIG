@@ -30,10 +30,10 @@ INSERT OR REPLACE INTO client_cases (
      0, 10, 7500000,
      '2026-09-11T09:20:00.000Z', '2026-09-11T09:20:00.000Z');
 
-INSERT OR REPLACE INTO people (id, client_case_id, role, birth_year, health_concern_other, life_expectancy_age) VALUES
-    (9001, 9001, 'CLIENT', 1960, '',                      88),
-    (9002, 9001, 'SPOUSE', 1963, 'Managed hypertension',  85),
-    (9003, 9002, 'CLIENT', 1988, '',                      90);
+INSERT OR REPLACE INTO people (id, client_case_id, role, birth_year, gender, health_concern_other, life_expectancy_age) VALUES
+    (9001, 9001, 'CLIENT', 1960, 'MALE',   '',                      88),
+    (9002, 9001, 'SPOUSE', 1963, 'FEMALE', 'Managed hypertension',  85),
+    (9003, 9002, 'CLIENT', 1988, 'FEMALE', '',                      90);
 
 -- US-27: a person carries any combination of concerns, so these are rows
 -- rather than a column. No rows means nothing reported. The spouse on case
