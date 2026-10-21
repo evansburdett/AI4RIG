@@ -70,10 +70,11 @@ interface Props {
 /**
  * US-01 — client profile intake.
  *
- * Ordered to follow RIG's two worksheets: household, accounts and buckets,
- * fees and cash, then the Now and Soon questions with the buckets recomputed as
- * the advisor types. Edits go to a working copy held by the parent; nothing is
- * written until Save.
+ * Questionnaire first (US-22), in the order RIG asked for on Sept 23: the
+ * household, then the Now and Soon questions, then the bucket totals they
+ * produce, then placing those totals in the client's accounts, the fee cash,
+ * and the proposal in shares. Edits go to a working copy held by the parent;
+ * nothing is written until Save.
  */
 export function ClientProfile({
   clientCase,
@@ -252,69 +253,7 @@ export function ClientProfile({
       </section>
 
       <section className="card">
-        <div className="card-head">
-          <h3>Accounts and buckets</h3>
-          <button
-            type="button"
-            onClick={() => patch({ accounts: [...clientCase.accounts, newAccount()] })}
-          >
-            Add account
-          </button>
-        </div>
-        <p className="muted">
-          Enter each account&rsquo;s balance, split it across Now, Soon, and Later, and pick a
-          model for each. The positions are worked out from the model.
-        </p>
-
-        {clientCase.accounts.length === 0 && (
-          <p className="empty">No accounts yet. Add one to start.</p>
-        )}
-
-        {clientCase.accounts.map((account) => (
-          <AccountCard
-            key={account.id}
-            account={account}
-            fee={totals.advisoryFees.find((f) => f.accountId === account.id)}
-            models={models}
-            tickers={tickers}
-            onSaveAsModel={onSaveAsModel}
-            onAddTicker={onAddTicker}
-            onChange={(next) =>
-              patch({ accounts: clientCase.accounts.map((a) => (a.id === account.id ? next : a)) })
-            }
-            onRemove={() => patch({ accounts: clientCase.accounts.filter((a) => a.id !== account.id) })}
-          />
-        ))}
-
-        <BucketTotals clientCase={clientCase} target={target} />
-      </section>
-
-      <ProposalShares clientCase={clientCase} models={models} tickers={tickers} onChange={onChange} />
-
-      <section className="card">
-        <h3>Fees and cash</h3>
-        <div className="grid three">
-          <DerivedField
-            label="Total account balances"
-            value={formatCents(totals.investableAssetsCents)}
-          />
-          <MoneyInput
-            label="Cash on hand at bank"
-            valueCents={clientCase.cashOnHandCents}
-            onChange={(cashOnHandCents) => patch({ cashOnHandCents })}
-          />
-          <MoneyInput
-            label="Extra spare tire"
-            valueCents={clientCase.spareTireCents}
-            onChange={(spareTireCents) => patch({ spareTireCents })}
-          />
-        </div>
-
-        <AdvisoryFeeTable clientCase={clientCase} fees={totals.advisoryFees} total={totals.advisoryFeeCents} />
-      </section>
-
-      <section className="card">
-        <h3>Now bucket</h3>
+        <h3>Now bucket questions</h3>
         <div className="grid three">
           <MoneyInput
             label="Income draw per month"
@@ -348,7 +287,7 @@ export function ClientProfile({
       </section>
 
       <section className="card">
-        <h3>Soon bucket</h3>
+        <h3>Soon bucket questions</h3>
         <div className="grid three">
           <MoneyInput
             label="Annual income gap"
@@ -408,8 +347,11 @@ export function ClientProfile({
       </section>
 
       <section className="card">
-        <h3>Resulting plan</h3>
-        <p className="muted">Later is total investable assets less Now and less Soon.</p>
+        <h3>Plan totals</h3>
+        <p className="muted">
+          Now and Soon come from the answers above. Later is total investable assets less Now and
+          less Soon, so it fills in as account balances are entered below.
+        </p>
 
         <BucketBar
           totalCents={totals.investableAssetsCents}
@@ -459,6 +401,70 @@ export function ClientProfile({
           no Social Security bridge gets a small Soon bucket without anything having to weight it.
         </p>
       </section>
+
+      <section className="card">
+        <div className="card-head">
+          <h3>Place the plan in accounts</h3>
+          <button
+            type="button"
+            onClick={() => patch({ accounts: [...clientCase.accounts, newAccount()] })}
+          >
+            Add account
+          </button>
+        </div>
+        <p className="muted">
+          Enter each account&rsquo;s balance, then split it across Now, Soon, and Later until the
+          plan above is placed, and pick a model or your own symbols for each. The positions are
+          worked out from there.
+        </p>
+
+        <BucketTotals clientCase={clientCase} target={target} />
+
+        {clientCase.accounts.length === 0 && (
+          <p className="empty">No accounts yet. Add one to start.</p>
+        )}
+
+        {clientCase.accounts.map((account) => (
+          <AccountCard
+            key={account.id}
+            account={account}
+            fee={totals.advisoryFees.find((f) => f.accountId === account.id)}
+            models={models}
+            tickers={tickers}
+            onSaveAsModel={onSaveAsModel}
+            onAddTicker={onAddTicker}
+            onChange={(next) =>
+              patch({ accounts: clientCase.accounts.map((a) => (a.id === account.id ? next : a)) })
+            }
+            onRemove={() => patch({ accounts: clientCase.accounts.filter((a) => a.id !== account.id) })}
+          />
+        ))}
+
+      </section>
+
+      <section className="card">
+        <h3>Fees and cash</h3>
+        <div className="grid three">
+          <DerivedField
+            label="Total account balances"
+            value={formatCents(totals.investableAssetsCents)}
+          />
+          <MoneyInput
+            label="Cash on hand at bank"
+            valueCents={clientCase.cashOnHandCents}
+            onChange={(cashOnHandCents) => patch({ cashOnHandCents })}
+          />
+          <MoneyInput
+            label="Extra spare tire"
+            valueCents={clientCase.spareTireCents}
+            onChange={(spareTireCents) => patch({ spareTireCents })}
+          />
+        </div>
+
+        <AdvisoryFeeTable clientCase={clientCase} fees={totals.advisoryFees} total={totals.advisoryFeeCents} />
+      </section>
+
+      <ProposalShares clientCase={clientCase} models={models} tickers={tickers} onChange={onChange} />
     </div>
   );
 }
@@ -475,49 +481,52 @@ const TAX_BRACKET_LABELS: Record<string, string> = Object.fromEntries(
 );
 
 /**
- * What the accounts add up to in each bucket against what the worksheet below
- * says the client needs there. The same comparison as the Breakdown screen,
- * kept here so the advisor sees it while splitting the accounts.
+ * US-22: the plan's totals as the thing to place. For each bucket, what the
+ * questionnaire says the client needs, how much of it the accounts already
+ * hold, and what is still left to place. The same comparison as the Breakdown
+ * screen, kept here so the advisor sees it while splitting the accounts.
  */
 function BucketTotals({ clientCase, target }: { clientCase: ClientCase; target: AllocationTarget }) {
   if (clientCase.accounts.length === 0) return null;
   const rows = bucketsByAccount(clientCase);
   const sum = (pick: (r: (typeof rows)[number]) => number) => rows.reduce((t, r) => t + pick(r), 0);
   const lines = [
-    { label: 'Now', actual: sum((r) => r.nowCents), target: target.nowCents },
-    { label: 'Soon', actual: sum((r) => r.soonCents), target: target.soonCents },
-    { label: 'Later', actual: sum((r) => r.laterCents), target: target.laterCents },
+    { label: 'Now', placed: sum((r) => r.nowCents), target: target.nowCents },
+    { label: 'Soon', placed: sum((r) => r.soonCents), target: target.soonCents },
+    { label: 'Later', placed: sum((r) => r.laterCents), target: target.laterCents },
   ];
 
   return (
     <table className="bucket-totals">
       <thead>
         <tr>
-          <th scope="col">All accounts</th>
+          <th scope="col">Bucket</th>
           <th scope="col" className="amount">
-            In accounts
+            Plan needs
           </th>
           <th scope="col" className="amount">
-            Worksheet says
+            Placed in accounts
           </th>
           <th scope="col" className="amount">
-            Difference
+            Left to place
           </th>
         </tr>
       </thead>
       <tbody>
         {lines.map((line) => {
-          const delta = line.actual - line.target;
+          const left = line.target - line.placed;
           return (
             <tr key={line.label}>
               <th scope="row">{line.label}</th>
-              <td className="amount">{formatCentsWhole(line.actual)}</td>
               <td className="amount">{formatCentsWhole(line.target)}</td>
+              <td className="amount">{formatCentsWhole(line.placed)}</td>
               <td className="amount">
-                {delta === 0 ? (
-                  <span className="muted">matches</span>
+                {left === 0 ? (
+                  <span className="muted">all placed</span>
+                ) : left > 0 ? (
+                  formatCentsWhole(left)
                 ) : (
-                  `${delta > 0 ? '+' : '\u2212'}${formatCentsWhole(Math.abs(delta))}`
+                  <span className="tag tag-warn">{formatCentsWhole(-left)} over</span>
                 )}
               </td>
             </tr>
