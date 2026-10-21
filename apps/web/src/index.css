@@ -866,3 +866,20 @@ tfoot td {
 .inline-action input {
   width: 6rem;
 }
+
+/* US-21: what each account should hold, under its bucket split. */
+table.holdings {
+  margin-top: 1rem;
+}
+
+table.holdings caption,
+table caption {
+  caption-side: top;
+  text-align: left;
+  font-weight: 600;
+  padding-bottom: 0.4rem;
+}
+
+.new-ticker .money-input input {
+  width: 8rem;
+}

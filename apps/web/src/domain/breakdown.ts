@@ -12,7 +12,7 @@
  * It is pure, so moving it is a file move.
  */
 
-import { addCents, splitByWeights, type Cents } from '@ai4rig/engine';
+import { addCents, splitByWeights, wholeShares, type Cents } from '@ai4rig/engine';
 
 import { percentOf } from './money.js';
 import { ASSET_CLASSES, BUCKETS } from './types.js';
@@ -41,6 +41,23 @@ export function allocatedCents(account: Account): Cents {
 /** Balance not yet placed in any bucket. Negative when the buckets add up to more than the balance. */
 export function unallocatedCents(account: Account): Cents {
   return account.balanceCents - allocatedCents(account);
+}
+
+/**
+ * US-22: place what the plan still needs into one account. Goes Now, then
+ * Soon, then Later, adding to each bucket what is left to place in it, up to
+ * whatever of the balance is not in a bucket yet. Nothing already placed is
+ * taken away, so it is safe to press on a half-filled account, and the amounts
+ * stay editable afterwards.
+ */
+export function fillFromPlan(account: Account, leftToPlace: Readonly<Record<BucketType, Cents>>): Account {
+  let room = Math.max(unallocatedCents(account), 0);
+  const sleeves = account.sleeves.map((sleeve) => {
+    const add = Math.min(Math.max(leftToPlace[sleeve.bucket], 0), room);
+    room -= add;
+    return add === 0 ? sleeve : { ...sleeve, amountCents: sleeve.amountCents + add };
+  });
+  return { ...account, sleeves };
 }
 
 /**
@@ -279,6 +296,8 @@ export interface BucketHolding {
   readonly maskedNumber: string;
   readonly modelName: string;
   readonly marketValueCents: Cents;
+  /** Whole shares at the ticker's price (US-21), or null when it has no price. */
+  readonly shares: number | null;
   readonly assetClass: AssetClass | null;
   /** RIG's mapping puts this ticker in a different bucket than the model does. */
   readonly outsideDefaultBucket: boolean;
@@ -306,6 +325,8 @@ export function holdingsInBucket(
           modelName:
             holding.modelId === null ? 'Manual' : (models.get(holding.modelId)?.name ?? ''),
           marketValueCents: holding.marketValueCents,
+          shares:
+            ticker?.priceCents == null ? null : wholeShares(holding.marketValueCents, ticker.priceCents).shares,
           assetClass: ticker?.assetClass ?? null,
           outsideDefaultBucket: ticker !== undefined && ticker.defaultBucket !== bucket,
         };

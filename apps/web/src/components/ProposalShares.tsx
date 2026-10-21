@@ -3,6 +3,7 @@ import { ACCOUNT_TYPE_LABELS, BUCKET_LABELS } from '../domain/lifeStage.js';
 import { formatCents } from '../domain/money.js';
 import {
   lockedMatchesPlan,
+  proposedPositions,
   lockProposal,
   missingPrices,
   totalOf,
@@ -25,6 +26,7 @@ interface Props {
  */
 export function ProposalShares({ clientCase, models, tickers, onChange }: Props) {
   const missing = missingPrices(clientCase, models, tickers);
+  const anyHoldings = clientCase.accounts.some((a) => proposedPositions(a, models, tickers).length > 0);
   const locked = clientCase.proposalLockedAt !== null;
   const matches = lockedMatchesPlan(clientCase, models, tickers);
   const valuations = valueLockedShares(clientCase, tickers);
@@ -46,7 +48,7 @@ export function ProposalShares({ clientCase, models, tickers, onChange }: Props)
           <button
             type="button"
             className="primary"
-            disabled={missing.length > 0 || clientCase.accounts.length === 0 || (locked && matches)}
+            disabled={missing.length > 0 || !anyHoldings || (locked && matches)}
             onClick={() => onChange(lockProposal(clientCase, models, tickers, new Date()))}
           >
             {locked ? 'Lock in again' : 'Lock in proposal'}
@@ -59,9 +61,9 @@ export function ProposalShares({ clientCase, models, tickers, onChange }: Props)
         </div>
       </div>
       <p className="muted">
-        Each holding&rsquo;s dollars become whole shares at the ticker&rsquo;s price, with the
-        remainder kept as cash. Locking keeps those share counts with the case, so when the client
-        comes back they are valued at the prices on the Tickers screen without retyping anything.
+        The share counts in each account&rsquo;s holdings above follow the plan and today&rsquo;s
+        prices. Locking them in keeps those counts with the case, so when the client comes back
+        the same shares are valued at the prices on the Tickers screen without retyping anything.
       </p>
 
       {missing.length > 0 && (
@@ -72,7 +74,7 @@ export function ProposalShares({ clientCase, models, tickers, onChange }: Props)
       )}
 
       {!locked ? (
-        <p className="empty">Not locked in yet.</p>
+        <p className="empty">Not locked in yet. Lock in once the holdings above are what you are proposing.</p>
       ) : (
         <>
           <p>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { api, ApiError } from './api.js';
 import { Callout } from './components/Callout.js';
@@ -85,9 +85,17 @@ export function App() {
     if (target !== undefined) navigate({ screen: 'profile', clientNumber: target });
   }, [clients, lastClientNumber, route.clientNumber, route.screen, navigate]);
 
+  /**
+   * The case the working copy belongs to. Coming back to it from the model,
+   * ticker, or fee screens keeps the unsaved edits instead of reloading over
+   * them; those screens send the advisor away mid-case (to price a ticker,
+   * say), so a reload there would quietly throw the work away.
+   */
+  const loadedClientNumber = useRef<string | null>(null);
+
   useEffect(() => {
     const clientNumber = route.clientNumber;
-    if (clientNumber === null) return;
+    if (clientNumber === null || clientNumber === loadedClientNumber.current) return;
 
     let cancelled = false;
     setCaseError(null);
@@ -97,11 +105,13 @@ export function App() {
       .getClient(clientNumber)
       .then((clientCase) => {
         if (cancelled) return;
+        loadedClientNumber.current = clientNumber;
         setSaved(clientCase);
         setDraft(clientCase);
       })
       .catch((error: unknown) => {
         if (cancelled) return;
+        loadedClientNumber.current = null;
         setDraft(null);
         setSaved(null);
         setCaseError(describeError(error));
@@ -117,11 +127,18 @@ export function App() {
 
   const selectClient = useCallback(
     (clientNumber: string) => {
+      if (
+        clientNumber !== loadedClientNumber.current &&
+        dirty &&
+        !window.confirm('Discard unsaved changes to the open case?')
+      ) {
+        return;
+      }
       // Stay on the screen the advisor is reading.
       const screen: Screen = isReferenceScreen(route.screen) ? 'profile' : route.screen;
       navigate({ screen, clientNumber });
     },
-    [navigate, route.screen],
+    [dirty, navigate, route.screen],
   );
 
   const save = useCallback(async () => {
@@ -176,6 +193,7 @@ export function App() {
       await api.deleteClient(activeClientNumber);
       const remaining = clients.filter((c) => c.clientNumber !== activeClientNumber);
       setClients(remaining);
+      loadedClientNumber.current = null;
       setDraft(null);
       setSaved(null);
       setLastClientNumber(null);

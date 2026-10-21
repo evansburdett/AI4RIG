@@ -1,12 +1,20 @@
+import { addCents } from '@ai4rig/engine';
 import { Fragment, useState } from 'react';
 
 import { formatCents, formatCentsWhole } from '../domain/money.js';
-import { allocatedCents, modelChoices, modelsById, sleeveHoldings, unallocatedCents } from '../domain/breakdown.js';
+import {
+  allocatedCents,
+  fillFromPlan,
+  modelChoices,
+  modelsById,
+  sleeveHoldings,
+  unallocatedCents,
+} from '../domain/breakdown.js';
 import { formatBps } from '../domain/percent.js';
-import { proposedPositions } from '../domain/proposal.js';
+import { proposedPositions, type ProposedPosition } from '../domain/proposal.js';
 import type { AccountFee } from '../domain/worksheet.js';
 import { ACCOUNT_TYPE_LABELS, BUCKET_LABELS, TAX_FUNNEL_LABELS } from '../domain/lifeStage.js';
-import { ACCOUNT_TYPES, DEFAULT_TAX_FUNNEL, SLEEVE_MODES, TAX_FUNNELS } from '../domain/types.js';
+import { ACCOUNT_TYPES, BUCKETS, DEFAULT_TAX_FUNNEL, SLEEVE_MODES, TAX_FUNNELS } from '../domain/types.js';
 import type {
   Account,
   BucketSleeve,
@@ -29,6 +37,8 @@ interface Props {
   account: Account;
   /** This account's advisory fee (US-19), held as cash in its Now. */
   fee: AccountFee | undefined;
+  /** What the plan still needs in each bucket across all accounts (US-22). */
+  leftToPlace: Readonly<Record<BucketType, number>>;
   models: readonly ModelPortfolio[];
   tickers: readonly Ticker[];
   onChange: (next: Account) => void;
@@ -52,6 +62,7 @@ const MODE_LABELS: Record<BucketSleeve['mode'], string> = {
 export function AccountCard({
   account,
   fee,
+  leftToPlace,
   models,
   tickers,
   onChange,
@@ -163,7 +174,6 @@ export function AccountCard({
             <th scope="col">Bucket</th>
             <th scope="col">Amount</th>
             <th scope="col">Follows</th>
-            <th scope="col">Works out to</th>
           </tr>
         </thead>
         <tbody>
@@ -253,39 +263,19 @@ export function AccountCard({
                         </select>
                       )}
                     </div>
-                  </td>
-                  <td className="works-out">
-                    {holdings.length > 0 ? (
-                      holdings.map((h) => {
-                        const position = proposed.find(
-                          (p) => p.bucket === sleeve.bucket && p.tickerSymbol === h.tickerSymbol,
-                        );
-                        return (
-                          <span key={h.tickerSymbol} className="position">
-                            <code>{h.tickerSymbol}</code> {formatCentsWhole(h.marketValueCents)}
-                            {position?.shares != null ? (
-                              <span className="muted"> · {position.shares.toLocaleString('en-US')} sh</span>
-                            ) : (
-                              <span className="tag tag-warn" title="Enter a price on the Tickers screen">
-                                no price
-                              </span>
-                            )}
-                          </span>
-                        );
-                      })
-                    ) : sleeve.amountCents <= 0 ? (
-                      <span className="muted">—</span>
-                    ) : sleeve.mode === 'MANUAL' ? (
-                      <span className="muted">Weights must reach 100% to place this money</span>
-                    ) : (
-                      <span className="muted">Choose a model to see positions</span>
+                    {sleeve.amountCents > 0 && holdings.length === 0 && (
+                      <p className="field-hint">
+                        {sleeve.mode === 'MANUAL'
+                          ? 'Weights must reach 100% to place this money.'
+                          : 'Choose a model to place this money.'}
+                      </p>
                     )}
                   </td>
                 </tr>
 
                 {sleeve.mode === 'MANUAL' && (
                   <tr className="sleeve-manual">
-                    <td colSpan={4}>
+                    <td colSpan={3}>
                       <p className="muted">
                         Symbols picked for this client&rsquo;s {label} money. They can be left
                         short of 100% and finished later.
@@ -334,20 +324,18 @@ export function AccountCard({
         <tfoot>
           <tr>
             <th scope="row">Allocated</th>
-            <td colSpan={3}>
+            <td colSpan={2}>
               {formatCents(allocated)} of {formatCents(account.balanceCents)}
               {unallocated > 0 && (
                 <>
                   <span className="tag tag-warn">{formatCentsWhole(unallocated)} not in a bucket</span>
                   <button
                     type="button"
-                    className="link"
-                    onClick={() => {
-                      const later = account.sleeves.find((s) => s.bucket === 'LATER');
-                      patchSleeve('LATER', { amountCents: (later?.amountCents ?? 0) + unallocated });
-                    }}
+                    title="Adds what the plan still needs to Now, then Soon, then Later, up to this balance"
+                    disabled={BUCKETS.every((b) => leftToPlace[b] <= 0)}
+                    onClick={() => onChange(fillFromPlan(account, leftToPlace))}
                   >
-                    Put the rest in Later
+                    Fill from the plan
                   </button>
                 </>
               )}
@@ -360,6 +348,78 @@ export function AccountCard({
           </tr>
         </tfoot>
       </table>
+
+      <AccountHoldings positions={proposed} />
     </div>
+  );
+}
+
+/**
+ * US-21: what this account should hold. Each bucket's dollars split across its
+ * model or symbols, then turned into whole shares at the ticker's price, with
+ * what does not buy a whole share left as cash.
+ */
+function AccountHoldings({ positions }: { positions: readonly ProposedPosition[] }) {
+  if (positions.length === 0) {
+    return <p className="muted">Holdings appear here once a bucket has money and a model or symbols.</p>;
+  }
+
+  const cash = addCents(...positions.map((p) => p.cashCents ?? 0));
+  return (
+    <table className="holdings">
+      <caption>Holdings: shares to buy</caption>
+      <thead>
+        <tr>
+          <th scope="col">Bucket</th>
+          <th scope="col">Symbol</th>
+          <th scope="col" className="amount">
+            Dollars
+          </th>
+          <th scope="col" className="amount">
+            Price
+          </th>
+          <th scope="col" className="amount">
+            Shares
+          </th>
+          <th scope="col" className="amount">
+            Left as cash
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {positions.map((p) => (
+          <tr key={`${p.bucket}:${p.tickerSymbol}`}>
+            <td>{BUCKET_LABELS[p.bucket]}</td>
+            <th scope="row">
+              <code>{p.tickerSymbol}</code>
+            </th>
+            <td className="amount">{formatCents(p.amountCents)}</td>
+            {p.priceCents === null ? (
+              <td className="amount" colSpan={3}>
+                <span className="tag tag-warn">No price yet. Set it on the Tickers screen.</span>
+              </td>
+            ) : (
+              <>
+                <td className="amount">{formatCents(p.priceCents)}</td>
+                <td className="amount">
+                  <strong>{(p.shares ?? 0).toLocaleString('en-US')}</strong>
+                </td>
+                <td className="amount">{formatCents(p.cashCents ?? 0)}</td>
+              </>
+            )}
+          </tr>
+        ))}
+      </tbody>
+      {cash > 0 && (
+        <tfoot>
+          <tr>
+            <th scope="row" colSpan={5}>
+              Cash left over in this account
+            </th>
+            <td className="amount">{formatCents(cash)}</td>
+          </tr>
+        </tfoot>
+      )}
+    </table>
   );
 }

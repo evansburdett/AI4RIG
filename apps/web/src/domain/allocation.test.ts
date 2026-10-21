@@ -5,6 +5,7 @@ import {
   bucketsByAccount,
   computeBreakdown,
   computeDrift,
+  fillFromPlan,
   holdingsInBucket,
   modelChoices,
   modelsById,
@@ -145,7 +146,43 @@ describe('bucketsByAccount', () => {
   });
 });
 
+describe('fillFromPlan (US-22)', () => {
+  const empty = {
+    ...WORKBOOK_CASE.accounts[0]!,
+    balanceCents: 500_000_00,
+    sleeves: WORKBOOK_CASE.accounts[0]!.sleeves.map((s) => ({ ...s, amountCents: 0 })),
+  };
+
+  it('places Now, then Soon, then Later, up to the balance', () => {
+    const filled = fillFromPlan(empty, { NOW: 100_000_00, SOON: 300_000_00, LATER: 400_000_00 });
+    expect(filled.sleeves.map((s) => s.amountCents)).toEqual([100_000_00, 300_000_00, 100_000_00]);
+  });
+
+  it('adds to what is already placed and never goes past the balance', () => {
+    const half = { ...empty, sleeves: empty.sleeves.map((s) => (s.bucket === 'SOON' ? { ...s, amountCents: 50_000_00 } : s)) };
+    const filled = fillFromPlan(half, { NOW: 20_000_00, SOON: 1_000_000_00, LATER: 0 });
+    expect(filled.sleeves.map((s) => s.amountCents)).toEqual([20_000_00, 480_000_00, 0]);
+  });
+
+  it('ignores a bucket that is already over-placed', () => {
+    const filled = fillFromPlan(empty, { NOW: -5_000_00, SOON: 0, LATER: 10_000_00 });
+    expect(filled.sleeves.map((s) => s.amountCents)).toEqual([0, 0, 10_000_00]);
+  });
+});
+
 describe('holdingsInBucket', () => {
+  it('says how many whole shares each position is at the ticker price (US-21)', () => {
+    const now = holdingsInBucket(WORKBOOK_CASE, PLACEHOLDER_TICKERS, PLACEHOLDER_MODELS, 'NOW');
+    // Joint: $123,000 of SGOV at $100.00, $82,000 of BIL at $91.50.
+    expect(now.find((h) => h.key === '9001:NOW:SGOV')?.shares).toBe(1230);
+    expect(now.find((h) => h.key === '9001:NOW:BIL')?.shares).toBe(896);
+
+    const unpriced = PLACEHOLDER_TICKERS.map((t) => (t.symbol === 'BIL' ? { ...t, priceCents: null } : t));
+    expect(
+      holdingsInBucket(WORKBOOK_CASE, unpriced, PLACEHOLDER_MODELS, 'NOW').find((h) => h.symbol === 'BIL')?.shares,
+    ).toBeNull();
+  });
+
   it('lists the largest position first, across accounts', () => {
     const values = holdingsInBucket(WORKBOOK_CASE, PLACEHOLDER_TICKERS, PLACEHOLDER_MODELS, 'LATER').map(
       (h) => h.marketValueCents,

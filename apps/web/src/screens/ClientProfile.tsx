@@ -90,6 +90,18 @@ export function ClientProfile({
   const totals = useMemo(() => computePlanTotals(clientCase, feeTiers), [clientCase, feeTiers]);
   const target = useMemo(() => targetAllocation(clientCase, totals), [clientCase, totals]);
   const planYears = householdPlanYears(clientCase.people, today);
+  const leftToPlace = useMemo(() => {
+    const placed = (bucket: 'NOW' | 'SOON' | 'LATER') =>
+      clientCase.accounts.reduce(
+        (sum, a) => sum + (a.sleeves.find((s) => s.bucket === bucket)?.amountCents ?? 0),
+        0,
+      );
+    return {
+      NOW: target.nowCents - placed('NOW'),
+      SOON: target.soonCents - placed('SOON'),
+      LATER: target.laterCents - placed('LATER'),
+    };
+  }, [clientCase.accounts, target]);
   const { nowInputs, soonInputs } = clientCase;
 
   function patch(changes: Partial<ClientCase>) {
@@ -429,6 +441,7 @@ export function ClientProfile({
             key={account.id}
             account={account}
             fee={totals.advisoryFees.find((f) => f.accountId === account.id)}
+            leftToPlace={leftToPlace}
             models={models}
             tickers={tickers}
             onSaveAsModel={onSaveAsModel}

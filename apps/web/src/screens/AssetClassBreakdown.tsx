@@ -264,6 +264,9 @@ export function AssetClassBreakdown({ clientCase, tickers, models, feeTiers }: P
                     <th scope="col" className="amount">
                       Value
                     </th>
+                    <th scope="col" className="amount">
+                      Shares
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -288,6 +291,13 @@ export function AssetClassBreakdown({ clientCase, tickers, models, feeTiers }: P
                           : ASSET_CLASS_LABELS[holding.assetClass]}
                       </td>
                       <td className="amount">{formatCents(holding.marketValueCents)}</td>
+                      <td className="amount">
+                        {holding.shares === null ? (
+                          <span className="muted">no price</span>
+                        ) : (
+                          holding.shares.toLocaleString('en-US')
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

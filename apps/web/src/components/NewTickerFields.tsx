@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import { ASSET_CLASS_LABELS, BUCKET_LABELS } from '../domain/lifeStage.js';
+import { parseCents } from '../domain/money.js';
 import { ASSET_CLASSES, BUCKETS } from '../domain/types.js';
 import type { AssetClass, BucketType, Ticker } from '../domain/types.js';
 
@@ -25,16 +26,21 @@ interface Props {
 export function NewTickerFields({ symbol, suggestedBucket, onAdd, onAdded }: Props) {
   const [assetClass, setAssetClass] = useState<AssetClass | ''>('');
   const [defaultBucket, setDefaultBucket] = useState<BucketType>(suggestedBucket);
+  const [priceText, setPriceText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Optional: the price can wait for the Tickers screen, but shares (US-21)
+  // cannot be worked out without it.
+  const priceCents = priceText.trim() === '' ? null : parseCents(priceText);
+  const priceInvalid = priceText.trim() !== '' && (priceCents === null || priceCents <= 0);
+
   async function add() {
-    if (assetClass === '') return;
+    if (assetClass === '' || priceInvalid) return;
     setBusy(true);
     setError(null);
     try {
-      // No price yet; it is entered on the Tickers screen (US-21).
-      const saved = await onAdd({ symbol, assetClass, defaultBucket, priceCents: null, priceAsOf: null });
+      const saved = await onAdd({ symbol, assetClass, defaultBucket, priceCents, priceAsOf: null });
       onAdded?.(saved);
     } catch (caught: unknown) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -71,7 +77,19 @@ export function NewTickerFields({ symbol, suggestedBucket, onAdd, onAdded }: Pro
           </option>
         ))}
       </select>
-      <button type="button" disabled={assetClass === '' || busy} onClick={() => void add()}>
+      <span className="money-input">
+        <span aria-hidden="true">$</span>
+        <input
+          type="text"
+          inputMode="decimal"
+          aria-label={`${symbol} price per share`}
+          aria-invalid={priceInvalid}
+          placeholder="Price (optional)"
+          value={priceText}
+          onChange={(event) => setPriceText(event.target.value)}
+        />
+      </span>
+      <button type="button" disabled={assetClass === '' || priceInvalid || busy} onClick={() => void add()}>
         {busy ? 'Adding…' : `Add ${symbol}`}
       </button>
       {error !== null && <p className="field-error">{error}</p>}
