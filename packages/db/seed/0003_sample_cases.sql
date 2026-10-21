@@ -1,7 +1,9 @@
 -- Two sample client cases. Client numbers and initials are invented. The
 -- figures on case 1042 come from RIG's Bucket Plan Deliverable workbook:
 -- $3,000,000 investable, and the accounts are split so the buckets land
--- exactly on the worksheet's $190,000 / $914,700 / $1,895,300. Case 2317 is an
+-- exactly on the plan: the worksheet's $190,000 Now plus $39,000 of advisory
+-- fee cash held in each account's own Now (US-19: $15,000 + $18,750 +
+-- $5,250 under RIG's tiers), $914,700 Soon, and $1,856,300 Later. Case 2317 is an
 -- early accumulator whose split is deliberately off target, with $15,000 not
 -- yet placed in any bucket and one slice with no model chosen.
 --
@@ -57,16 +59,17 @@ INSERT OR REPLACE INTO accounts (id, client_case_id, position, account_type, tax
     (9005, 9002, 1, 'ROTH_IRA', 'TAX_FREE', '7742',  24000000);
 
 INSERT OR REPLACE INTO account_sleeves (account_id, bucket, amount_cents, model_id, mode) VALUES
-    -- 1042: Now 190,000 / Soon 400,000 + 514,700 / Later 610,000 + 985,300 + 300,000
-    (9001, 'NOW',    19000000, 9001, 'MODEL'),
+    -- 1042: Now 205,000 + 18,750 + 5,250 / Soon 400,000 + 514,700
+    --       Later 595,000 + 966,550 + 294,750
+    (9001, 'NOW',    20500000, 9001, 'MODEL'),
     (9001, 'SOON',   40000000, 9002, 'MODEL'),
-    (9001, 'LATER',  61000000, 9003, 'MODEL'),
-    (9002, 'NOW',           0, NULL, 'MODEL'),
+    (9001, 'LATER',  59500000, 9003, 'MODEL'),
+    (9002, 'NOW',     1875000, 9001, 'MODEL'),
     (9002, 'SOON',   51470000, 9002, 'MODEL'),
-    (9002, 'LATER',  98530000, 9003, 'MODEL'),
-    (9003, 'NOW',           0, NULL, 'MODEL'),
+    (9002, 'LATER',  96655000, 9003, 'MODEL'),
+    (9003, 'NOW',      525000, 9001, 'MODEL'),
     (9003, 'SOON',          0, NULL, 'MODEL'),
-    (9003, 'LATER',  30000000, 9004, 'MODEL'),
+    (9003, 'LATER',  29475000, 9004, 'MODEL'),
     -- 2317: $15,000 of the Single account is not in any bucket yet; its Later
     -- money is picked by hand rather than from a model (US-23); and the Roth's
     -- Soon money follows nothing at all.

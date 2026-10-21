@@ -47,4 +47,5 @@ export function addCents(...amounts: Cents[]): Cents {
   return total;
 }
 
+export { advisoryFeeCents, feeTierFor, type FeeTier } from './fees.js';
 export { splitByWeights, WHOLE_BPS, type Share, type Weighted } from './split.js';

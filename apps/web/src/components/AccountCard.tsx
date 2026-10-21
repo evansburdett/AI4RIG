@@ -2,6 +2,8 @@ import { Fragment, useState } from 'react';
 
 import { formatCents, formatCentsWhole } from '../domain/money.js';
 import { allocatedCents, modelChoices, modelsById, sleeveHoldings, unallocatedCents } from '../domain/breakdown.js';
+import { formatBps } from '../domain/percent.js';
+import type { AccountFee } from '../domain/worksheet.js';
 import { ACCOUNT_TYPE_LABELS, BUCKET_LABELS, TAX_FUNNEL_LABELS } from '../domain/lifeStage.js';
 import { ACCOUNT_TYPES, DEFAULT_TAX_FUNNEL, SLEEVE_MODES, TAX_FUNNELS } from '../domain/types.js';
 import type {
@@ -24,6 +26,8 @@ import {
 
 interface Props {
   account: Account;
+  /** This account's advisory fee (US-19), held as cash in its Now. */
+  fee: AccountFee | undefined;
   models: readonly ModelPortfolio[];
   tickers: readonly Ticker[];
   onChange: (next: Account) => void;
@@ -46,6 +50,7 @@ const MODE_LABELS: Record<BucketSleeve['mode'], string> = {
  */
 export function AccountCard({
   account,
+  fee,
   models,
   tickers,
   onChange,
@@ -191,6 +196,16 @@ export function AccountCard({
                       valueCents={sleeve.amountCents}
                       onChange={(amountCents) => patchSleeve(sleeve.bucket, { amountCents })}
                     />
+                    {sleeve.bucket === 'NOW' && fee !== undefined && fee.feeCents > 0 && (
+                      <p className="field-hint">
+                        Should include {formatCentsWhole(fee.feeCents)} of advisory fee cash ({formatBps(fee.rateBps)})
+                        {sleeve.amountCents < fee.feeCents && (
+                          <span className="tag tag-warn">
+                            {formatCentsWhole(fee.feeCents - sleeve.amountCents)} short of the fee
+                          </span>
+                        )}
+                      </p>
+                    )}
                   </td>
                   <td>
                     <div className="follows">

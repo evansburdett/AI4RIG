@@ -3,15 +3,24 @@ import { Router } from 'express';
 
 import {
   deleteTicker,
+  listAdvisoryFeeTiers,
   listBucketDefinitions,
   listTickers,
+  replaceAdvisoryFeeTiers,
   updateBucketDefinition,
   upsertTicker,
 } from '../repositories/referenceData.js';
-import { bucketDefinitionSchema, bucketParam, parseOr400, tickerSchema } from '../validation.js';
+import {
+  advisoryFeeTiersSchema,
+  bucketDefinitionSchema,
+  bucketParam,
+  parseOr400,
+  tickerSchema,
+} from '../validation.js';
 
 /**
- * The ticker universe (US-06) and bucket definitions (US-08). Administrator
+ * The ticker universe (US-06), bucket definitions (US-08), and advisory fee
+ * tiers (US-19). Administrator
  * screens; there is no role check yet because there is no login yet (US-05).
  *
  *   GET    /api/tickers                     the whole universe
@@ -19,6 +28,8 @@ import { bucketDefinitionSchema, bucketParam, parseOr400, tickerSchema } from '.
  *   DELETE /api/tickers/:symbol             remove one
  *   GET    /api/bucket-definitions          Now, Soon, Later, in that order
  *   PUT    /api/bucket-definitions/:bucket  edit one
+ *   GET    /api/advisory-fee-tiers          the fee schedule, lowest balance first
+ *   PUT    /api/advisory-fee-tiers          replace the whole schedule
  */
 export function createReferenceDataRouter(db: Db): Router {
   const router = Router();
@@ -71,6 +82,16 @@ export function createReferenceDataRouter(db: Db): Router {
       return;
     }
     res.json(saved);
+  });
+
+  router.get('/api/advisory-fee-tiers', (_req, res) => {
+    res.json(listAdvisoryFeeTiers(db));
+  });
+
+  router.put('/api/advisory-fee-tiers', (req, res) => {
+    const tiers = parseOr400(advisoryFeeTiersSchema, req.body, res);
+    if (tiers === null) return;
+    res.json(replaceAdvisoryFeeTiers(db, tiers));
   });
 
   return router;

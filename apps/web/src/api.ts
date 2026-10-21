@@ -8,6 +8,7 @@
  */
 
 import type {
+  AdvisoryFeeTier,
   BucketDefinition,
   ClientCase,
   ClientSummary,
@@ -143,6 +144,12 @@ export const api = {
 
   saveBucketDefinition: (definition: BucketDefinition) =>
     send<BucketDefinition>(`/api/bucket-definitions/${definition.bucket}`, 'PUT', definition),
+
+  listAdvisoryFeeTiers: () => get<AdvisoryFeeTier[]>('/api/advisory-fee-tiers'),
+
+  /** Replaces the whole schedule. */
+  saveAdvisoryFeeTiers: (tiers: readonly AdvisoryFeeTier[]) =>
+    send<AdvisoryFeeTier[]>('/api/advisory-fee-tiers', 'PUT', tiers),
 
   /** US-28. Nothing is saved; the answer goes in the person's field. */
   estimateLifeExpectancy: (request: LifeExpectancyRequest) =>

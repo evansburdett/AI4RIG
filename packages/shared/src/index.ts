@@ -216,6 +216,17 @@ export interface Ticker {
   readonly defaultBucket: BucketType;
 }
 
+/**
+ * One row of RIG's advisory fee schedule (US-19). A balance at or above
+ * `minBalanceCents`, and below the next row's, is charged `rateBps` on all of
+ * it. The schedule always has a row starting at 0.
+ */
+export interface AdvisoryFeeTier {
+  readonly minBalanceCents: Cents;
+  /** Basis points: 125 is 1.25%. */
+  readonly rateBps: number;
+}
+
 export interface BucketDefinition {
   readonly bucket: BucketType;
   readonly label: string;

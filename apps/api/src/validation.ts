@@ -218,6 +218,21 @@ export const bucketDefinitionSchema = z.object({
   purposeText: z.string().max(2000),
 });
 
+/** The whole schedule, replaced at once (US-19). */
+export const advisoryFeeTiersSchema = z
+  .array(
+    z.object({
+      minBalanceCents: cents.min(0, 'A tier cannot start below $0'),
+      rateBps: z.int().min(0).max(10_000, 'A rate cannot be over 100%'),
+    }),
+  )
+  .min(1, 'The schedule needs at least one tier')
+  .refine((tiers) => tiers[0]?.minBalanceCents === 0, 'The first tier has to start at $0')
+  .refine(
+    (tiers) => tiers.every((tier, i) => i === 0 || tier.minBalanceCents > (tiers[i - 1]?.minBalanceCents ?? 0)),
+    'Tiers have to be listed lowest balance first, with no two starting at the same balance',
+  );
+
 export const bucketParam = bucket;
 
 /**

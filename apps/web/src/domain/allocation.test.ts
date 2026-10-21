@@ -11,7 +11,7 @@ import {
   unallocatedCents,
 } from './breakdown.js';
 import { SAMPLE_CASES } from '../fixtures/clients.js';
-import { PLACEHOLDER_MODELS, PLACEHOLDER_TICKERS } from '../fixtures/tickers.js';
+import { PLACEHOLDER_MODELS, PLACEHOLDER_TICKERS, RIG_FEE_TIERS } from '../fixtures/tickers.js';
 import { computePlanTotals, targetAllocation } from './worksheet.js';
 
 const WORKBOOK_CASE = SAMPLE_CASES[0]!;
@@ -22,18 +22,20 @@ const breakdownOf = (c = WORKBOOK_CASE) => computeBreakdown(c, PLACEHOLDER_TICKE
 
 describe('targetAllocation', () => {
   it('derives the split from the client inputs, not from a table', () => {
-    const totals = computePlanTotals(WORKBOOK_CASE);
+    const totals = computePlanTotals(WORKBOOK_CASE, RIG_FEE_TIERS);
     const target = targetAllocation(WORKBOOK_CASE, totals);
 
-    // $190,000 / $914,700 / $1,895,300 of $3,000,000 in typed account balances.
+    // The workbook's $190,000 Now plus $39,000 of fee cash, $914,700 Soon, and
+    // the rest of $3,000,000 in typed account balances in Later.
     expect(totals.investableAssetsCents).toBe(3_000_000_00);
-    expect(target.nowCents).toBe(190_000_00);
+    expect(totals.advisoryFeeCents).toBe(39_000_00);
+    expect(target.nowCents).toBe(229_000_00);
     expect(target.soonCents).toBe(914_700_00);
-    expect(target.laterCents).toBe(1_895_300_00);
+    expect(target.laterCents).toBe(1_856_300_00);
 
-    expect(target.nowPct).toBe(6.3);
+    expect(target.nowPct).toBe(7.6);
     expect(target.soonPct).toBe(30.5);
-    expect(target.laterPct).toBe(63.2);
+    expect(target.laterPct).toBe(61.9);
   });
 
   it('gives an accumulator a small Soon bucket without weighting anything', () => {
@@ -50,7 +52,7 @@ describe('targetAllocation', () => {
       },
     };
 
-    const target = targetAllocation(accumulator, computePlanTotals(accumulator));
+    const target = targetAllocation(accumulator, computePlanTotals(accumulator, RIG_FEE_TIERS));
 
     expect(target.soonCents).toBe(100_000_00); // only the conservative reserve
     expect(target.soonPct).toBeLessThan(4);
@@ -59,7 +61,7 @@ describe('targetAllocation', () => {
 
   it('reports zero rather than NaN when there are no assets', () => {
     const empty = { ...WORKBOOK_CASE, accounts: [] };
-    const target = targetAllocation(empty, computePlanTotals(empty));
+    const target = targetAllocation(empty, computePlanTotals(empty, RIG_FEE_TIERS));
     expect(target.nowPct).toBe(0);
     expect(target.soonPct).toBe(0);
   });
@@ -70,8 +72,8 @@ describe('holdings from models', () => {
     const joint = WORKBOOK_CASE.accounts[0]!;
     const now = accountHoldings(joint, MODELS).filter((h) => h.bucket === 'NOW');
     expect(now.map((h) => [h.tickerSymbol, h.marketValueCents])).toEqual([
-      ['SGOV', 114_000_00],
-      ['BIL', 76_000_00],
+      ['SGOV', 123_000_00],
+      ['BIL', 82_000_00],
     ]);
   });
 
@@ -99,7 +101,7 @@ describe('computeBreakdown', () => {
     expect(breakdown.unallocatedCents).toBe(0);
     expect(breakdown.unmodeledCents).toBe(0);
 
-    const drift = computeDrift(targetAllocation(WORKBOOK_CASE, computePlanTotals(WORKBOOK_CASE)), breakdown);
+    const drift = computeDrift(targetAllocation(WORKBOOK_CASE, computePlanTotals(WORKBOOK_CASE, RIG_FEE_TIERS)), breakdown);
     expect(drift.map((d) => d.deltaCents)).toEqual([0, 0, 0]);
   });
 
@@ -111,17 +113,18 @@ describe('computeBreakdown', () => {
   });
 
   it('shows drift against the worksheet for an off-target case', () => {
-    const target = targetAllocation(ACCUMULATOR_CASE, computePlanTotals(ACCUMULATOR_CASE));
+    const target = targetAllocation(ACCUMULATOR_CASE, computePlanTotals(ACCUMULATOR_CASE, RIG_FEE_TIERS));
     const drift = Object.fromEntries(computeDrift(target, breakdownOf(ACCUMULATOR_CASE)).map((d) => [d.bucket, d]));
 
-    // Worksheet: Now $30,000 (bank reserve), Soon $75,000 (conservative reserve).
-    expect(drift.NOW?.deltaCents).toBe(-5_000_00);
+    // Worksheet: Now $30,000 (bank reserve) plus $9,580 of fee cash ($280,000
+    // at 1.75% and $240,000 at 1.95%); Soon $75,000 (conservative reserve).
+    expect(drift.NOW?.deltaCents).toBe(-14_580_00);
     expect(drift.SOON?.deltaCents).toBe(-15_000_00);
   });
 
   it('classifies modeled money by asset class', () => {
     const now = breakdownOf().byBucket.find((b) => b.bucket === 'NOW');
-    expect(now?.slices).toEqual([{ assetClass: 'CASH', valueCents: 190_000_00, pct: 100 }]);
+    expect(now?.slices).toEqual([{ assetClass: 'CASH', valueCents: 229_000_00, pct: 100 }]);
   });
 });
 
@@ -129,9 +132,9 @@ describe('bucketsByAccount', () => {
   it('splits each account into Now, Soon, and Later', () => {
     const joint = bucketsByAccount(WORKBOOK_CASE)[0]!;
     expect(joint).toMatchObject({
-      nowCents: 190_000_00,
+      nowCents: 205_000_00,
       soonCents: 400_000_00,
-      laterCents: 610_000_00,
+      laterCents: 595_000_00,
       unallocatedCents: 0,
       balanceCents: 1_200_000_00,
     });

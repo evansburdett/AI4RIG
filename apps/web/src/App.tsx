@@ -5,6 +5,7 @@ import { Callout } from './components/Callout.js';
 import { ClientSwitcher } from './components/ClientSwitcher.js';
 import { ConnectionStatus } from './components/ConnectionStatus.js';
 import type {
+  AdvisoryFeeTier,
   BucketDefinition,
   ClientCase,
   ClientSummary,
@@ -16,6 +17,7 @@ import { hrefFor, isReferenceScreen, useRoute, type Screen } from './routing.js'
 import { AssetClassBreakdown } from './screens/AssetClassBreakdown.js';
 import { BucketAssignments } from './screens/BucketAssignments.js';
 import { ClientProfile } from './screens/ClientProfile.js';
+import { FeeTiers } from './screens/FeeTiers.js';
 import { Models } from './screens/Models.js';
 
 /**
@@ -31,6 +33,7 @@ export function App() {
   const [tickers, setTickers] = useState<readonly Ticker[]>([]);
   const [models, setModels] = useState<readonly ModelPortfolio[]>([]);
   const [definitions, setDefinitions] = useState<readonly BucketDefinition[]>([]);
+  const [feeTiers, setFeeTiers] = useState<readonly AdvisoryFeeTier[]>([]);
   const [referenceError, setReferenceError] = useState<string | null>(null);
 
   /** Where to return from the model and ticker screens, which belong to no client. */
@@ -47,13 +50,20 @@ export function App() {
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([api.listClients(), api.listTickers(), api.listModels(), api.listBucketDefinitions()])
-      .then(([clientList, tickerList, modelList, definitionList]) => {
+    Promise.all([
+      api.listClients(),
+      api.listTickers(),
+      api.listModels(),
+      api.listBucketDefinitions(),
+      api.listAdvisoryFeeTiers(),
+    ])
+      .then(([clientList, tickerList, modelList, definitionList, feeTierList]) => {
         if (cancelled) return;
         setClients(clientList);
         setTickers(tickerList);
         setModels(modelList);
         setDefinitions(definitionList);
+        setFeeTiers(feeTierList);
       })
       .catch((error: unknown) => {
         if (!cancelled) setReferenceError(describeError(error));
@@ -237,6 +247,11 @@ export function App() {
     }
   }, []);
 
+  /** Throws on failure so the fee screen can show the message next to the schedule. */
+  const saveFeeTiers = useCallback(async (tiers: AdvisoryFeeTier[]) => {
+    setFeeTiers(await api.saveAdvisoryFeeTiers(tiers));
+  }, []);
+
   const today = useMemo(() => new Date(), []);
 
   return (
@@ -282,6 +297,12 @@ export function App() {
             aria-current={route.screen === 'tickers' ? 'page' : undefined}
           >
             Tickers
+          </a>
+          <a
+            href={hrefFor({ screen: 'fees', clientNumber: null })}
+            aria-current={route.screen === 'fees' ? 'page' : undefined}
+          >
+            Fee tiers
           </a>
         </nav>
 
@@ -337,6 +358,8 @@ export function App() {
             onAddTicker={addTicker}
             onSaveDefinition={saveDefinition}
           />
+        ) : route.screen === 'fees' ? (
+          <FeeTiers tiers={feeTiers} onSave={saveFeeTiers} />
         ) : caseError !== null ? (
           <Callout tone="warning" title="Could not open this case">
             {caseError}
@@ -346,12 +369,13 @@ export function App() {
         ) : draft === null ? (
           <p className="empty">Loading…</p>
         ) : route.screen === 'breakdown' ? (
-          <AssetClassBreakdown clientCase={draft} tickers={tickers} models={models} />
+          <AssetClassBreakdown clientCase={draft} tickers={tickers} models={models} feeTiers={feeTiers} />
         ) : (
           <ClientProfile
             clientCase={draft}
             models={models}
             tickers={tickers}
+            feeTiers={feeTiers}
             onChange={setDraft}
             onSaveAsModel={saveModel}
             onAddTicker={addTicker}

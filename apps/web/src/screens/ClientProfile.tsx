@@ -15,6 +15,7 @@ import { MoneyInput } from '../components/MoneyInput.js';
 import { bucketsByAccount } from '../domain/breakdown.js';
 import { newAccount, newExpense, newGapEntry } from '../domain/factory.js';
 import {
+  ACCOUNT_TYPE_LABELS,
   GENDER_LABELS,
   HEALTH_CONCERN_LABELS,
   LIFE_STAGE_LABELS,
@@ -23,6 +24,7 @@ import {
   householdPlanYears,
 } from '../domain/lifeStage.js';
 import { formatCents, formatCentsWhole, formatPercent } from '../domain/money.js';
+import { formatBps } from '../domain/percent.js';
 import {
   GENDERS,
   HEALTH_CONCERNS,
@@ -31,6 +33,7 @@ import {
   TAX_BRACKETS,
 } from '../domain/types.js';
 import type {
+  AdvisoryFeeTier,
   AllocationTarget,
   ClientCase,
   GapEntry,
@@ -43,6 +46,7 @@ import type {
 import {
   computePlanTotals,
   targetAllocation,
+  type AccountFee,
   type BucketWorksheet,
 } from '../domain/worksheet.js';
 
@@ -51,6 +55,8 @@ interface Props {
   models: readonly ModelPortfolio[];
   /** For the symbol picker on a manual bucket (US-23). */
   tickers: readonly Ticker[];
+  /** RIG's fee schedule (US-19), for the fee cash in each account's Now. */
+  feeTiers: readonly AdvisoryFeeTier[];
   /** Turns a manual bucket into a reusable model. */
   onSaveAsModel: (model: ModelPortfolio) => Promise<ModelPortfolio>;
   onAddTicker: (ticker: Ticker) => Promise<Ticker>;
@@ -72,13 +78,14 @@ export function ClientProfile({
   clientCase,
   models,
   tickers,
+  feeTiers,
   onChange,
   onSaveAsModel,
   onAddTicker,
   onEstimateLifeExpectancy,
   today,
 }: Props) {
-  const totals = useMemo(() => computePlanTotals(clientCase), [clientCase]);
+  const totals = useMemo(() => computePlanTotals(clientCase, feeTiers), [clientCase, feeTiers]);
   const target = useMemo(() => targetAllocation(clientCase, totals), [clientCase, totals]);
   const planYears = householdPlanYears(clientCase.people, today);
   const { nowInputs, soonInputs } = clientCase;
@@ -223,6 +230,17 @@ export function ClientProfile({
             hint="Federal marginal rate."
             onChange={(value) => patch({ taxBracketPct: value === '' ? null : Number(value) })}
           />
+          <DerivedField
+            label="Advisory fee, per year"
+            value={formatCents(totals.advisoryFeeCents)}
+            hint={
+              totals.investableAssetsCents > 0
+                ? `${formatPercent(
+                    Math.round((totals.advisoryFeeCents / totals.investableAssetsCents) * 1000) / 10,
+                  )} of all balances, from RIG's fee tiers. Held as cash in each account's Now.`
+                : "From RIG's fee tiers once balances are entered."
+            }
+          />
           <TextField
             label="Initials"
             value={clientCase.initials}
@@ -255,6 +273,7 @@ export function ClientProfile({
           <AccountCard
             key={account.id}
             account={account}
+            fee={totals.advisoryFees.find((f) => f.accountId === account.id)}
             models={models}
             tickers={tickers}
             onSaveAsModel={onSaveAsModel}
@@ -288,10 +307,7 @@ export function ClientProfile({
           />
         </div>
 
-        <Callout tone="blocked" title="Advisory fee tiers not supplied">
-          The worksheet derives the fee from account balance tiers. RIG has not sent the tier table,
-          so the fee and the cash needed to cover it are left out.
-        </Callout>
+        <AdvisoryFeeTable clientCase={clientCase} fees={totals.advisoryFees} total={totals.advisoryFeeCents} />
       </section>
 
       <section className="card">
@@ -505,6 +521,66 @@ function BucketTotals({ clientCase, target }: { clientCase: ClientCase; target: 
           );
         })}
       </tbody>
+    </table>
+  );
+}
+
+/**
+ * US-19: each account's fee under RIG's tiers. The whole balance is charged
+ * the rate of the tier it falls in, and that much cash sits in the account's
+ * Now bucket.
+ */
+function AdvisoryFeeTable({
+  clientCase,
+  fees,
+  total,
+}: {
+  clientCase: ClientCase;
+  fees: readonly AccountFee[];
+  total: number;
+}) {
+  if (fees.length === 0) return null;
+  return (
+    <table>
+      <caption>Advisory fee cash, one year</caption>
+      <thead>
+        <tr>
+          <th scope="col">Account</th>
+          <th scope="col" className="amount">
+            Balance
+          </th>
+          <th scope="col" className="amount">
+            Tier rate
+          </th>
+          <th scope="col" className="amount">
+            Fee cash in Now
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {fees.map((fee) => {
+          const account = clientCase.accounts.find((a) => a.id === fee.accountId);
+          return (
+            <tr key={fee.accountId}>
+              <th scope="row">
+                {account === undefined ? '' : ACCOUNT_TYPE_LABELS[account.accountType]}
+                {account !== undefined && account.maskedNumber !== '' && ` ····${account.maskedNumber}`}
+              </th>
+              <td className="amount">{formatCents(fee.balanceCents)}</td>
+              <td className="amount">{fee.rateBps === 0 ? '—' : formatBps(fee.rateBps)}</td>
+              <td className="amount">{formatCents(fee.feeCents)}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+      <tfoot>
+        <tr>
+          <th scope="row">Total</th>
+          <td />
+          <td />
+          <td className="amount">{formatCents(total)}</td>
+        </tr>
+      </tfoot>
     </table>
   );
 }

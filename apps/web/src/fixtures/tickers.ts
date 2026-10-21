@@ -5,7 +5,17 @@
  * packages/db/seed/0002_placeholder_models.sql.
  */
 
-import type { BucketDefinition, ModelPortfolio, Ticker } from '../domain/types.js';
+import type { AdvisoryFeeTier, BucketDefinition, ModelPortfolio, Ticker } from '../domain/types.js';
+
+/** RIG's advisory fee schedule as Ari sent it, and as migration 0008 ships it. */
+export const RIG_FEE_TIERS: readonly AdvisoryFeeTier[] = [
+  { minBalanceCents: 0, rateBps: 195 },
+  { minBalanceCents: 250_000_00, rateBps: 175 },
+  { minBalanceCents: 500_000_00, rateBps: 150 },
+  { minBalanceCents: 1_000_000_00, rateBps: 125 },
+  { minBalanceCents: 2_500_000_00, rateBps: 100 },
+  { minBalanceCents: 5_000_000_00, rateBps: 85 },
+];
 
 export const PLACEHOLDER_TICKERS: readonly Ticker[] = [
   { symbol: 'SGOV', assetClass: 'CASH', defaultBucket: 'NOW' },

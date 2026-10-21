@@ -16,7 +16,7 @@ import {
   TAX_FUNNEL_LABELS,
 } from '../domain/lifeStage.js';
 import { formatCents, formatCentsWhole, formatPercent } from '../domain/money.js';
-import type { ClientCase, ModelPortfolio, Ticker } from '../domain/types.js';
+import type { AdvisoryFeeTier, ClientCase, ModelPortfolio, Ticker } from '../domain/types.js';
 import type { Slice } from '../domain/breakdown.js';
 import { computePlanTotals, targetAllocation } from '../domain/worksheet.js';
 
@@ -24,6 +24,7 @@ interface Props {
   clientCase: ClientCase;
   tickers: readonly Ticker[];
   models: readonly ModelPortfolio[];
+  feeTiers: readonly AdvisoryFeeTier[];
 }
 
 /**
@@ -31,12 +32,12 @@ interface Props {
  * advisor's split sits against the worksheet. Everything here is derived from
  * the account balances, the bucket amounts, and the chosen models.
  */
-export function AssetClassBreakdown({ clientCase, tickers, models }: Props) {
+export function AssetClassBreakdown({ clientCase, tickers, models, feeTiers }: Props) {
   const breakdown = useMemo(
     () => computeBreakdown(clientCase, tickers, models),
     [clientCase, tickers, models],
   );
-  const totals = useMemo(() => computePlanTotals(clientCase), [clientCase]);
+  const totals = useMemo(() => computePlanTotals(clientCase, feeTiers), [clientCase, feeTiers]);
   const target = useMemo(() => targetAllocation(clientCase, totals), [clientCase, totals]);
   const drift = useMemo(() => computeDrift(target, breakdown), [target, breakdown]);
   const perAccount = useMemo(() => bucketsByAccount(clientCase), [clientCase]);

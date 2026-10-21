@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { computeLater, computeNow, computeSoon } from './worksheet.js';
+import { RIG_FEE_TIERS } from '../fixtures/tickers.js';
+import { SAMPLE_CASES } from '../fixtures/clients.js';
+import { accountAdvisoryFees, computeLater, computeNow, computeSoon } from './worksheet.js';
 import type { GapEntry, NowInputs, SoonInputs } from './types.js';
 
 /**
@@ -37,10 +39,16 @@ const WORKBOOK_SOON: SoonInputs = {
 };
 
 describe('Now bucket', () => {
-  it('matches cell E16', () => {
-    const now = computeNow(WORKBOOK_NOW);
-    expect(now.lines.map((l) => l.amountCents)).toEqual([50_000_00, 100_000_00, 40_000_00]);
+  it('matches cell E16 when there is no fee', () => {
+    const now = computeNow(WORKBOOK_NOW, 0);
+    expect(now.lines.map((l) => l.amountCents)).toEqual([50_000_00, 100_000_00, 40_000_00, 0]);
     expect(now.totalCents).toBe(190_000_00);
+  });
+
+  it('adds the advisory fee cash on top of E16 (US-19)', () => {
+    const now = computeNow(WORKBOOK_NOW, 39_000_00);
+    expect(now.lines.at(-1)).toMatchObject({ amountCents: 39_000_00, cell: 'Fee' });
+    expect(now.totalCents).toBe(229_000_00);
   });
 
   it('is zero, not NaN, on an empty case', () => {
@@ -49,7 +57,7 @@ describe('Now bucket', () => {
       incomeDrawMonths: 0,
       bankReserveCents: 0,
       plannedExpenses: [],
-    });
+    }, 0);
     expect(now.totalCents).toBe(0);
   });
 });
@@ -80,6 +88,36 @@ describe('Soon bucket', () => {
   it('flags the two places the workbook contradicts itself', () => {
     const noted = computeSoon(WORKBOOK_SOON).lines.filter((l) => l.note !== undefined);
     expect(noted.map((l) => l.cell)).toEqual(['E23', 'E48']);
+  });
+});
+
+describe('advisory fees (US-19)', () => {
+  const workbookCase = SAMPLE_CASES[0]!;
+
+  it('charges each account the rate for its own balance', () => {
+    expect(
+      accountAdvisoryFees(workbookCase, RIG_FEE_TIERS).map((f) => [f.balanceCents, f.rateBps, f.feeCents]),
+    ).toEqual([
+      [1_200_000_00, 125, 15_000_00], // the Sept 23 example
+      [1_500_000_00, 125, 18_750_00],
+      [300_000_00, 175, 5_250_00],
+    ]);
+  });
+
+  it('can take the rate from the household total instead, if RIG says so', () => {
+    // $3,000,000 in all is the 1.00% tier, charged on each account's balance.
+    expect(
+      accountAdvisoryFees(workbookCase, RIG_FEE_TIERS, 'HOUSEHOLD').map((f) => [f.rateBps, f.feeCents]),
+    ).toEqual([
+      [100, 12_000_00],
+      [100, 15_000_00],
+      [100, 3_000_00],
+    ]);
+  });
+
+  it('charges nothing on an empty account', () => {
+    const empty = { ...workbookCase, accounts: [{ ...workbookCase.accounts[0]!, balanceCents: 0 }] };
+    expect(accountAdvisoryFees(empty, RIG_FEE_TIERS)[0]).toMatchObject({ rateBps: 0, feeCents: 0 });
   });
 });
 

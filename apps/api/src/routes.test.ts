@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { openDatabase, runMigrations, runSeeds, type Db } from '@ai4rig/db';
-import type { BucketDefinition, ClientCase, ClientSummary, ModelPortfolio, Ticker } from '@ai4rig/shared';
+import type { AdvisoryFeeTier, BucketDefinition, ClientCase, ClientSummary, ModelPortfolio, Ticker } from '@ai4rig/shared';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { createApp } from './app.js';
@@ -90,12 +90,12 @@ describe('client cases', () => {
       ['ROTH_IRA', 'TAX_FREE', 300_000_00],
     ]);
     expect(body.accounts[0]?.sleeves).toEqual([
-      { bucket: 'NOW', amountCents: 190_000_00, mode: 'MODEL', modelId: '9001', lines: [] },
+      { bucket: 'NOW', amountCents: 205_000_00, mode: 'MODEL', modelId: '9001', lines: [] },
       { bucket: 'SOON', amountCents: 400_000_00, mode: 'MODEL', modelId: '9002', lines: [] },
-      { bucket: 'LATER', amountCents: 610_000_00, mode: 'MODEL', modelId: '9003', lines: [] },
+      { bucket: 'LATER', amountCents: 595_000_00, mode: 'MODEL', modelId: '9003', lines: [] },
     ]);
-    expect(body.accounts[2]?.sleeves[0]).toEqual({
-      bucket: 'NOW',
+    expect(body.accounts[2]?.sleeves[1]).toEqual({
+      bucket: 'SOON',
       amountCents: 0,
       mode: 'MODEL',
       modelId: null,
@@ -428,7 +428,7 @@ describe('models', () => {
     const { body } = await call<ClientCase>('GET', '/api/clients/1042');
     expect(body.accounts[0]?.sleeves[0]).toEqual({
       bucket: 'NOW',
-      amountCents: 190_000_00,
+      amountCents: 205_000_00,
       mode: 'MODEL',
       modelId: null,
       lines: [],
@@ -460,6 +460,46 @@ describe('bucket definitions', () => {
   it('404s a bucket that does not exist', async () => {
     const { status } = await call('PUT', '/api/bucket-definitions/SOMEDAY', {});
     expect(status).toBe(404);
+  });
+});
+
+describe('advisory fee tiers (US-19)', () => {
+  it('ships RIG\'s schedule, lowest balance first', async () => {
+    const { body } = await call<AdvisoryFeeTier[]>('GET', '/api/advisory-fee-tiers');
+    expect(body.map((t) => [t.minBalanceCents, t.rateBps])).toEqual([
+      [0, 195],
+      [250_000_00, 175],
+      [500_000_00, 150],
+      [1_000_000_00, 125],
+      [2_500_000_00, 100],
+      [5_000_000_00, 85],
+    ]);
+  });
+
+  it('replaces the whole schedule', async () => {
+    const tiers = [
+      { minBalanceCents: 0, rateBps: 150 },
+      { minBalanceCents: 1_000_000_00, rateBps: 100 },
+    ];
+    const saved = await call<AdvisoryFeeTier[]>('PUT', '/api/advisory-fee-tiers', tiers);
+    expect(saved.status).toBe(200);
+    expect((await call<AdvisoryFeeTier[]>('GET', '/api/advisory-fee-tiers')).body).toEqual(tiers);
+  });
+
+  it('refuses a schedule that does not start at $0, or is out of order', async () => {
+    expect(
+      (await call('PUT', '/api/advisory-fee-tiers', [{ minBalanceCents: 100, rateBps: 100 }])).status,
+    ).toBe(400);
+    expect(
+      (
+        await call('PUT', '/api/advisory-fee-tiers', [
+          { minBalanceCents: 0, rateBps: 100 },
+          { minBalanceCents: 500_00, rateBps: 90 },
+          { minBalanceCents: 200_00, rateBps: 80 },
+        ])
+      ).status,
+    ).toBe(400);
+    expect((await call('PUT', '/api/advisory-fee-tiers', [])).status).toBe(400);
   });
 });
 

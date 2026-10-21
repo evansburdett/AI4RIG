@@ -1,10 +1,11 @@
 /**
- * The ticker universe (US-06) and bucket definitions (US-08). Both are data,
- * not code, so RIG can change them without a developer.
+ * The ticker universe (US-06), bucket definitions (US-08), and the advisory
+ * fee schedule (US-19). All data, not code, so RIG can change them without a
+ * developer.
  */
 
 import type { Db } from '@ai4rig/db';
-import type { BucketDefinition, BucketType, Ticker } from '@ai4rig/shared';
+import type { AdvisoryFeeTier, BucketDefinition, BucketType, Ticker } from '@ai4rig/shared';
 
 import { HttpError } from '../errors.js';
 
@@ -91,6 +92,26 @@ export function deleteTicker(db: Db, symbol: string): boolean {
   }
 
   return db.prepare('DELETE FROM tickers WHERE symbol = ?').run(symbol).changes > 0;
+}
+
+/** RIG's fee schedule, lowest balance first (US-19). */
+export function listAdvisoryFeeTiers(db: Db): AdvisoryFeeTier[] {
+  return db
+    .prepare<[], { min_balance_cents: number; rate_bps: number }>(
+      'SELECT min_balance_cents, rate_bps FROM advisory_fee_tiers ORDER BY min_balance_cents',
+    )
+    .all()
+    .map((row) => ({ minBalanceCents: row.min_balance_cents, rateBps: row.rate_bps }));
+}
+
+/** Replace the whole schedule in one transaction. Validation has already ordered and checked it. */
+export function replaceAdvisoryFeeTiers(db: Db, tiers: readonly AdvisoryFeeTier[]): AdvisoryFeeTier[] {
+  db.transaction(() => {
+    db.prepare('DELETE FROM advisory_fee_tiers').run();
+    const add = db.prepare('INSERT INTO advisory_fee_tiers (min_balance_cents, rate_bps) VALUES (?, ?)');
+    for (const tier of tiers) add.run(tier.minBalanceCents, tier.rateBps);
+  })();
+  return listAdvisoryFeeTiers(db);
 }
 
 export function listBucketDefinitions(db: Db): BucketDefinition[] {

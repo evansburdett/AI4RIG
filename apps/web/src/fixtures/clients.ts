@@ -30,7 +30,11 @@ function sleeves(now: SleeveSpec, soon: SleeveSpec, later: SleeveSpec): Account[
   return [one('NOW', now), one('SOON', soon), one('LATER', later)];
 }
 
-/** Buckets land exactly on the workbook's $190,000 / $914,700 / $1,895,300. */
+/**
+ * Buckets land exactly on the plan: the workbook's $190,000 Now plus $39,000 of
+ * advisory fee cash (US-19: $15,000 + $18,750 + $5,250, each held in its own
+ * account's Now), the workbook's $914,700 Soon, and $1,856,300 Later.
+ */
 const WORKBOOK_CASE: ClientCase = {
   clientNumber: '1042',
   initials: 'A.B.',
@@ -66,7 +70,7 @@ const WORKBOOK_CASE: ClientCase = {
       taxFunnel: 'TAXABLE',
       maskedNumber: '4417',
       balanceCents: 1_200_000_00,
-      sleeves: sleeves([190_000, '9001'], [400_000, '9002'], [610_000, '9003']),
+      sleeves: sleeves([205_000, '9001'], [400_000, '9002'], [595_000, '9003']),
     },
     {
       id: '9002',
@@ -74,7 +78,7 @@ const WORKBOOK_CASE: ClientCase = {
       taxFunnel: 'PRE_TAX',
       maskedNumber: '8830',
       balanceCents: 1_500_000_00,
-      sleeves: sleeves([0, null], [514_700, '9002'], [985_300, '9003']),
+      sleeves: sleeves([18_750, '9001'], [514_700, '9002'], [966_550, '9003']),
     },
     {
       id: '9003',
@@ -82,7 +86,7 @@ const WORKBOOK_CASE: ClientCase = {
       taxFunnel: 'TAX_FREE',
       maskedNumber: '2291',
       balanceCents: 300_000_00,
-      sleeves: sleeves([0, null], [0, null], [300_000, '9004']),
+      sleeves: sleeves([5_250, '9001'], [0, null], [294_750, '9004']),
     },
   ],
   cashOnHandCents: 85_000_00,

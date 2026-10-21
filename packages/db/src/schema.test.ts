@@ -45,6 +45,7 @@ describe('the repo migrations', () => {
       'account_positions',
       'account_sleeves',
       'accounts',
+      'advisory_fee_tiers',
       'bucket_definitions',
       'client_cases',
       'gap_entries',
@@ -134,7 +135,7 @@ describe('the repo migrations', () => {
         "SELECT amount_cents, model_id FROM account_sleeves WHERE account_id = 9001 AND bucket = 'NOW'",
       )
       .get();
-    expect(nowSleeve).toEqual({ amount_cents: 19_000_000, model_id: null });
+    expect(nowSleeve).toEqual({ amount_cents: 20_500_000, model_id: null });
   });
 
   it('delete a case together with everything under it', () => {
@@ -166,7 +167,7 @@ describe('the repo seed data', () => {
     expect(count('model_portfolios')).toBe(4);
   });
 
-  it('puts case 1042 exactly on the workbook bucket totals', () => {
+  it('puts case 1042 exactly on the plan: workbook totals plus fee cash in Now', () => {
     runMigrations(db);
     runSeeds(db);
 
@@ -178,8 +179,9 @@ describe('the repo seed data', () => {
       )
       .all();
     expect(totals).toEqual([
-      { bucket: 'LATER', total: 189_530_000 },
-      { bucket: 'NOW', total: 19_000_000 },
+      // $1,856,300 Later; $190,000 Now plus $39,000 fee cash; $914,700 Soon.
+      { bucket: 'LATER', total: 185_630_000 },
+      { bucket: 'NOW', total: 22_900_000 },
       { bucket: 'SOON', total: 91_470_000 },
     ]);
   });
