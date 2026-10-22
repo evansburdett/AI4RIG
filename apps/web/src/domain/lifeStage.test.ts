@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ageFromBirthYear,
+  STAGES_BY_PHASE,
+  stageForPhase,
   estimatedLifeExpectancyAge,
   householdPlanYears,
   planYears,
 } from './lifeStage.js';
 import type { Gender, HealthConcern, Person } from './types.js';
+import { LIFE_STAGES } from './types.js';
 
 const TODAY = new Date('2026-09-17T00:00:00Z');
 
@@ -73,5 +76,33 @@ describe('householdPlanYears', () => {
 
   it('ignores a person who is not filled in yet', () => {
     expect(householdPlanYears([person(1960, 'MALE'), person(null)], TODAY)).toBe(17);
+  });
+});
+
+describe('stage of life follows the money cycle phase', () => {
+  it('offers only the stages that belong to each phase', () => {
+    expect(STAGES_BY_PHASE.ACCUMULATION).toEqual([
+      'ACCUMULATION_YOUNG_PROFESSIONAL',
+      'ACCUMULATION_PEAK_EARNINGS',
+    ]);
+    expect(STAGES_BY_PHASE.PRESERVATION).toEqual(['PRESERVATION']);
+    expect(STAGES_BY_PHASE.DISTRIBUTION).toEqual([
+      'DISTRIBUTION_GO_GO',
+      'DISTRIBUTION_SLOW_GO',
+      'DISTRIBUTION_NO_GO',
+    ]);
+  });
+
+  it('puts every life stage under exactly one phase', () => {
+    const all = Object.values(STAGES_BY_PHASE).flat();
+    expect([...all].sort()).toEqual([...LIFE_STAGES].sort());
+  });
+
+  it('keeps a valid stage and resets an invalid one when the phase changes', () => {
+    expect(stageForPhase('DISTRIBUTION', 'DISTRIBUTION_SLOW_GO')).toBe('DISTRIBUTION_SLOW_GO');
+    expect(stageForPhase('ACCUMULATION', 'DISTRIBUTION_GO_GO')).toBe(
+      'ACCUMULATION_YOUNG_PROFESSIONAL',
+    );
+    expect(stageForPhase('PRESERVATION', 'ACCUMULATION_PEAK_EARNINGS')).toBe('PRESERVATION');
   });
 });

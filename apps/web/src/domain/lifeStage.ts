@@ -69,6 +69,17 @@ export const MONEY_CYCLE_LABELS: Record<MoneyCyclePhase, string> = {
   DISTRIBUTION: 'Distribution',
 };
 
+export const STAGES_BY_PHASE: Record<MoneyCyclePhase, readonly LifeStage[]> = {
+  ACCUMULATION: ['ACCUMULATION_YOUNG_PROFESSIONAL', 'ACCUMULATION_PEAK_EARNINGS'],
+  PRESERVATION: ['PRESERVATION'],
+  DISTRIBUTION: ['DISTRIBUTION_GO_GO', 'DISTRIBUTION_SLOW_GO', 'DISTRIBUTION_NO_GO'],
+};
+
+export function stageForPhase(phase: MoneyCyclePhase, current: LifeStage): LifeStage {
+  const allowed = STAGES_BY_PHASE[phase];
+  return allowed.includes(current) ? current : (allowed[0] ?? current);
+}
+
 export const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
   SINGLE: 'Single',
   JOINT: 'Joint',

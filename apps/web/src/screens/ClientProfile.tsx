@@ -17,9 +17,11 @@ import {
   HEALTH_CONCERN_LABELS,
   LIFE_STAGE_LABELS,
   MONEY_CYCLE_LABELS,
+  STAGES_BY_PHASE,
   ageFromBirthYear,
   householdPlanYears,
   estimatedLifeExpectancyAge,
+  stageForPhase,
 } from '../domain/lifeStage.js';
 import { formatCents, formatCentsWhole, formatPercent } from '../domain/money.js';
 import {
@@ -230,12 +232,17 @@ export function ClientProfile({
             value={clientCase.moneyCyclePhase}
             options={MONEY_CYCLE_PHASES}
             labels={MONEY_CYCLE_LABELS}
-            onChange={(moneyCyclePhase) => patch({ moneyCyclePhase })}
+            onChange={(moneyCyclePhase) =>
+              patch({
+                moneyCyclePhase,
+                lifeStage: stageForPhase(moneyCyclePhase, clientCase.lifeStage),
+              })
+            }
           />
           <SelectField
             label="Stage of life"
             value={clientCase.lifeStage}
-            options={LIFE_STAGES}
+            options={STAGES_BY_PHASE[clientCase.moneyCyclePhase]}
             labels={LIFE_STAGE_LABELS}
             onChange={(lifeStage) => patch({ lifeStage })}
           />
