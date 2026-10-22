@@ -9,6 +9,7 @@
 
 import type {
   AdvisoryFeeTier,
+  AppSettings,
   BucketDefinition,
   ClientCase,
   ClientSummary,
@@ -18,7 +19,15 @@ import type {
   Ticker,
 } from './domain/types.js';
 
-const baseUrl = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
+/**
+ * The desktop build (apps/desktop) is served by the API itself, so it talks
+ * to the address it was loaded from; that build sets VITE_API_SAME_ORIGIN.
+ * Everywhere else the address comes from VITE_API_BASE_URL in .env.
+ */
+const sameOrigin = import.meta.env.VITE_API_SAME_ORIGIN === 'true';
+const baseUrl = sameOrigin
+  ? window.location.origin
+  : String(import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
 
 if (!baseUrl) {
   throw new Error(
@@ -97,6 +106,8 @@ export interface Health {
   apiHost: string;
   apiPort: number;
   nodeEnv: string;
+  /** The installed desktop app's version; null in development. */
+  appVersion: string | null;
   /** Whether this machine has an OpenAI key for US-28. */
   lifeExpectancyEstimates: boolean;
   time: string;
@@ -150,6 +161,12 @@ export const api = {
   /** Replaces the whole schedule. */
   saveAdvisoryFeeTiers: (tiers: readonly AdvisoryFeeTier[]) =>
     send<AdvisoryFeeTier[]>('/api/advisory-fee-tiers', 'PUT', tiers),
+
+  getSettings: () => get<AppSettings>('/api/settings'),
+
+  /** Saves the key, or removes it with null. The key is never sent back. */
+  saveOpenAiKey: (apiKey: string | null) =>
+    send<AppSettings>('/api/settings/openai-key', 'PUT', { apiKey }),
 
   /** US-28. Nothing is saved; the answer goes in the person's field. */
   estimateLifeExpectancy: (request: LifeExpectancyRequest) =>

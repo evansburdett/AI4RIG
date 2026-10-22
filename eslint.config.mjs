@@ -11,6 +11,8 @@ export default tseslint.config(
       '**/build/**',
       '**/coverage/**',
       'data/**',
+      'apps/desktop/stage/**',
+      'apps/desktop/release/**',
     ],
   },
 

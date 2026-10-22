@@ -15,6 +15,8 @@ export interface ApiConfig {
    */
   openAiApiKey?: string | undefined;
   openAiModel?: string;
+  /** The installed app's version, shown in the footer. Unset in development. */
+  appVersion?: string;
 }
 
 /** Used when OPENAI_MODEL is not set. Check it is still offered when RIG's key arrives. */

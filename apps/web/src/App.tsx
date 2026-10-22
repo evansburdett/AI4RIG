@@ -19,6 +19,7 @@ import { BucketAssignments } from './screens/BucketAssignments.js';
 import { ClientProfile } from './screens/ClientProfile.js';
 import { FeeTiers } from './screens/FeeTiers.js';
 import { Models } from './screens/Models.js';
+import { Settings } from './screens/Settings.js';
 
 /**
  * Shell: reference data, the open case, and which screen is showing.
@@ -322,6 +323,12 @@ export function App() {
           >
             Fee tiers
           </a>
+          <a
+            href={hrefFor({ screen: 'settings', clientNumber: null })}
+            aria-current={route.screen === 'settings' ? 'page' : undefined}
+          >
+            Settings
+          </a>
         </nav>
 
         {!isReferenceScreen(route.screen) && (
@@ -378,6 +385,8 @@ export function App() {
           />
         ) : route.screen === 'fees' ? (
           <FeeTiers tiers={feeTiers} onSave={saveFeeTiers} />
+        ) : route.screen === 'settings' ? (
+          <Settings />
         ) : caseError !== null ? (
           <Callout tone="error" title="Could not open this case">
             {caseError}

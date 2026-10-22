@@ -433,6 +433,9 @@ Run all of these from the repo root.
 | `npm run lint` | ESLint. Includes the project rules — see below. |
 | `npm run lint:fix` | ESLint with autofix. |
 | `npm run check` | `typecheck` + `lint` + `test`. Run before every push. |
+| `npm run desktop:start` | Run the desktop app from source in a window. See [DESKTOP.md](DESKTOP.md). |
+| `npm run desktop:dist -- --mac` | Build the Mac installers into `apps/desktop/release`. Windows installers are built by GitHub Actions. |
+| `npm run desktop:smoke` | Start the packaged app and check it works end to end. |
 
 ### Two lint rules worth knowing about
 
