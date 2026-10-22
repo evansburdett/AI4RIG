@@ -15,6 +15,7 @@ import {
   HEALTH_CONCERNS,
   LIFE_EXPECTANCY_SOURCES,
   LIFE_STAGES,
+  LIFE_STAGES_BY_PHASE,
   MONEY_CYCLE_PHASES,
   SLEEVE_MODES,
   TAX_BRACKETS,
@@ -183,10 +184,16 @@ export const clientCaseSchema = z.object({
 export type ClientCaseInput = z.infer<typeof clientCaseSchema>;
 
 /** Locked shares mean nothing without the moment they were locked. */
-export const checkedClientCaseSchema = clientCaseSchema.refine(
-  (c) => c.proposalLockedAt !== null || c.accounts.every((a) => a.proposalShares.length === 0),
-  { error: 'Share counts can only be saved with the time they were locked in', path: ['proposalLockedAt'] },
-);
+export const checkedClientCaseSchema = clientCaseSchema
+  .refine(
+    (c) => c.proposalLockedAt !== null || c.accounts.every((a) => a.proposalShares.length === 0),
+    { error: 'Share counts can only be saved with the time they were locked in', path: ['proposalLockedAt'] },
+  )
+  // US-25: a stage of life only makes sense inside its own phase.
+  .refine((c) => LIFE_STAGES_BY_PHASE[c.moneyCyclePhase].includes(c.lifeStage), {
+    error: 'That stage of life is not part of the chosen money cycle phase',
+    path: ['lifeStage'],
+  });
 
 /** Only what US-28 sends to the model. Extra keys are dropped, not passed on. */
 export const lifeExpectancyRequestSchema = z.object({

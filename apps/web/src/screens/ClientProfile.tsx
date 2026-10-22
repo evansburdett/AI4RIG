@@ -23,13 +23,14 @@ import {
   MONEY_CYCLE_LABELS,
   ageFromBirthYear,
   householdPlanYears,
+  stageForPhase,
 } from '../domain/lifeStage.js';
 import { formatCents, formatCentsWhole, formatPercent } from '../domain/money.js';
 import { formatBps } from '../domain/percent.js';
 import {
   GENDERS,
   HEALTH_CONCERNS,
-  LIFE_STAGES,
+  LIFE_STAGES_BY_PHASE,
   MONEY_CYCLE_PHASES,
   TAX_BRACKETS,
 } from '../domain/types.js';
@@ -227,12 +228,20 @@ export function ClientProfile({
             value={clientCase.moneyCyclePhase}
             options={MONEY_CYCLE_PHASES}
             labels={MONEY_CYCLE_LABELS}
-            onChange={(moneyCyclePhase) => patch({ moneyCyclePhase })}
+            onChange={(moneyCyclePhase) =>
+              patch({ moneyCyclePhase, lifeStage: stageForPhase(moneyCyclePhase, clientCase.lifeStage) })
+            }
           />
           <SelectField
             label="Stage of life"
             value={clientCase.lifeStage}
-            options={LIFE_STAGES}
+            // Only the phase's own stages (US-25). A case saved before this rule
+            // keeps showing its old stage until the advisor picks another.
+            options={
+              LIFE_STAGES_BY_PHASE[clientCase.moneyCyclePhase].includes(clientCase.lifeStage)
+                ? LIFE_STAGES_BY_PHASE[clientCase.moneyCyclePhase]
+                : [clientCase.lifeStage, ...LIFE_STAGES_BY_PHASE[clientCase.moneyCyclePhase]]
+            }
             labels={LIFE_STAGE_LABELS}
             onChange={(lifeStage) => patch({ lifeStage })}
           />

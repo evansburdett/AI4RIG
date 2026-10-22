@@ -1,5 +1,6 @@
 /** Age derivation and the display labels for each enum. */
 
+import { LIFE_STAGES_BY_PHASE } from './types.js';
 import type {
   AccountType,
   AssetClass,
@@ -11,6 +12,15 @@ import type {
   Person,
   TaxFunnel,
 } from './types.js';
+
+/**
+ * US-25: the stage to keep when the phase changes. The current one if it
+ * belongs to the new phase, otherwise the new phase's first stage.
+ */
+export function stageForPhase(phase: MoneyCyclePhase, current: LifeStage): LifeStage {
+  const stages = LIFE_STAGES_BY_PHASE[phase];
+  return stages.includes(current) ? current : (stages[0] ?? current);
+}
 
 /** `today` is a parameter so tests can pin the year. */
 export function ageFromBirthYear(birthYear: number | null, today: Date): number | null {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ageFromBirthYear, householdPlanYears, planYears } from './lifeStage.js';
+import { ageFromBirthYear, householdPlanYears, planYears, stageForPhase } from './lifeStage.js';
 import type { Person } from './types.js';
 
 const TODAY = new Date('2026-09-17T00:00:00Z');
@@ -54,3 +54,15 @@ describe('householdPlanYears', () => {
   });
 });
 
+
+describe('stageForPhase (US-25)', () => {
+  it('keeps a stage that belongs to the new phase', () => {
+    expect(stageForPhase('DISTRIBUTION', 'DISTRIBUTION_SLOW_GO')).toBe('DISTRIBUTION_SLOW_GO');
+  });
+
+  it("moves to the new phase's first stage otherwise", () => {
+    expect(stageForPhase('DISTRIBUTION', 'ACCUMULATION_PEAK_EARNINGS')).toBe('DISTRIBUTION_GO_GO');
+    expect(stageForPhase('PRESERVATION', 'DISTRIBUTION_NO_GO')).toBe('PRESERVATION');
+    expect(stageForPhase('ACCUMULATION', 'PRESERVATION')).toBe('ACCUMULATION_YOUNG_PROFESSIONAL');
+  });
+});

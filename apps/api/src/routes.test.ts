@@ -133,6 +133,7 @@ describe('client cases', () => {
     const edited: ClientCase = {
       ...original,
       initials: 'C.D.E.',
+      moneyCyclePhase: 'PRESERVATION',
       lifeStage: 'PRESERVATION',
       taxBracketPct: 24,
       accounts: [
@@ -533,6 +534,19 @@ describe('advisory fee tiers (US-19)', () => {
       ).status,
     ).toBe(400);
     expect((await call('PUT', '/api/advisory-fee-tiers', [])).status).toBe(400);
+  });
+});
+
+describe('stage of life follows money cycle phase (US-25)', () => {
+  it('refuses a stage from another phase, and says which field', async () => {
+    const { body: original } = await call<ClientCase>('GET', '/api/clients/1042');
+    const { status, body } = await call<{ issues: { path: string }[] }>('PUT', '/api/clients/1042', {
+      ...original,
+      moneyCyclePhase: 'DISTRIBUTION',
+      lifeStage: 'ACCUMULATION_PEAK_EARNINGS',
+    });
+    expect(status).toBe(400);
+    expect(body.issues.map((i) => i.path)).toContain('lifeStage');
   });
 });
 

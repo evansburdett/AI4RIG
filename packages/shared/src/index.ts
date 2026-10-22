@@ -48,6 +48,16 @@ export type LifeExpectancySource = (typeof LIFE_EXPECTANCY_SOURCES)[number];
 export const MONEY_CYCLE_PHASES = ['ACCUMULATION', 'PRESERVATION', 'DISTRIBUTION'] as const;
 export type MoneyCyclePhase = (typeof MONEY_CYCLE_PHASES)[number];
 
+/**
+ * US-25: the stages of life that belong to each money cycle phase (Blake,
+ * Sept 23: pick Distribution and only go-go, slow-go, and no-go show).
+ */
+export const LIFE_STAGES_BY_PHASE: Readonly<Record<MoneyCyclePhase, readonly LifeStage[]>> = {
+  ACCUMULATION: ['ACCUMULATION_YOUNG_PROFESSIONAL', 'ACCUMULATION_PEAK_EARNINGS'],
+  PRESERVATION: ['PRESERVATION'],
+  DISTRIBUTION: ['DISTRIBUTION_GO_GO', 'DISTRIBUTION_SLOW_GO', 'DISTRIBUTION_NO_GO'],
+};
+
 export const ACCOUNT_TYPES = ['SINGLE', 'JOINT', 'IRA', 'ROTH_IRA', 'OTHER'] as const;
 export type AccountType = (typeof ACCOUNT_TYPES)[number];
 
