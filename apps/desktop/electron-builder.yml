@@ -1,0 +1,70 @@
+# How the desktop app is packaged. See docs/DESKTOP.md and ADR 0007.
+#
+# Packages apps/desktop/stage (made by scripts/build.mjs) into:
+#   Windows  AI4RIG-Setup-<version>.exe             per-user install, no admin rights
+#   macOS    AI4RIG-<version>-mac-<arch>.dmg        Apple silicon (arm64) and Intel (x64)
+# plus the latest*.yml files the installed app reads to find updates.
+
+appId: edu.auburn.ai4rig
+productName: AI4RIG
+copyright: Railroad Investment Group · Auburn Senior Design Team 22
+
+directories:
+  app: stage
+  output: release
+
+asar: true
+files:
+  - "**/*"
+  # better-sqlite3 carries its C source and a binary for every platform.
+  # The source is never needed; mac and win below each drop the other
+  # platforms' binaries. (They are named per platform because ${platform}
+  # means the computer doing the build, not the one the installer is for.)
+  - "!node_modules/better-sqlite3/{deps,src}/**"
+  - "!node_modules/better-sqlite3/binding.gyp"
+# better-sqlite3 ships a prebuilt binary for every platform, built against
+# Node's stable native interface, so nothing needs compiling for Electron.
+npmRebuild: false
+
+mac:
+  category: public.app-category.finance
+  files:
+    - "!node_modules/better-sqlite3/prebuilds/{win32,linux,linuxmusl}-*.node"
+  # No paid Apple Developer ID: after-pack.mjs signs ad hoc instead.
+  identity: null
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    # The zip is what the update check reads (latest-mac.yml) on macOS.
+    - target: zip
+      arch: [arm64, x64]
+
+dmg:
+  artifactName: AI4RIG-${version}-mac-${arch}.${ext}
+
+win:
+  files:
+    - "!node_modules/better-sqlite3/prebuilds/{darwin,linux,linuxmusl}-*.node"
+    - "!node_modules/better-sqlite3/prebuilds/win32-arm64.node"
+  target:
+    - target: nsis
+      arch: [x64]
+
+nsis:
+  artifactName: AI4RIG-Setup-${version}.${ext}
+  # Installs for the current user only, so no administrator rights are needed
+  # on a managed laptop.
+  oneClick: true
+  perMachine: false
+  # Uninstalling never deletes the advisor's cases.
+  deleteAppDataOnUninstall: false
+
+afterPack: ./scripts/after-pack.mjs
+
+# Releases are drafts until someone publishes them on GitHub; installed apps
+# only ever see published releases.
+publish:
+  - provider: github
+    owner: evansburdett
+    repo: AI4RIG
+    releaseType: draft
