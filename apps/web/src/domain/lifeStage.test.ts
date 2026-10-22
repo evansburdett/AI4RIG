@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { ageFromBirthYear, householdPlanYears, planYears, stageForPhase } from './lifeStage.js';
+import { LIFE_STAGES, LIFE_STAGES_BY_PHASE } from './types.js';
 import type { Person } from './types.js';
 
 const TODAY = new Date('2026-09-17T00:00:00Z');
@@ -58,6 +59,12 @@ describe('householdPlanYears', () => {
 describe('stageForPhase (US-25)', () => {
   it('keeps a stage that belongs to the new phase', () => {
     expect(stageForPhase('DISTRIBUTION', 'DISTRIBUTION_SLOW_GO')).toBe('DISTRIBUTION_SLOW_GO');
+  });
+
+  // From Sarabeth's version of US-25 (2a0d58d).
+  it('puts every life stage under exactly one phase', () => {
+    const all = Object.values(LIFE_STAGES_BY_PHASE).flat();
+    expect([...all].sort()).toEqual([...LIFE_STAGES].sort());
   });
 
   it("moves to the new phase's first stage otherwise", () => {
