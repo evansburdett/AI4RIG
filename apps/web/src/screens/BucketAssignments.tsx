@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 
 import { Callout } from '../components/Callout.js';
+import { About } from '../components/Help.js';
 import { NewTickerFields } from '../components/NewTickerFields.js';
 import { ASSET_CLASS_LABELS, BUCKET_LABELS } from '../domain/lifeStage.js';
+import { formatDay } from '../domain/dates.js';
 import { centsToInput, parseCents } from '../domain/money.js';
 import { isValidSymbol, normalizeSymbol } from '../domain/tickers.js';
 import { ASSET_CLASSES, BUCKETS } from '../domain/types.js';
@@ -57,18 +59,21 @@ export function BucketAssignments({
         </p>
       </header>
 
-      <Callout tone="warning" title="Placeholder investment universe">
+      <Callout tone="info" title="Placeholder investment universe">
         RIG has not sent the Common Investments list yet. These symbols come from the sample seed
         data and are not the firm&rsquo;s approved set (US-06).
       </Callout>
 
       <section className="card">
         <h3>Default bucket by ticker</h3>
-        <p className="muted">
-          Which bucket each symbol normally belongs in. A model that uses a symbol in a different
-          bucket is flagged on the Models screen, not blocked. A symbol typed on a model or a
-          manual bucket that is not listed here can be added from there too.
-        </p>
+        <p className="muted">Each symbol&rsquo;s usual bucket, asset class, and price per share.</p>
+        <About>
+          <p>
+            A model that uses a symbol in a different bucket is flagged on the Models screen, not
+            blocked. A symbol typed on a model or a manual bucket that is not listed here can be
+            added from there too. Prices are typed here until RIG picks a price provider.
+          </p>
+        </About>
 
         <div className="add-ticker">
           <div className="field">
@@ -185,7 +190,7 @@ export function BucketAssignments({
 
       <section className="card">
         <h3>What each bucket is for</h3>
-        <p className="muted">Editable wording, shown to the advisor when assigning a holding.</p>
+        <p className="muted">The wording shown to the advisor when assigning a holding.</p>
 
         {definitions.map((definition) => (
           <BucketDefinitionEditor
@@ -196,10 +201,12 @@ export function BucketAssignments({
         ))}
       </section>
 
-      <Callout tone="info" title="Asset-class rules not built">
-        <code>ClassificationRule</code> maps a whole asset class to a bucket. The table does not
-        exist yet; per-ticker defaults cover the same ground for a universe this size.
-      </Callout>
+      <About title="Why there are no asset-class rules">
+        <p>
+          A rule mapping a whole asset class to a bucket was planned but not built; the per-ticker
+          defaults above cover the same ground for a universe this size.
+        </p>
+      </About>
     </div>
   );
 }
@@ -243,7 +250,7 @@ function TickerPriceEditor({
       <button type="button" disabled={!dirty || invalid || saving} onClick={() => void onSave(parsed)}>
         Save price
       </button>
-      {ticker.priceAsOf !== null && !dirty && <span className="muted">as of {ticker.priceAsOf}</span>}
+      {ticker.priceAsOf !== null && !dirty && <span className="muted">as of {formatDay(ticker.priceAsOf)}</span>}
       {invalid && <span className="field-error">A price above $0, like 123.45</span>}
     </div>
   );

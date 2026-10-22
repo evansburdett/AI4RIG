@@ -1,5 +1,7 @@
 import { Callout } from './Callout.js';
+import { About } from './Help.js';
 import { ACCOUNT_TYPE_LABELS, BUCKET_LABELS } from '../domain/lifeStage.js';
+import { formatDateTime } from '../domain/dates.js';
 import { formatCents } from '../domain/money.js';
 import {
   lockedMatchesPlan,
@@ -60,11 +62,15 @@ export function ProposalShares({ clientCase, models, tickers, onChange }: Props)
           )}
         </div>
       </div>
-      <p className="muted">
-        The share counts in each account&rsquo;s holdings above follow the plan and today&rsquo;s
-        prices. Locking them in keeps those counts with the case, so when the client comes back
-        the same shares are valued at the prices on the Tickers screen without retyping anything.
-      </p>
+      <p className="muted">Save the share counts above so they can be revalued at later prices.</p>
+      <About title="How locking works">
+        <p>
+          Each holding&rsquo;s dollars become whole shares at the ticker&rsquo;s price, with the
+          remainder kept as cash. Locking keeps those share counts with the case, so when the client
+          comes back the same shares are valued at the prices on the Tickers screen without
+          retyping anything.
+        </p>
+      </About>
 
       {missing.length > 0 && (
         <Callout tone="warning" title="Some tickers have no price">
@@ -78,11 +84,11 @@ export function ProposalShares({ clientCase, models, tickers, onChange }: Props)
       ) : (
         <>
           <p>
-            Locked in {new Date(clientCase.proposalLockedAt ?? '').toLocaleString()}.{' '}
+            Locked in {formatDateTime(clientCase.proposalLockedAt ?? '')}.{' '}
             {matches ? (
               <span className="muted">The plan still works out to these shares.</span>
             ) : (
-              <span className="tag tag-warn">The plan has changed since; lock in again to update the shares.</span>
+              <span className="text-warn">The plan has changed since. Lock in again to update the shares.</span>
             )}
           </p>
 

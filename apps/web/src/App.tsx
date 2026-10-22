@@ -349,13 +349,13 @@ export function App() {
 
       <main>
         {referenceError !== null && (
-          <Callout tone="warning" title="Could not load or save reference data">
+          <Callout tone="error" title="Could not load or save reference data">
             {referenceError}
           </Callout>
         )}
 
         {actionError !== null && (
-          <Callout tone="warning" title="That did not go through">
+          <Callout tone="error" title="That did not go through">
             {actionError}
           </Callout>
         )}
@@ -379,7 +379,7 @@ export function App() {
         ) : route.screen === 'fees' ? (
           <FeeTiers tiers={feeTiers} onSave={saveFeeTiers} />
         ) : caseError !== null ? (
-          <Callout tone="warning" title="Could not open this case">
+          <Callout tone="error" title="Could not open this case">
             {caseError}
           </Callout>
         ) : clients.length === 0 && draft === null ? (

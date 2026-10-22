@@ -1,19 +1,53 @@
 :root {
-  --bg: #ffffff;
-  --bg-muted: #f6f7f8;
-  --text: #1a1d21;
-  --text-muted: #5f6672;
-  --border: #d8dbe0;
-  --border-strong: #b4b9c2;
-  --accent: #1f4e8c;
-  --danger: #b3261e;
+  /*
+   * The style system. Everything below should use these rather than raw
+   * values, so the screens stay consistent with each other.
+   */
 
+  /* Neutrals: one base, plus the muted surface and the two border weights. */
+  --bg: #ffffff;
+  --bg-muted: #f5f6f8;
+  --text: #1a1d21;
+  --text-muted: #525a66; /* 6.6:1 on white, 6.2:1 on --bg-muted */
+  --border: #dde0e5;
+  --border-strong: #b4b9c2;
+
+  /* One accent, for interaction and selection only. */
+  --accent: #1f4e8c;
+  --accent-hover: #1a4276;
+  --accent-soft: #eaf0f8;
+
+  /* Semantic colours, used only for what they mean. */
+  --danger: #b3261e;
+  --danger-soft: #fdf0ef;
+  --warning-border: #d9a536;
+  --warning-soft: #fdf6e3;
+  --warning-text: #6b4f0e;
+  --success: #2e7d4f;
+
+  /* Series colours: the same bucket is the same colour on every screen. */
   --bucket-now: #8a5a12;
   --bucket-soon: #1f6b5e;
   --bucket-later: #33478f;
 
+  /* Spacing scale. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 16px;
+  --space-4: 24px;
+  --space-5: 32px;
+
+  /* Type scale: four sizes. Controls use the body size. */
+  --text-title: 22px;
+  --text-section: 17px;
+  --text-body: 15px;
+  --text-caption: 13px;
+
+  --radius: 6px;
+  --radius-control: 4px;
+
   font-family: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
-  font-size: 15px;
+  font-size: var(--text-body);
   line-height: 1.5;
   color: var(--text);
 }
@@ -38,6 +72,12 @@ code {
   color: var(--text-muted);
 }
 
+/* Inline warning text: amber meaning "needs attention", without a badge. */
+.text-warn {
+  color: var(--warning-text);
+  font-weight: 600;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -53,8 +93,8 @@ code {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.75rem 1.5rem;
-  padding: 0.75rem 1.5rem;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-4);
   border-bottom: 1px solid var(--border);
   background: var(--bg);
 }
@@ -67,12 +107,12 @@ code {
 
 .brand h1 {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: var(--text-section);
   font-weight: 600;
 }
 
 .brand span {
-  font-size: 0.8rem;
+  font-size: var(--text-caption);
 }
 
 .app-header nav {
@@ -81,11 +121,11 @@ code {
 }
 
 .app-header nav a {
-  padding: 0.3rem 0.7rem;
-  border-radius: 4px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-control);
   text-decoration: none;
   color: var(--text-muted);
-  font-size: 0.9rem;
+  font-size: var(--text-body);
 }
 
 .app-header nav a:hover {
@@ -94,8 +134,8 @@ code {
 }
 
 .app-header nav a[aria-current="page"] {
-  background: var(--bg-muted);
-  color: var(--text);
+  background: var(--accent-soft);
+  color: var(--accent);
   font-weight: 600;
 }
 
@@ -103,7 +143,7 @@ code {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: var(--space-2);
 }
 
 .switcher {
@@ -113,14 +153,14 @@ code {
 }
 
 .switcher label {
-  font-size: 0.85rem;
+  font-size: var(--text-caption);
   font-weight: 600;
 }
 
 .app-footer {
-  padding: 0.75rem 1.5rem;
+  padding: var(--space-2) var(--space-4);
   border-top: 1px solid var(--border);
-  font-size: 0.8rem;
+  font-size: var(--text-caption);
 }
 
 .status::before {
@@ -138,7 +178,7 @@ code {
 }
 
 .status-ok::before {
-  background: #2e7d4f;
+  background: var(--success);
 }
 
 .status-down {
@@ -150,51 +190,57 @@ code {
 }
 
 main {
-  max-width: 62rem;
+  max-width: 64rem;
   margin: 0 auto;
-  padding: 1.5rem;
+  padding: var(--space-4);
 }
 
 .screen-header h2 {
-  margin: 0 0 0.2rem;
-  font-size: 1.3rem;
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-title);
   font-weight: 600;
+}
+
+.screen-header p {
+  margin: 0;
 }
 
 /* Cards */
 
 .card {
-  margin-top: 1.25rem;
-  padding: 1rem 1.25rem 1.25rem;
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4) var(--space-4);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--bg);
 }
 
+/* A section's one title. Any intro under it is a single muted line. */
 .card h3 {
-  margin: 0 0 0.75rem;
-  font-size: 1rem;
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-section);
   font-weight: 600;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
+}
+
+.card > p.muted {
+  margin: 0 0 var(--space-3);
 }
 
 .card h4 {
-  margin: 1.1rem 0 0;
-  font-size: 0.85rem;
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-body);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--text-muted);
 }
 
 .card-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 0.75rem;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
 }
 
 .card-head h3 {
@@ -203,7 +249,7 @@ main {
 
 .grid {
   display: grid;
-  gap: 0 1.25rem;
+  gap: 0 var(--space-3);
 }
 
 .grid.two {
@@ -216,29 +262,29 @@ main {
 
 fieldset {
   border: 1px solid var(--border);
-  border-radius: 5px;
-  padding: 0.25rem 1rem 0.75rem;
-  margin: 0 0 1rem;
+  border-radius: var(--radius);
+  padding: var(--space-1) var(--space-3) var(--space-3);
+  margin: 0 0 var(--space-3);
 }
 
 legend {
   font-weight: 600;
-  font-size: 0.9rem;
-  padding: 0 0.35rem;
+  font-size: var(--text-body);
+  padding: 0 var(--space-1);
 }
 
 /* Fields */
 
 .field {
-  margin: 0.6rem 0;
+  margin: var(--space-2) 0;
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: var(--space-1);
 }
 
 .field label,
 .field-label {
-  font-size: 0.82rem;
+  font-size: var(--text-caption);
   font-weight: 600;
 }
 
@@ -246,10 +292,10 @@ input,
 select,
 textarea {
   font: inherit;
-  font-size: 0.9rem;
-  padding: 0.35rem 0.45rem;
+  font-size: var(--text-body);
+  padding: 5px var(--space-2);
   border: 1px solid var(--border-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   background: var(--bg);
   color: var(--text);
 }
@@ -273,13 +319,13 @@ input[aria-invalid="true"] {
 
 .field-error {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: var(--text-caption);
   color: var(--danger);
 }
 
 .field-hint {
   margin: 0;
-  font-size: 0.76rem;
+  font-size: var(--text-caption);
 }
 
 /*
@@ -293,15 +339,15 @@ input[aria-invalid="true"] {
 }
 
 .checkbox-group legend {
-  font-size: 0.82rem;
+  font-size: var(--text-caption);
 }
 
 /* `.field label` is bold because it sits above a control. These sit beside one. */
 .checkbox-group .checkbox {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  font-size: 0.86rem;
+  gap: var(--space-2);
+  font-size: var(--text-body);
   font-weight: 400;
 }
 
@@ -330,13 +376,18 @@ input[aria-invalid="true"] {
   font-variant-numeric: tabular-nums;
 }
 
+/*
+ * A worked-out value. Tinted and borderless so it reads as a result, not as a
+ * box to type in, and in the body colour because it is the thing to read.
+ */
 .derived {
-  padding: 0.35rem 0.45rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
+  padding: 5px var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
   background: var(--bg-muted);
-  color: var(--text-muted);
-  font-size: 0.9rem;
+  color: var(--text);
+  font-weight: 600;
+  font-size: var(--text-body);
   font-variant-numeric: tabular-nums;
 }
 
@@ -344,9 +395,9 @@ input[aria-invalid="true"] {
 
 button {
   font: inherit;
-  font-size: 0.88rem;
-  padding: 0.35rem 0.8rem;
-  border-radius: 4px;
+  font-size: var(--text-body);
+  padding: 5px var(--space-3);
+  border-radius: var(--radius-control);
   border: 1px solid var(--border-strong);
   background: var(--bg);
   color: var(--text);
@@ -370,7 +421,7 @@ button.primary {
 }
 
 button.primary:not(:disabled):hover {
-  background: #1a4276;
+  background: var(--accent-hover);
 }
 
 button.danger {
@@ -379,14 +430,14 @@ button.danger {
 }
 
 button.danger:not(:disabled):hover {
-  background: #fdf0ef;
+  background: var(--danger-soft);
   border-color: var(--danger);
 }
 
 button.link {
   border: none;
   background: none;
-  padding: 0.2rem 0.4rem;
+  padding: var(--space-1) var(--space-2);
   color: var(--text-muted);
   text-decoration: underline;
 }
@@ -398,9 +449,10 @@ button.link:not(:disabled):hover {
 
 .button-row {
   display: flex;
-  gap: 0.5rem;
+  flex-wrap: wrap;
+  gap: var(--space-2);
   align-items: center;
-  margin-top: 0.75rem;
+  margin-top: var(--space-3);
 }
 
 /* Tables */
@@ -408,23 +460,26 @@ button.link:not(:disabled):hover {
 table {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 0.5rem;
+  margin-top: var(--space-2);
 }
 
 th,
 td {
   text-align: left;
-  padding: 0.35rem 0.5rem;
+  padding: 6px var(--space-2);
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
 }
 
 thead th {
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  font-size: var(--text-caption);
   color: var(--text-muted);
   font-weight: 600;
+}
+
+/* Row labels read as labels; the figures and the totals carry the weight. */
+tbody th {
+  font-weight: 400;
 }
 
 tfoot th,
@@ -441,7 +496,7 @@ tfoot td {
 }
 
 .cell {
-  font-size: 0.73rem;
+  font-size: var(--text-caption);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color: var(--text-muted);
 }
@@ -476,10 +531,6 @@ tfoot td {
 
 .sleeves .money-input input {
   width: 9rem;
-}
-
-.works-out {
-  font-size: 0.82rem;
 }
 
 /*
@@ -521,8 +572,8 @@ tfoot td {
 }
 
 .sleeve-manual > td > p {
-  margin: 0 0 0.4rem;
-  font-size: 0.8rem;
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-caption);
 }
 
 /* Nested in the sleeves table, so it needs its own width rather than 100%. */
@@ -535,21 +586,15 @@ tfoot td {
   min-width: 14rem;
 }
 
-.position {
-  display: inline-block;
-  margin-right: 0.8rem;
-  white-space: nowrap;
-}
-
 .bucket-totals {
   margin-top: 1rem;
 }
 
 .model {
   border: 1px solid var(--border);
-  border-radius: 5px;
-  padding: 0.5rem 1rem 0.9rem;
-  margin: 0.75rem 0;
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  margin: var(--space-3) 0;
   background: var(--bg);
 }
 
@@ -569,8 +614,8 @@ tfoot td {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  padding: 0.6rem 1rem;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
 }
 
 .model-summary {
@@ -582,7 +627,7 @@ tfoot td {
 }
 
 .model-summary .muted {
-  font-size: 0.85rem;
+  font-size: var(--text-caption);
 }
 
 .percent-input {
@@ -602,9 +647,9 @@ tfoot td {
 
 .account {
   border: 1px solid var(--border);
-  border-radius: 5px;
-  padding: 0.5rem 1rem 0.9rem;
-  margin-bottom: 0.9rem;
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  margin-bottom: var(--space-3);
   background: var(--bg);
 }
 
@@ -632,30 +677,25 @@ tfoot td {
 }
 
 .empty {
-  margin: 0.5rem 0;
-  font-size: 0.88rem;
+  margin: var(--space-2) 0;
+  font-size: var(--text-body);
   color: var(--text-muted);
 }
 
 /* Tags */
 
+/* A short neutral label (a tax funnel, where a figure came from). Not a warning. */
 .tag {
   display: inline-block;
-  margin-left: 0.35rem;
-  padding: 0 0.35rem;
-  border-radius: 3px;
-  font-size: 0.68rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  border: 1px solid var(--border-strong);
+  margin-left: var(--space-1);
+  padding: 0 6px;
+  border-radius: var(--radius-control);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  line-height: 1.5;
+  border: 1px solid var(--border);
+  background: var(--bg-muted);
   color: var(--text-muted);
-}
-
-.tag-warn {
-  border-color: #d9b45c;
-  background: #fdf6e3;
-  color: #6b5518;
 }
 
 /* Buckets */
@@ -706,8 +746,8 @@ tfoot td {
   display: grid;
   grid-template-columns: 0.8rem 1fr auto 4rem;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.9rem;
+  gap: var(--space-2);
+  font-size: var(--text-body);
   font-variant-numeric: tabular-nums;
 }
 
@@ -739,32 +779,37 @@ tfoot td {
 
 /* Notices */
 
+/*
+ * A notice. Three tones only: info (neutral, for context), warning (amber,
+ * something the advisor should act on), error (red, something failed).
+ */
 .callout {
-  margin-top: 0.9rem;
-  padding: 0.6rem 0.8rem;
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
   border-left: 3px solid var(--border-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   background: var(--bg-muted);
-  font-size: 0.87rem;
+  font-size: var(--text-body);
 }
 
 .callout strong {
   display: block;
-  margin-bottom: 0.15rem;
+  margin-bottom: var(--space-1);
 }
 
 .callout p {
   margin: 0;
 }
 
-.callout-blocked {
+.callout-error {
   border-left-color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .callout-warning {
-  border-left-color: #d9b45c;
-  background: #fdf6e3;
+  border-left-color: var(--warning-border);
+  background: var(--warning-soft);
 }
 
 .callout code {
@@ -775,9 +820,9 @@ tfoot td {
 
 .definition {
   border: 1px solid var(--border);
-  border-radius: 5px;
-  padding: 0.6rem 0.9rem;
-  margin-bottom: 0.6rem;
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-2);
 }
 
 .definition-head {
@@ -789,7 +834,7 @@ tfoot td {
 }
 
 .definition-head label {
-  font-size: 0.78rem;
+  font-size: var(--text-caption);
   font-weight: 600;
   margin-left: auto;
 }
@@ -827,7 +872,7 @@ tfoot td {
 }
 
 .new-ticker-note {
-  font-size: 0.8rem;
+  font-size: var(--text-caption);
 }
 
 .new-ticker .field-error {
@@ -872,14 +917,73 @@ table.holdings {
   margin-top: 1rem;
 }
 
-table.holdings caption,
 table caption {
   caption-side: top;
   text-align: left;
   font-weight: 600;
-  padding-bottom: 0.4rem;
+  padding-bottom: var(--space-2);
+}
+
+/* "About this view": background detail, closed until the reader wants it. */
+.about {
+  margin-top: var(--space-3);
+  font-size: var(--text-caption);
+  color: var(--text-muted);
+}
+
+.about summary {
+  cursor: pointer;
+  width: fit-content;
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.about p {
+  margin: var(--space-2) 0 0;
+}
+
+/* An (i) beside a label; its explanation is on hover and to screen readers. */
+.info-tip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: var(--space-1);
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+  font-style: normal;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: help;
+  vertical-align: middle;
+}
+
+/* One status line under an account's split: what still needs doing there. */
+.account-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
 }
 
 .new-ticker .money-input input {
   width: 8rem;
+}
+
+/* A block's key figure, with its context beside it. */
+.metric-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  margin: 0 0 var(--space-3);
+}
+
+.metric {
+  font-size: var(--text-section);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }

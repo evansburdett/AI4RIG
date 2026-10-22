@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 
 import { BucketBar } from '../components/BucketBar.js';
 import { Callout } from '../components/Callout.js';
+import { About } from '../components/Help.js';
 import {
   bucketsByAccount,
   computeBreakdown,
@@ -79,10 +80,7 @@ export function AssetClassBreakdown({ clientCase, tickers, models, feeTiers }: P
 
       <section className="card">
         <h3>Target against actual</h3>
-        <p className="muted">
-          Target is what the worksheet says this client needs in each bucket. Actual is what the
-          advisor has put in each bucket across the accounts.
-        </p>
+        <p className="muted">What the plan needs in each bucket, against what the accounts hold.</p>
 
         <BucketBar
           totalCents={breakdown.totalCents}
@@ -136,11 +134,14 @@ export function AssetClassBreakdown({ clientCase, tickers, models, feeTiers }: P
           </tbody>
         </table>
 
-        <p className="field-hint">
-          Target percentages are derived from this client&rsquo;s worksheet inputs, per RIG&rsquo;s
-          answer that they are &ldquo;calculated using the inputs we provided on the attached
-          spreadsheet.&rdquo;
-        </p>
+        <About>
+          <p>
+            Target is what the questionnaire says this client needs in each bucket. Actual is what
+            the advisor has put in each bucket across the accounts. Target percentages come from
+            this client&rsquo;s own answers, per RIG&rsquo;s answer that they are &ldquo;calculated
+            using the inputs we provided on the attached spreadsheet.&rdquo;
+          </p>
+        </About>
       </section>
 
       <section className="card">
@@ -224,17 +225,14 @@ export function AssetClassBreakdown({ clientCase, tickers, models, feeTiers }: P
               />
               {BUCKET_LABELS[composition.bucket]} bucket
             </h3>
-            <p className="muted">
-              {formatCents(composition.valueCents)} — {formatPercent(composition.pctOfPortfolio)} of
-              the portfolio
+            <p className="metric-line">
+              <span className="metric">{formatCents(composition.valueCents)}</span>
+              <span className="muted">{formatPercent(composition.pctOfPortfolio)} of the portfolio</span>
               {bucketDrift !== undefined && bucketDrift.deltaCents !== 0 && (
-                <>
-                  {' · '}
-                  <strong>
-                    {formatCentsWhole(Math.abs(bucketDrift.deltaCents))}{' '}
-                    {bucketDrift.deltaCents > 0 ? 'over' : 'under'} target
-                  </strong>
-                </>
+                <span className="text-warn">
+                  {formatCentsWhole(Math.abs(bucketDrift.deltaCents))}{' '}
+                  {bucketDrift.deltaCents > 0 ? 'over' : 'under'} target
+                </span>
               )}
             </p>
 
@@ -329,8 +327,8 @@ function SliceTable({
       <thead>
         <tr>
           <th scope="col">Asset class</th>
-          <th scope="col">Value</th>
-          <th scope="col">Share</th>
+          <th scope="col" className="amount">Value</th>
+          <th scope="col" className="amount">Share</th>
           <th scope="col">
             <span className="visually-hidden">Proportion</span>
           </th>

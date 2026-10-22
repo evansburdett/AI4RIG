@@ -43,7 +43,7 @@ export function Models({ models, tickers, onSave, onDelete, onAddTicker }: Props
         </p>
       </header>
 
-      <Callout tone="warning" title="Placeholder models">
+      <Callout tone="info" title="Placeholder models">
         RIG has not sent its vendor models yet. These are built from the placeholder tickers so the
         profile has something to pick. Edit or replace them freely.
       </Callout>

@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import { AccountCard } from '../components/AccountCard.js';
 import { BucketBar } from '../components/BucketBar.js';
 import { Callout } from '../components/Callout.js';
+import { About, InfoTip } from '../components/Help.js';
 import { LifeExpectancyField } from '../components/LifeExpectancyField.js';
 import { ProposalShares } from '../components/ProposalShares.js';
 import {
@@ -25,6 +26,7 @@ import {
   householdPlanYears,
   stageForPhase,
 } from '../domain/lifeStage.js';
+import { formatDateTime } from '../domain/dates.js';
 import { formatCents, formatCentsWhole, formatPercent } from '../domain/money.js';
 import { formatBps } from '../domain/percent.js';
 import {
@@ -115,13 +117,12 @@ export function ClientProfile({
         <h2>Client profile</h2>
         <p className="muted">
           Case {clientCase.clientNumber} · plan {clientCase.planNumber} · last saved{' '}
-          {new Date(clientCase.updatedAt).toLocaleString()}
+          {formatDateTime(clientCase.updatedAt)}
         </p>
       </header>
 
       <section className="card">
         <h3>Household</h3>
-        <p className="muted">Year of birth only. Age is derived from it.</p>
 
         <div className="grid two">
           {clientCase.people.map((person, index) => {
@@ -169,7 +170,7 @@ export function ClientProfile({
                     label="Other health concern"
                     value={person.healthConcernOther}
                     placeholder="Condition only"
-                    hint="The condition itself. Never a name, a place, or anything else identifying."
+                    hint="The condition only. No names, places, or anything identifying."
                     onChange={(healthConcernOther) => updatePerson({ healthConcernOther })}
                   />
                 )}
@@ -246,11 +247,10 @@ export function ClientProfile({
             onChange={(lifeStage) => patch({ lifeStage })}
           />
           <SelectField
-            label="Tax bracket"
+            label="Federal tax bracket"
             value={clientCase.taxBracketPct === null ? '' : String(clientCase.taxBracketPct)}
             options={TAX_BRACKET_OPTIONS}
             labels={TAX_BRACKET_LABELS}
-            hint="Federal marginal rate."
             onChange={(value) => patch({ taxBracketPct: value === '' ? null : Number(value) })}
           />
           <DerivedField
@@ -260,14 +260,13 @@ export function ClientProfile({
               totals.investableAssetsCents > 0
                 ? `${formatPercent(
                     Math.round((totals.advisoryFeeCents / totals.investableAssetsCents) * 1000) / 10,
-                  )} of all balances, from RIG's fee tiers. Held as cash in each account's Now.`
-                : "From RIG's fee tiers once balances are entered."
+                  )} of balances, held as cash in Now`
+                : 'Worked out once balances are entered'
             }
           />
           <TextField
-            label="Initials"
+            label="Initials (display only)"
             value={clientCase.initials}
-            hint="Display label only."
             onChange={(initials) => patch({ initials })}
           />
         </div>
@@ -369,10 +368,7 @@ export function ClientProfile({
 
       <section className="card">
         <h3>Plan totals</h3>
-        <p className="muted">
-          Now and Soon come from the answers above. Later is total investable assets less Now and
-          less Soon, so it fills in as account balances are entered below.
-        </p>
+        <p className="muted">What the client needs in each bucket.</p>
 
         <BucketBar
           totalCents={totals.investableAssetsCents}
@@ -391,36 +387,17 @@ export function ClientProfile({
           </Callout>
         )}
 
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">Stage of life</th>
-              <th scope="col" className="amount">
-                Now %
-              </th>
-              <th scope="col" className="amount">
-                Soon %
-              </th>
-              <th scope="col" className="amount">
-                Later %
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <th scope="row">{LIFE_STAGE_LABELS[target.lifeStage]}</th>
-              <td className="amount">{formatPercent(target.nowPct)}</td>
-              <td className="amount">{formatPercent(target.soonPct)}</td>
-              <td className="amount">{formatPercent(target.laterPct)}</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <p className="field-hint">
-          Derived from this client&rsquo;s worksheet inputs, not from a table keyed by life stage.
-          Stage of life shows up in which inputs are non-zero: an accumulator with no income gap and
-          no Social Security bridge gets a small Soon bucket without anything having to weight it.
-        </p>
+        <About title="How these are worked out">
+          <p>
+            Now and Soon come from the answers above. Later is total investable assets less Now and
+            less Soon, so it fills in as account balances are entered below.
+          </p>
+          <p>
+            The split comes from this client&rsquo;s own answers, not from a table keyed by stage of
+            life. An accumulator with no income gap and no Social Security bridge gets a small Soon
+            bucket without anything having to weight it.
+          </p>
+        </About>
       </section>
 
       <section className="card">
@@ -434,9 +411,7 @@ export function ClientProfile({
           </button>
         </div>
         <p className="muted">
-          Enter each account&rsquo;s balance, then split it across Now, Soon, and Later until the
-          plan above is placed, and pick a model or your own symbols for each. The positions are
-          worked out from there.
+          Enter each balance, split it across the buckets, then pick a model or symbols.
         </p>
 
         <BucketTotals clientCase={clientCase} target={target} />
@@ -548,7 +523,7 @@ function BucketTotals({ clientCase, target }: { clientCase: ClientCase; target: 
                 ) : left > 0 ? (
                   formatCentsWhole(left)
                 ) : (
-                  <span className="tag tag-warn">{formatCentsWhole(-left)} over</span>
+                  <span className="text-warn">{formatCentsWhole(-left)} over</span>
                 )}
               </td>
             </tr>
@@ -628,11 +603,7 @@ function WorksheetLines({ worksheet }: { worksheet: BucketWorksheet }) {
           <tr key={line.cell}>
             <th scope="row">
               {line.label}
-              {line.note !== undefined && (
-                <span className="tag tag-warn" title={line.note}>
-                  check
-                </span>
-              )}
+              {line.note !== undefined && <InfoTip text={line.note} />}
             </th>
             <td className="cell">{line.cell}</td>
             <td className="amount">{formatCents(line.amountCents)}</td>
