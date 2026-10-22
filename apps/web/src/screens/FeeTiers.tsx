@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { Callout } from '../components/Callout.js';
 import { centsToInput, formatCents, parseCents } from '../domain/money.js';
-import { bpsToPercentInput, formatBps, parsePercentToBps } from '../domain/percent.js';
+import { bpsToPercentInput, parsePercentToBps } from '../domain/percent.js';
 import type { AdvisoryFeeTier } from '../domain/types.js';
 import { FEE_TIER_BASIS } from '../domain/worksheet.js';
 
@@ -179,12 +179,11 @@ export function FeeTiers({ tiers, onSave }: Props) {
       </section>
 
       <section className="card">
-        <h3>Still to confirm with RIG</h3>
+        <h3>Which balance picks the tier</h3>
         <p>
-          Whether an account&rsquo;s rate comes from <strong>its own balance</strong> or from the{' '}
-          <strong>household&rsquo;s total</strong> across all accounts. The app uses{' '}
-          {FEE_TIER_BASIS === 'ACCOUNT' ? 'each account’s own balance' : 'the household total'}, matching
-          the Sept 23 example of one $1.2M joint account at {formatBps(125)}.
+          {FEE_TIER_BASIS === 'HOUSEHOLD'
+            ? 'The household’s total across all accounts picks the tier, and that one rate is charged on every account. Each account holds its own share of the fee as cash in its Now bucket.'
+            : 'Each account’s own balance picks its tier.'}
         </p>
       </section>
     </div>

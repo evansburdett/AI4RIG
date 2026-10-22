@@ -38,13 +38,12 @@ export interface BucketWorksheet {
  * Where each account's fee rate is looked up (US-19): its own balance, or the
  * household's total across all accounts.
  *
- * NOT CONFIRMED BY RIG. Their Sept 23 example was one account ("a $1.2M joint
- * account at 1.25% is $15,000") and fee cash is set aside per account, so the
- * default is per account. If RIG says the tier comes from total AUM, change
- * this to 'HOUSEHOLD'; nothing else needs to move. Either way the rate applies
- * to the whole balance it is charged on (a breakpoint schedule).
+ * Confirmed by Blake on Oct 22: the tier comes from the household's total
+ * across all accounts. That one rate is charged on each account's balance,
+ * and each account still holds its own fee cash in its Now bucket. 'ACCOUNT'
+ * is kept for comparison and tests.
  */
-export const FEE_TIER_BASIS: 'ACCOUNT' | 'HOUSEHOLD' = 'ACCOUNT';
+export const FEE_TIER_BASIS: 'ACCOUNT' | 'HOUSEHOLD' = 'HOUSEHOLD';
 
 /** One account's annual advisory fee, set aside as cash in its Now bucket. */
 export interface AccountFee {
