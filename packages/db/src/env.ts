@@ -17,7 +17,16 @@ export function loadRootEnv(): void {
   if (loaded) return;
   loaded = true;
 
-  const envFile = resolve(findRepoRoot(), '.env');
+  let root: string;
+  try {
+    root = findRepoRoot();
+  } catch {
+    // Not inside the repo: the installed desktop app. It has no .env and is
+    // configured by the Electron shell instead (apps/desktop).
+    return;
+  }
+
+  const envFile = resolve(root, '.env');
   if (existsSync(envFile)) {
     config({ path: envFile, quiet: true });
   }
