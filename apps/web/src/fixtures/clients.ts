@@ -30,19 +30,11 @@ function sleeves(now: SleeveSpec, soon: SleeveSpec, later: SleeveSpec): Account[
   return [one('NOW', now), one('SOON', soon), one('LATER', later)];
 }
 
-function testPositions(
-  nowCents: number,
-  soonCents: number,
-  laterCents: number,
-): Account['positions'] {
-  return [
-    { bucket: 'NOW', tickerSymbol: 'SGOV', sharesMicros: nowCents * 100 },
-    { bucket: 'SOON', tickerSymbol: 'BND', sharesMicros: soonCents * 100 },
-    { bucket: 'LATER', tickerSymbol: 'VTI', sharesMicros: laterCents * 100 },
-  ];
-}
-
-/** Buckets land exactly on the workbook's $190,000 / $914,700 / $1,895,300. */
+/**
+ * Buckets land exactly on the plan: the workbook's $190,000 Now plus $39,000 of
+ * advisory fee cash (US-19: $15,000 + $18,750 + $5,250, each held in its own
+ * account's Now), the workbook's $914,700 Soon, and $1,856,300 Later.
+ */
 const WORKBOOK_CASE: ClientCase = {
   clientNumber: '1042',
   initials: 'A.B.',
@@ -54,7 +46,8 @@ const WORKBOOK_CASE: ClientCase = {
       gender: 'MALE',
       healthConcerns: [],
       healthConcernOther: '',
-      otherHealthConcernAdjustmentYears: null,
+      lifeExpectancyAge: 88,
+      lifeExpectancySource: 'ADVISOR',
     },
     {
       role: 'SPOUSE',
@@ -63,7 +56,8 @@ const WORKBOOK_CASE: ClientCase = {
       // Two concerns plus a description, to exercise US-27 on the profile screen.
       healthConcerns: ['HEART', 'OTHER'],
       healthConcernOther: 'Managed hypertension',
-      otherHealthConcernAdjustmentYears: 3,
+      lifeExpectancyAge: 85,
+      lifeExpectancySource: 'AI',
     },
   ],
   moneyCyclePhase: 'DISTRIBUTION',
@@ -76,8 +70,8 @@ const WORKBOOK_CASE: ClientCase = {
       taxFunnel: 'TAXABLE',
       maskedNumber: '4417',
       balanceCents: 1_200_000_00,
-      positions: testPositions(190_000_00, 400_000_00, 610_000_00),
-      sleeves: sleeves([190_000, '9001'], [400_000, '9002'], [610_000, '9003']),
+      proposalShares: [],
+      sleeves: sleeves([205_000, '9001'], [400_000, '9002'], [595_000, '9003']),
     },
     {
       id: '9002',
@@ -85,8 +79,8 @@ const WORKBOOK_CASE: ClientCase = {
       taxFunnel: 'PRE_TAX',
       maskedNumber: '8830',
       balanceCents: 1_500_000_00,
-      positions: testPositions(0, 514_700_00, 985_300_00),
-      sleeves: sleeves([0, null], [514_700, '9002'], [985_300, '9003']),
+      proposalShares: [],
+      sleeves: sleeves([18_750, '9001'], [514_700, '9002'], [966_550, '9003']),
     },
     {
       id: '9003',
@@ -94,8 +88,8 @@ const WORKBOOK_CASE: ClientCase = {
       taxFunnel: 'TAX_FREE',
       maskedNumber: '2291',
       balanceCents: 300_000_00,
-      positions: testPositions(0, 0, 300_000_00),
-      sleeves: sleeves([0, null], [0, null], [300_000, '9004']),
+      proposalShares: [],
+      sleeves: sleeves([5_250, '9001'], [0, null], [294_750, '9004']),
     },
   ],
   cashOnHandCents: 85_000_00,
@@ -118,6 +112,7 @@ const WORKBOOK_CASE: ClientCase = {
     forcedWithdrawals: [],
     conservativeReserveCents: 100_000_00,
   },
+  proposalLockedAt: null,
   updatedAt: '2026-09-15T14:02:00.000Z',
 };
 
@@ -133,10 +128,11 @@ const ACCUMULATOR_CASE: ClientCase = {
     {
       role: 'CLIENT',
       birthYear: 1988,
-      gender: 'MALE',
+      gender: 'FEMALE',
       healthConcerns: [],
       healthConcernOther: '',
-      otherHealthConcernAdjustmentYears: null,
+      lifeExpectancyAge: 90,
+      lifeExpectancySource: 'ADVISOR',
     },
   ],
   moneyCyclePhase: 'ACCUMULATION',
@@ -149,7 +145,7 @@ const ACCUMULATOR_CASE: ClientCase = {
       taxFunnel: 'TAXABLE',
       maskedNumber: '1005',
       balanceCents: 280_000_00,
-      positions: testPositions(25_000_00, 0, 255_000_00),
+      proposalShares: [],
       // Later is picked by hand here, the one manual bucket in the samples.
       sleeves: sleeves([25_000, '9001'], [0, null], [
         240_000,
@@ -165,7 +161,7 @@ const ACCUMULATOR_CASE: ClientCase = {
       taxFunnel: 'TAX_FREE',
       maskedNumber: '7742',
       balanceCents: 240_000_00,
-      positions: testPositions(0, 60_000_00, 180_000_00),
+      proposalShares: [],
       sleeves: sleeves([0, null], [60_000, null], [180_000, '9004']),
     },
   ],
@@ -186,6 +182,7 @@ const ACCUMULATOR_CASE: ClientCase = {
     forcedWithdrawals: [],
     conservativeReserveCents: 75_000_00,
   },
+  proposalLockedAt: null,
   updatedAt: '2026-09-11T09:20:00.000Z',
 };
 

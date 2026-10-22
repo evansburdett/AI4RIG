@@ -21,7 +21,7 @@ export function newAccount(): Account {
     taxFunnel: DEFAULT_TAX_FUNNEL.SINGLE,
     maskedNumber: '',
     balanceCents: 0,
-    positions: [],
+    proposalShares: [],
     // A new bucket follows a model, like most of RIG's do; the advisor
     // switches it to manual if this client needs something of their own.
     sleeves: BUCKETS.map((bucket) => ({

@@ -3,6 +3,9 @@ import { useMemo } from 'react';
 import { AccountCard } from '../components/AccountCard.js';
 import { BucketBar } from '../components/BucketBar.js';
 import { Callout } from '../components/Callout.js';
+import { About, InfoTip } from '../components/Help.js';
+import { LifeExpectancyField } from '../components/LifeExpectancyField.js';
+import { ProposalShares } from '../components/ProposalShares.js';
 import {
   CheckboxGroupField,
   DerivedField,
@@ -14,35 +17,40 @@ import { MoneyInput } from '../components/MoneyInput.js';
 import { bucketsByAccount } from '../domain/breakdown.js';
 import { newAccount, newExpense, newGapEntry } from '../domain/factory.js';
 import {
+  ACCOUNT_TYPE_LABELS,
+  GENDER_LABELS,
   HEALTH_CONCERN_LABELS,
   LIFE_STAGE_LABELS,
   MONEY_CYCLE_LABELS,
-  STAGES_BY_PHASE,
   ageFromBirthYear,
   householdPlanYears,
-  estimatedLifeExpectancyAge,
   stageForPhase,
 } from '../domain/lifeStage.js';
+import { formatDateTime } from '../domain/dates.js';
 import { formatCents, formatCentsWhole, formatPercent } from '../domain/money.js';
+import { formatBps } from '../domain/percent.js';
 import {
   GENDERS,
   HEALTH_CONCERNS,
-  LIFE_STAGES,
+  LIFE_STAGES_BY_PHASE,
   MONEY_CYCLE_PHASES,
   TAX_BRACKETS,
 } from '../domain/types.js';
 import type {
+  AdvisoryFeeTier,
   AllocationTarget,
   ClientCase,
   GapEntry,
+  LifeExpectancyEstimate,
+  LifeExpectancyRequest,
   ModelPortfolio,
   PlannedExpense,
   Ticker,
 } from '../domain/types.js';
 import {
-  ANNUAL_ADVISORY_FEE_PERCENT,
   computePlanTotals,
   targetAllocation,
+  type AccountFee,
   type BucketWorksheet,
 } from '../domain/worksheet.js';
 
@@ -51,8 +59,13 @@ interface Props {
   models: readonly ModelPortfolio[];
   /** For the symbol picker on a manual bucket (US-23). */
   tickers: readonly Ticker[];
+  /** RIG's fee schedule (US-19), for the fee cash in each account's Now. */
+  feeTiers: readonly AdvisoryFeeTier[];
   /** Turns a manual bucket into a reusable model. */
   onSaveAsModel: (model: ModelPortfolio) => Promise<ModelPortfolio>;
+  onAddTicker: (ticker: Ticker) => Promise<Ticker>;
+  /** US-28: an AI suggestion for one person's life expectancy. */
+  onEstimateLifeExpectancy: (request: LifeExpectancyRequest) => Promise<LifeExpectancyEstimate>;
   onChange: (next: ClientCase) => void;
   today: Date;
 }
@@ -60,22 +73,38 @@ interface Props {
 /**
  * US-01 — client profile intake.
  *
- * Ordered to follow RIG's two worksheets: household, accounts and buckets,
- * fees and cash, then the Now and Soon questions with the buckets recomputed as
- * the advisor types. Edits go to a working copy held by the parent; nothing is
- * written until Save.
+ * Questionnaire first (US-22), in the order RIG asked for on Sept 23: the
+ * household, then the Now and Soon questions, then the bucket totals they
+ * produce, then placing those totals in the client's accounts, the fee cash,
+ * and the proposal in shares. Edits go to a working copy held by the parent;
+ * nothing is written until Save.
  */
 export function ClientProfile({
   clientCase,
   models,
   tickers,
+  feeTiers,
   onChange,
   onSaveAsModel,
+  onAddTicker,
+  onEstimateLifeExpectancy,
   today,
 }: Props) {
-  const totals = useMemo(() => computePlanTotals(clientCase), [clientCase]);
+  const totals = useMemo(() => computePlanTotals(clientCase, feeTiers), [clientCase, feeTiers]);
   const target = useMemo(() => targetAllocation(clientCase, totals), [clientCase, totals]);
   const planYears = householdPlanYears(clientCase.people, today);
+  const leftToPlace = useMemo(() => {
+    const placed = (bucket: 'NOW' | 'SOON' | 'LATER') =>
+      clientCase.accounts.reduce(
+        (sum, a) => sum + (a.sleeves.find((s) => s.bucket === bucket)?.amountCents ?? 0),
+        0,
+      );
+    return {
+      NOW: target.nowCents - placed('NOW'),
+      SOON: target.soonCents - placed('SOON'),
+      LATER: target.laterCents - placed('LATER'),
+    };
+  }, [clientCase.accounts, target]);
   const { nowInputs, soonInputs } = clientCase;
 
   function patch(changes: Partial<ClientCase>) {
@@ -88,21 +117,16 @@ export function ClientProfile({
         <h2>Client profile</h2>
         <p className="muted">
           Case {clientCase.clientNumber} · plan {clientCase.planNumber} · last saved{' '}
-          {new Date(clientCase.updatedAt).toLocaleString()}
+          {formatDateTime(clientCase.updatedAt)}
         </p>
       </header>
 
       <section className="card">
         <h3>Household</h3>
-        <p className="muted">Year of birth only. Age is derived from it.</p>
 
         <div className="grid two">
           {clientCase.people.map((person, index) => {
             const age = ageFromBirthYear(person.birthYear, today);
-            const lifeExpectancyAge = estimatedLifeExpectancyAge(person, today);
-            let estimatePrompt = 'Enter the Other concern adjustment';
-            if (age === null) estimatePrompt = 'Enter a valid birth year';
-            else if (person.gender === null) estimatePrompt = 'Select gender';
             const updatePerson = (changes: Partial<(typeof clientCase.people)[number]>) =>
               patch({
                 people: clientCase.people.map((p, i) => (i === index ? { ...p, ...changes } : p)),
@@ -120,24 +144,13 @@ export function ClientProfile({
                   onChange={(birthYear) => updatePerson({ birthYear })}
                 />
                 <DerivedField label="Age" value={age === null ? '—' : String(age)} />
-                <div className="field">
-                  <label htmlFor={`gender-${person.role}`}>Gender</label>
-                  <select
-                    id={`gender-${person.role}`}
-                    value={person.gender ?? ''}
-                    onChange={(event) => {
-                      const gender = GENDERS.find((option) => option === event.target.value) ?? null;
-                      updatePerson({ gender });
-                    }}
-                  >
-                    <option value="">Select gender</option>
-                    {GENDERS.map((gender) => (
-                      <option key={gender} value={gender}>
-                        {gender === 'MALE' ? 'Male' : 'Female'}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <SelectField
+                  label="Gender"
+                  value={person.gender ?? ''}
+                  options={GENDER_OPTIONS}
+                  labels={GENDER_OPTION_LABELS}
+                  onChange={(value) => updatePerson({ gender: value === '' ? null : value })}
+                />
                 <CheckboxGroupField
                   legend="Health concerns"
                   values={person.healthConcerns}
@@ -148,12 +161,7 @@ export function ClientProfile({
                     updatePerson({
                       healthConcerns,
                       // The description goes with the box that explained it.
-                      ...(healthConcerns.includes('OTHER')
-                        ? {
-                            otherHealthConcernAdjustmentYears:
-                              person.otherHealthConcernAdjustmentYears ?? 3,
-                          }
-                        : { healthConcernOther: '', otherHealthConcernAdjustmentYears: null }),
+                      ...(healthConcerns.includes('OTHER') ? {} : { healthConcernOther: '' }),
                     })
                   }
                 />
@@ -162,27 +170,15 @@ export function ClientProfile({
                     label="Other health concern"
                     value={person.healthConcernOther}
                     placeholder="Condition only"
-                    hint="The condition itself. Never a name, a place, or anything else identifying."
+                    hint="The condition only. No names, places, or anything identifying."
                     onChange={(healthConcernOther) => updatePerson({ healthConcernOther })}
                   />
                 )}
-                {person.healthConcerns.includes('OTHER') && (
-                  <NumberField
-                    label="Other concern adjustment (years)"
-                    value={person.otherHealthConcernAdjustmentYears}
-                    min={0}
-                    max={130}
-                    step={0.5}
-                    hint="Custom years subtracted from the baseline; starts at 3 years."
-                    onChange={(otherHealthConcernAdjustmentYears) =>
-                      updatePerson({ otherHealthConcernAdjustmentYears })
-                    }
-                  />
-                )}
-                <DerivedField
-                  label="Estimated life expectancy age"
-                  value={lifeExpectancyAge === null ? estimatePrompt : String(lifeExpectancyAge)}
-                  hint="SSA 2022 U.S. period-table estimate. Cancer, Stroke, and Heart each subtract 3 years; Other uses the custom adjustment. This is a planning estimate, not a personal prediction."
+                <LifeExpectancyField
+                  person={person}
+                  age={age}
+                  onChange={updatePerson}
+                  onEstimate={onEstimateLifeExpectancy}
                 />
                 {person.role === 'SPOUSE' && (
                   <button
@@ -210,7 +206,8 @@ export function ClientProfile({
                         gender: null,
                         healthConcerns: [],
                         healthConcernOther: '',
-                        otherHealthConcernAdjustmentYears: null,
+                        lifeExpectancyAge: null,
+                        lifeExpectancySource: null,
                       },
                     ],
                   })
@@ -233,99 +230,50 @@ export function ClientProfile({
             options={MONEY_CYCLE_PHASES}
             labels={MONEY_CYCLE_LABELS}
             onChange={(moneyCyclePhase) =>
-              patch({
-                moneyCyclePhase,
-                lifeStage: stageForPhase(moneyCyclePhase, clientCase.lifeStage),
-              })
+              patch({ moneyCyclePhase, lifeStage: stageForPhase(moneyCyclePhase, clientCase.lifeStage) })
             }
           />
           <SelectField
             label="Stage of life"
             value={clientCase.lifeStage}
-            options={STAGES_BY_PHASE[clientCase.moneyCyclePhase]}
+            // Only the phase's own stages (US-25). A case saved before this rule
+            // keeps showing its old stage until the advisor picks another.
+            options={
+              LIFE_STAGES_BY_PHASE[clientCase.moneyCyclePhase].includes(clientCase.lifeStage)
+                ? LIFE_STAGES_BY_PHASE[clientCase.moneyCyclePhase]
+                : [clientCase.lifeStage, ...LIFE_STAGES_BY_PHASE[clientCase.moneyCyclePhase]]
+            }
             labels={LIFE_STAGE_LABELS}
             onChange={(lifeStage) => patch({ lifeStage })}
           />
           <SelectField
-            label="Tax bracket"
+            label="Federal tax bracket"
             value={clientCase.taxBracketPct === null ? '' : String(clientCase.taxBracketPct)}
             options={TAX_BRACKET_OPTIONS}
             labels={TAX_BRACKET_LABELS}
-            hint="Federal marginal rate."
             onChange={(value) => patch({ taxBracketPct: value === '' ? null : Number(value) })}
           />
+          <DerivedField
+            label="Advisory fee, per year"
+            value={formatCents(totals.advisoryFeeCents)}
+            hint={
+              totals.investableAssetsCents > 0
+                ? `${formatPercent(
+                    Math.round((totals.advisoryFeeCents / totals.investableAssetsCents) * 1000) / 10,
+                  )} of balances, held as cash in Now`
+                : 'Worked out once balances are entered'
+            }
+          />
           <TextField
-            label="Initials"
+            label="Initials (display only)"
             value={clientCase.initials}
-            hint="Display label only."
             onChange={(initials) => patch({ initials })}
           />
         </div>
       </section>
 
       <section className="card">
-        <div className="card-head">
-          <h3>Accounts and buckets</h3>
-          <button
-            type="button"
-            onClick={() => patch({ accounts: [...clientCase.accounts, newAccount()] })}
-          >
-            Add account
-          </button>
-        </div>
-        <p className="muted">
-          Enter each account&rsquo;s balance, split it across Now, Soon, and Later, and pick a
-          model for each. The positions are worked out from the model.
-        </p>
-
-        {clientCase.accounts.length === 0 && (
-          <p className="empty">No accounts yet. Add one to start.</p>
-        )}
-
-        {clientCase.accounts.map((account) => (
-          <AccountCard
-            key={account.id}
-            account={account}
-            models={models}
-            tickers={tickers}
-            onSaveAsModel={onSaveAsModel}
-            onChange={(next) =>
-              patch({ accounts: clientCase.accounts.map((a) => (a.id === account.id ? next : a)) })
-            }
-            onRemove={() => patch({ accounts: clientCase.accounts.filter((a) => a.id !== account.id) })}
-          />
-        ))}
-
-        <BucketTotals clientCase={clientCase} tickers={tickers} target={target} />
-      </section>
-
-      <section className="card">
-        <h3>Fees and cash</h3>
-        <div className="grid three">
-          <DerivedField
-            label="Total account balances"
-            value={formatCents(totals.investableAssetsCents)}
-          />
-          <MoneyInput
-            label="Cash on hand at bank"
-            valueCents={clientCase.cashOnHandCents}
-            onChange={(cashOnHandCents) => patch({ cashOnHandCents })}
-          />
-          <MoneyInput
-            label="Extra spare tire"
-            valueCents={clientCase.spareTireCents}
-            onChange={(spareTireCents) => patch({ spareTireCents })}
-          />
-        </div>
-
-        <Callout tone="info" title="Annual advisory fee">
-          Calculated at {ANNUAL_ADVISORY_FEE_PERCENT}% of total account balances (
-          {formatCents(totals.advisoryFeeCents)}) and included in the Now bucket.
-        </Callout>
-      </section>
-
-      <section className="card">
-        <h3>Now bucket</h3>
+        <h3>Now bucket questions</h3>
         <div className="grid three">
           <MoneyInput
             label="Income draw per month"
@@ -359,7 +307,7 @@ export function ClientProfile({
       </section>
 
       <section className="card">
-        <h3>Soon bucket</h3>
+        <h3>Soon bucket questions</h3>
         <div className="grid three">
           <MoneyInput
             label="Annual income gap"
@@ -419,8 +367,8 @@ export function ClientProfile({
       </section>
 
       <section className="card">
-        <h3>Resulting plan</h3>
-        <p className="muted">Later is total investable assets less Now and less Soon.</p>
+        <h3>Plan totals</h3>
+        <p className="muted">What the client needs in each bucket.</p>
 
         <BucketBar
           totalCents={totals.investableAssetsCents}
@@ -439,40 +387,90 @@ export function ClientProfile({
           </Callout>
         )}
 
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">Stage of life</th>
-              <th scope="col" className="amount">
-                Now %
-              </th>
-              <th scope="col" className="amount">
-                Soon %
-              </th>
-              <th scope="col" className="amount">
-                Later %
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <th scope="row">{LIFE_STAGE_LABELS[target.lifeStage]}</th>
-              <td className="amount">{formatPercent(target.nowPct)}</td>
-              <td className="amount">{formatPercent(target.soonPct)}</td>
-              <td className="amount">{formatPercent(target.laterPct)}</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <p className="field-hint">
-          Derived from this client&rsquo;s worksheet inputs, not from a table keyed by life stage.
-          Stage of life shows up in which inputs are non-zero: an accumulator with no income gap and
-          no Social Security bridge gets a small Soon bucket without anything having to weight it.
-        </p>
+        <About title="How these are worked out">
+          <p>
+            Now and Soon come from the answers above. Later is total investable assets less Now and
+            less Soon, so it fills in as account balances are entered below.
+          </p>
+          <p>
+            The split comes from this client&rsquo;s own answers, not from a table keyed by stage of
+            life. An accumulator with no income gap and no Social Security bridge gets a small Soon
+            bucket without anything having to weight it.
+          </p>
+        </About>
       </section>
+
+      <section className="card">
+        <div className="card-head">
+          <h3>Place the plan in accounts</h3>
+          <button
+            type="button"
+            onClick={() => patch({ accounts: [...clientCase.accounts, newAccount()] })}
+          >
+            Add account
+          </button>
+        </div>
+        <p className="muted">
+          Enter each balance, split it across the buckets, then pick a model or symbols.
+        </p>
+
+        <BucketTotals clientCase={clientCase} target={target} />
+
+        {clientCase.accounts.length === 0 && (
+          <p className="empty">No accounts yet. Add one to start.</p>
+        )}
+
+        {clientCase.accounts.map((account) => (
+          <AccountCard
+            key={account.id}
+            account={account}
+            fee={totals.advisoryFees.find((f) => f.accountId === account.id)}
+            leftToPlace={leftToPlace}
+            models={models}
+            tickers={tickers}
+            onSaveAsModel={onSaveAsModel}
+            onAddTicker={onAddTicker}
+            onChange={(next) =>
+              patch({ accounts: clientCase.accounts.map((a) => (a.id === account.id ? next : a)) })
+            }
+            onRemove={() => patch({ accounts: clientCase.accounts.filter((a) => a.id !== account.id) })}
+          />
+        ))}
+
+      </section>
+
+      <section className="card">
+        <h3>Fees and cash</h3>
+        <div className="grid three">
+          <DerivedField
+            label="Total account balances"
+            value={formatCents(totals.investableAssetsCents)}
+          />
+          <MoneyInput
+            label="Cash on hand at bank"
+            valueCents={clientCase.cashOnHandCents}
+            onChange={(cashOnHandCents) => patch({ cashOnHandCents })}
+          />
+          <MoneyInput
+            label="Extra spare tire"
+            valueCents={clientCase.spareTireCents}
+            onChange={(spareTireCents) => patch({ spareTireCents })}
+          />
+        </div>
+
+        <AdvisoryFeeTable clientCase={clientCase} fees={totals.advisoryFees} total={totals.advisoryFeeCents} />
+      </section>
+
+      <ProposalShares clientCase={clientCase} models={models} tickers={tickers} onChange={onChange} />
     </div>
   );
 }
+
+const GENDER_OPTIONS = ['', ...GENDERS] as const;
+const GENDER_OPTION_LABELS: Record<(typeof GENDER_OPTIONS)[number], string> = {
+  '': 'Not entered',
+  ...GENDER_LABELS,
+};
 
 const TAX_BRACKET_OPTIONS = ['', ...TAX_BRACKETS.map(String)] as const;
 const TAX_BRACKET_LABELS: Record<string, string> = Object.fromEntries(
@@ -480,63 +478,118 @@ const TAX_BRACKET_LABELS: Record<string, string> = Object.fromEntries(
 );
 
 /**
- * What the accounts add up to in each bucket against what the worksheet below
- * says the client needs there. The same comparison as the Breakdown screen,
- * kept here so the advisor sees it while splitting the accounts.
+ * US-22: the plan's totals as the thing to place. For each bucket, what the
+ * questionnaire says the client needs, how much of it the accounts already
+ * hold, and what is still left to place. The same comparison as the Breakdown
+ * screen, kept here so the advisor sees it while splitting the accounts.
  */
-function BucketTotals({
-  clientCase,
-  tickers,
-  target,
-}: {
-  clientCase: ClientCase;
-  tickers: readonly Ticker[];
-  target: AllocationTarget;
-}) {
+function BucketTotals({ clientCase, target }: { clientCase: ClientCase; target: AllocationTarget }) {
   if (clientCase.accounts.length === 0) return null;
-  const rows = bucketsByAccount(clientCase, tickers);
+  const rows = bucketsByAccount(clientCase);
   const sum = (pick: (r: (typeof rows)[number]) => number) => rows.reduce((t, r) => t + pick(r), 0);
   const lines = [
-    { label: 'Now', actual: sum((r) => r.nowCents), target: target.nowCents },
-    { label: 'Soon', actual: sum((r) => r.soonCents), target: target.soonCents },
-    { label: 'Later', actual: sum((r) => r.laterCents), target: target.laterCents },
+    { label: 'Now', placed: sum((r) => r.nowCents), target: target.nowCents },
+    { label: 'Soon', placed: sum((r) => r.soonCents), target: target.soonCents },
+    { label: 'Later', placed: sum((r) => r.laterCents), target: target.laterCents },
   ];
 
   return (
     <table className="bucket-totals">
       <thead>
         <tr>
-          <th scope="col">All accounts</th>
+          <th scope="col">Bucket</th>
           <th scope="col" className="amount">
-            Actual positions
+            Plan needs
           </th>
           <th scope="col" className="amount">
-            Worksheet says
+            Placed in accounts
           </th>
           <th scope="col" className="amount">
-            Difference
+            Left to place
           </th>
         </tr>
       </thead>
       <tbody>
         {lines.map((line) => {
-          const delta = line.actual - line.target;
+          const left = line.target - line.placed;
           return (
             <tr key={line.label}>
               <th scope="row">{line.label}</th>
-              <td className="amount">{formatCentsWhole(line.actual)}</td>
               <td className="amount">{formatCentsWhole(line.target)}</td>
+              <td className="amount">{formatCentsWhole(line.placed)}</td>
               <td className="amount">
-                {delta === 0 ? (
-                  <span className="muted">matches</span>
+                {left === 0 ? (
+                  <span className="muted">all placed</span>
+                ) : left > 0 ? (
+                  formatCentsWhole(left)
                 ) : (
-                  `${delta > 0 ? '+' : '\u2212'}${formatCentsWhole(Math.abs(delta))}`
+                  <span className="text-warn">{formatCentsWhole(-left)} over</span>
                 )}
               </td>
             </tr>
           );
         })}
       </tbody>
+    </table>
+  );
+}
+
+/**
+ * US-19: each account's fee under RIG's tiers. The whole balance is charged
+ * the rate of the tier it falls in, and that much cash sits in the account's
+ * Now bucket.
+ */
+function AdvisoryFeeTable({
+  clientCase,
+  fees,
+  total,
+}: {
+  clientCase: ClientCase;
+  fees: readonly AccountFee[];
+  total: number;
+}) {
+  if (fees.length === 0) return null;
+  return (
+    <table>
+      <caption>Advisory fee cash, one year</caption>
+      <thead>
+        <tr>
+          <th scope="col">Account</th>
+          <th scope="col" className="amount">
+            Balance
+          </th>
+          <th scope="col" className="amount">
+            Tier rate
+          </th>
+          <th scope="col" className="amount">
+            Fee cash in Now
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {fees.map((fee) => {
+          const account = clientCase.accounts.find((a) => a.id === fee.accountId);
+          return (
+            <tr key={fee.accountId}>
+              <th scope="row">
+                {account === undefined ? '' : ACCOUNT_TYPE_LABELS[account.accountType]}
+                {account !== undefined && account.maskedNumber !== '' && ` ····${account.maskedNumber}`}
+              </th>
+              <td className="amount">{formatCents(fee.balanceCents)}</td>
+              <td className="amount">{fee.rateBps === 0 ? '—' : formatBps(fee.rateBps)}</td>
+              <td className="amount">{formatCents(fee.feeCents)}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+      <tfoot>
+        <tr>
+          <th scope="row">Total</th>
+          <td />
+          <td />
+          <td className="amount">{formatCents(total)}</td>
+        </tr>
+      </tfoot>
     </table>
   );
 }
@@ -550,11 +603,7 @@ function WorksheetLines({ worksheet }: { worksheet: BucketWorksheet }) {
           <tr key={line.cell}>
             <th scope="row">
               {line.label}
-              {line.note !== undefined && (
-                <span className="tag tag-warn" title={line.note}>
-                  check
-                </span>
-              )}
+              {line.note !== undefined && <InfoTip text={line.note} />}
             </th>
             <td className="cell">{line.cell}</td>
             <td className="amount">{formatCents(line.amountCents)}</td>

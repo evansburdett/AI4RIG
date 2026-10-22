@@ -20,6 +20,7 @@ interface Props {
   tickers: readonly Ticker[];
   onSave: (model: ModelPortfolio) => Promise<ModelPortfolio>;
   onDelete: (id: string) => Promise<void>;
+  onAddTicker: (ticker: Ticker) => Promise<Ticker>;
 }
 
 /**
@@ -28,7 +29,7 @@ interface Props {
  * a custom model is just another one. On the profile, the advisor picks a model
  * for each account's Now, Soon, and Later money.
  */
-export function Models({ models, tickers, onSave, onDelete }: Props) {
+export function Models({ models, tickers, onSave, onDelete, onAddTicker }: Props) {
   /** The unsaved new model, held in state so the editor is not reset on every render. */
   const [blank, setBlank] = useState<ModelPortfolio | null>(null);
 
@@ -42,7 +43,7 @@ export function Models({ models, tickers, onSave, onDelete }: Props) {
         </p>
       </header>
 
-      <Callout tone="warning" title="Placeholder models">
+      <Callout tone="info" title="Placeholder models">
         RIG has not sent its vendor models yet. These are built from the placeholder tickers so the
         profile has something to pick. Edit or replace them freely.
       </Callout>
@@ -57,6 +58,7 @@ export function Models({ models, tickers, onSave, onDelete }: Props) {
         <ModelEditor
           model={blank}
           tickers={tickers}
+          onAddTicker={onAddTicker}
           onSave={async (model) => {
             await onSave(model);
             setBlank(null);
@@ -80,6 +82,7 @@ export function Models({ models, tickers, onSave, onDelete }: Props) {
                 key={model.id}
                 model={model}
                 tickers={tickers}
+                onAddTicker={onAddTicker}
                 onSave={async (next) => {
                   await onSave(next);
                 }}
@@ -98,11 +101,13 @@ function ModelEditor({
   tickers,
   onSave,
   onDelete,
+  onAddTicker,
   startOpen = false,
 }: {
   model: ModelPortfolio;
   tickers: readonly Ticker[];
   onSave: (model: ModelPortfolio) => Promise<void>;
+  onAddTicker: (ticker: Ticker) => Promise<Ticker>;
   onDelete: () => Promise<void>;
   startOpen?: boolean;
 }) {
@@ -228,7 +233,13 @@ function ModelEditor({
         </div>
       </div>
 
-      <WeightedLines lines={lines} tickers={tickers} bucket={bucket} onChange={setLines} />
+      <WeightedLines
+        lines={lines}
+        tickers={tickers}
+        bucket={bucket}
+        onChange={setLines}
+        onAddTicker={onAddTicker}
+      />
 
       <div className="button-row">
         <button type="button" className="primary" disabled={problem !== null || busy} onClick={() => void save()}>

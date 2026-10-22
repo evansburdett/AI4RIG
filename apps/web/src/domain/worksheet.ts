@@ -7,10 +7,11 @@
  * (US-09). It is kept pure so moving it is a file move.
  */
 
-import { addCents, type Cents } from '@ai4rig/engine';
+import { addCents, advisoryFeeCents, feeTierFor, type Cents } from '@ai4rig/engine';
 
 import { multiplyCents, percentOf } from './money.js';
 import type {
+  AdvisoryFeeTier,
   AllocationTarget,
   BucketType,
   ClientCase,
@@ -18,8 +19,6 @@ import type {
   NowInputs,
   SoonInputs,
 } from './types.js';
-
-export const ANNUAL_ADVISORY_FEE_PERCENT = 1;
 
 export interface WorksheetLine {
   readonly label: string;
@@ -35,11 +34,34 @@ export interface BucketWorksheet {
   readonly totalCents: Cents;
 }
 
+/**
+ * Where each account's fee rate is looked up (US-19): its own balance, or the
+ * household's total across all accounts.
+ *
+ * NOT CONFIRMED BY RIG. Their Sept 23 example was one account ("a $1.2M joint
+ * account at 1.25% is $15,000") and fee cash is set aside per account, so the
+ * default is per account. If RIG says the tier comes from total AUM, change
+ * this to 'HOUSEHOLD'; nothing else needs to move. Either way the rate applies
+ * to the whole balance it is charged on (a breakpoint schedule).
+ */
+export const FEE_TIER_BASIS: 'ACCOUNT' | 'HOUSEHOLD' = 'ACCOUNT';
+
+/** One account's annual advisory fee, set aside as cash in its Now bucket. */
+export interface AccountFee {
+  readonly accountId: string;
+  readonly balanceCents: Cents;
+  /** 0 when the balance is not positive. */
+  readonly rateBps: number;
+  readonly feeCents: Cents;
+}
+
 export interface PlanTotals {
   readonly now: BucketWorksheet;
   readonly soon: BucketWorksheet;
   readonly later: BucketWorksheet;
   readonly investableAssetsCents: Cents;
+  /** Per account, in account order. Their sum is the fee line in Now. */
+  readonly advisoryFees: readonly AccountFee[];
   readonly advisoryFeeCents: Cents;
   /** Later goes negative when Now and Soon exceed the portfolio. Not clamped. */
   readonly isOverfunded: boolean;
@@ -53,7 +75,11 @@ function sumGapEntries(entries: readonly GapEntry[]): Cents {
   );
 }
 
-/** E16 with the separately calculated annual advisory fee. */
+/**
+ * E16, plus a year of advisory fee cash (US-19). RIG's workbook leaves the fee
+ * out of E16 because the tier table was not in it; on Sept 23 RIG asked for the
+ * fee cash to be added to Now on top of income needs and planned expenses.
+ */
 export function computeNow(inputs: NowInputs, advisoryFeeCents: Cents): BucketWorksheet {
   const lines: WorksheetLine[] = [
     {
@@ -72,7 +98,7 @@ export function computeNow(inputs: NowInputs, advisoryFeeCents: Cents): BucketWo
       cell: 'E15',
     },
     {
-      label: `Annual advisory fee (${ANNUAL_ADVISORY_FEE_PERCENT}% of total account balances)`,
+      label: "Advisory fee cash, one year (held in each account's Now)",
       amountCents: advisoryFeeCents,
       cell: 'Fee',
     },
@@ -148,11 +174,38 @@ export function investableAssets(clientCase: ClientCase): Cents {
   return addCents(...clientCase.accounts.map((account) => account.balanceCents));
 }
 
-export function computePlanTotals(clientCase: ClientCase): PlanTotals {
-  const assets = investableAssets(clientCase);
-  const advisoryFeeCents = multiplyCents(assets, ANNUAL_ADVISORY_FEE_PERCENT / 100);
-  const now = computeNow(clientCase.nowInputs, advisoryFeeCents);
+/**
+ * Each account's annual fee under RIG's schedule (US-19). The rate comes from
+ * the account's own balance or the household total, per FEE_TIER_BASIS, and is
+ * charged on the account's whole balance.
+ */
+export function accountAdvisoryFees(
+  clientCase: ClientCase,
+  tiers: readonly AdvisoryFeeTier[],
+  basis: 'ACCOUNT' | 'HOUSEHOLD' = FEE_TIER_BASIS,
+): AccountFee[] {
+  const household = investableAssets(clientCase);
+  return clientCase.accounts.map((account) => {
+    const lookup = basis === 'ACCOUNT' ? account.balanceCents : household;
+    const rateBps = account.balanceCents > 0 ? (feeTierFor(lookup, tiers)?.rateBps ?? 0) : 0;
+    return {
+      accountId: account.id,
+      balanceCents: account.balanceCents,
+      rateBps,
+      feeCents: advisoryFeeCents(account.balanceCents, [{ minBalanceCents: 0, rateBps }]),
+    };
+  });
+}
+
+export function computePlanTotals(
+  clientCase: ClientCase,
+  feeTiers: readonly AdvisoryFeeTier[],
+): PlanTotals {
+  const advisoryFees = accountAdvisoryFees(clientCase, feeTiers);
+  const advisoryFeeCentsTotal = addCents(...advisoryFees.map((f) => f.feeCents));
+  const now = computeNow(clientCase.nowInputs, advisoryFeeCentsTotal);
   const soon = computeSoon(clientCase.soonInputs);
+  const assets = investableAssets(clientCase);
   const later = computeLater(assets, now.totalCents, soon.totalCents);
 
   return {
@@ -160,7 +213,8 @@ export function computePlanTotals(clientCase: ClientCase): PlanTotals {
     soon,
     later,
     investableAssetsCents: assets,
-    advisoryFeeCents,
+    advisoryFees,
+    advisoryFeeCents: advisoryFeeCentsTotal,
     isOverfunded: later.totalCents < 0,
   };
 }

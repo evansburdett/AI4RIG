@@ -2,8 +2,8 @@
  * Client cases in and out of SQLite.
  *
  * This is the only file that knows how a ClientCase is spread across tables
- * (client_cases, people, accounts, account_sleeves, planned_expenses,
- * gap_entries).
+ * (client_cases, people, accounts, account_sleeves, sleeve_lines,
+ * proposal_positions, planned_expenses, gap_entries).
  * Routes call these functions and deal only in ClientCase objects.
  *
  * Saving replaces the case's child rows wholesale inside one transaction:
@@ -14,20 +14,20 @@
  */
 
 import type { Db } from '@ai4rig/db';
-import { addCents, positionValueCents } from '@ai4rig/engine';
 import {
   BUCKETS,
   HEALTH_CONCERNS,
   type Account,
-  type AccountPosition,
   type BucketSleeve,
   type ClientCase,
   type ClientSummary,
   type GapEntry,
   type Gender,
   type HealthConcern,
+  type LifeExpectancySource,
   type Person,
   type PlannedExpense,
+  type ProposalShare,
 } from '@ai4rig/shared';
 
 import { HttpError } from '../errors.js';
@@ -55,6 +55,7 @@ interface CaseRow {
   annual_income_gap_cents: number;
   income_gap_years: number;
   conservative_reserve_cents: number;
+  proposal_locked_at: string | null;
   updated_at: string;
 }
 
@@ -64,7 +65,8 @@ interface PersonRow {
   birth_year: number | null;
   gender: Gender | null;
   health_concern_other: string;
-  other_health_concern_adjustment_years: number | null;
+  life_expectancy_age: number | null;
+  life_expectancy_source: LifeExpectancySource | null;
 }
 
 interface AccountRow {
@@ -90,12 +92,12 @@ interface SleeveLineRow {
   weight_bps: number;
 }
 
-interface PositionRow {
+interface ProposalRow {
   account_id: number;
-  bucket: AccountPosition['bucket'];
+  bucket: ProposalShare['bucket'];
   ticker_symbol: string;
-  shares_micros: number;
-  price_cents: number | null;
+  shares: number;
+  price_cents: number;
 }
 
 interface ExpenseRow {
@@ -142,8 +144,8 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
 
   const personRows = db
     .prepare<[number], PersonRow>(
-      `SELECT id, role, birth_year, gender, health_concern_other,
-              other_health_concern_adjustment_years
+      `SELECT id, role, birth_year, gender, health_concern_other, life_expectancy_age,
+              life_expectancy_source
        FROM people WHERE client_case_id = ? ORDER BY role`,
     )
     .all(row.id);
@@ -168,7 +170,8 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
         concernRows.some((c) => c.person_id === p.id && c.concern === concern),
       ),
       healthConcernOther: p.health_concern_other,
-      otherHealthConcernAdjustmentYears: p.other_health_concern_adjustment_years,
+      lifeExpectancyAge: p.life_expectancy_age,
+      lifeExpectancySource: p.life_expectancy_source,
     }),
   );
 
@@ -189,14 +192,12 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
     )
     .all(row.id);
 
-  const positionRows = db
-    .prepare<[number], PositionRow>(
-      `SELECT p.account_id, p.bucket, p.ticker_symbol, p.shares_micros, t.price_cents
-       FROM account_positions p
-       JOIN accounts a ON a.id = p.account_id
-       JOIN tickers t ON t.symbol = p.ticker_symbol
+  const proposalRows = db
+    .prepare<[number], ProposalRow>(
+      `SELECT p.account_id, p.bucket, p.ticker_symbol, p.shares, p.price_cents
+       FROM proposal_positions p JOIN accounts a ON a.id = p.account_id
        WHERE a.client_case_id = ?
-       ORDER BY p.bucket, p.ticker_symbol`,
+       ORDER BY CASE p.bucket WHEN 'NOW' THEN 0 WHEN 'SOON' THEN 1 ELSE 2 END, p.ticker_symbol`,
     )
     .all(row.id);
 
@@ -212,22 +213,7 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
         accountType: a.account_type,
         taxFunnel: a.tax_funnel,
         maskedNumber: a.masked_number,
-        positions: positionRows
-          .filter((position) => position.account_id === a.id)
-          .map((position) => ({
-            bucket: position.bucket,
-            tickerSymbol: position.ticker_symbol,
-            sharesMicros: position.shares_micros,
-          })),
-        balanceCents: addCents(
-          ...positionRows
-            .filter((position) => position.account_id === a.id && position.price_cents !== null)
-            .flatMap((position) =>
-              position.price_cents === null
-                ? []
-                : [positionValueCents(position.shares_micros, position.price_cents)],
-            ),
-        ),
+        balanceCents: a.balance_cents,
         // Always Now, Soon, Later, even if a row is somehow missing.
         sleeves: BUCKETS.map((bucket): BucketSleeve => {
           const sleeve = sleeveRows.find((s) => s.account_id === a.id && s.bucket === bucket);
@@ -241,6 +227,14 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
               .map((l) => ({ tickerSymbol: l.ticker_symbol, weightBps: l.weight_bps })),
           };
         }),
+        proposalShares: proposalRows
+          .filter((p) => p.account_id === a.id)
+          .map((p) => ({
+            bucket: p.bucket,
+            tickerSymbol: p.ticker_symbol,
+            shares: p.shares,
+            priceCents: p.price_cents,
+          })),
       }),
     );
 
@@ -300,6 +294,7 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
       forcedWithdrawals: gapsOf('FORCED_WITHDRAWAL'),
       conservativeReserveCents: row.conservative_reserve_cents,
     },
+    proposalLockedAt: row.proposal_locked_at,
     updatedAt: row.updated_at,
   };
 }
@@ -392,14 +387,6 @@ function checkSleeveTickers(db: Db, input: ClientCaseInput): void {
     'SELECT symbol FROM tickers WHERE symbol = ?',
   );
   input.accounts.forEach((account, index) => {
-    for (const position of account.positions) {
-      if (known.get(position.tickerSymbol) === undefined) {
-        throw new HttpError(
-          400,
-          `Account ${index + 1}, ${position.bucket}: ${position.tickerSymbol} is not in the ticker list`,
-        );
-      }
-    }
     for (const sleeve of account.sleeves) {
       for (const line of sleeve.lines) {
         if (known.get(line.tickerSymbol) === undefined) {
@@ -408,6 +395,14 @@ function checkSleeveTickers(db: Db, input: ClientCaseInput): void {
             `Account ${index + 1}, ${sleeve.bucket}: ${line.tickerSymbol} is not in the ticker list`,
           );
         }
+      }
+    }
+    for (const share of account.proposalShares) {
+      if (known.get(share.tickerSymbol) === undefined) {
+        throw new HttpError(
+          400,
+          `Account ${index + 1}, ${share.bucket}: locked shares of ${share.tickerSymbol}, which is not in the ticker list`,
+        );
       }
     }
   });
@@ -447,6 +442,7 @@ export function saveClientCase(
          annual_income_gap_cents = @annualIncomeGapCents,
          income_gap_years = @incomeGapYears,
          conservative_reserve_cents = @conservativeReserveCents,
+         proposal_locked_at = @proposalLockedAt,
          updated_at = @updatedAt
        WHERE id = @caseId`,
     ).run({
@@ -464,6 +460,7 @@ export function saveClientCase(
       annualIncomeGapCents: input.soonInputs.annualIncomeGapCents,
       incomeGapYears: input.soonInputs.incomeGapYears,
       conservativeReserveCents: input.soonInputs.conservativeReserveCents,
+      proposalLockedAt: input.proposalLockedAt,
       updatedAt: now.toISOString(),
     });
 
@@ -475,8 +472,8 @@ export function saveClientCase(
     const addPerson = db.prepare(
       `INSERT INTO people (
          client_case_id, role, birth_year, gender, health_concern_other,
-         other_health_concern_adjustment_years
-       ) VALUES (?, ?, ?, ?, ?, ?)`,
+         life_expectancy_age, life_expectancy_source
+       ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
     );
     // Deleting the people above already cascaded their concerns away.
     const addConcern = db.prepare(
@@ -489,7 +486,8 @@ export function saveClientCase(
         person.birthYear,
         person.gender,
         person.healthConcernOther,
-        person.otherHealthConcernAdjustmentYears,
+        person.lifeExpectancyAge,
+        person.lifeExpectancySource,
       );
       for (const concern of person.healthConcerns) {
         addConcern.run(Number(lastInsertRowid), concern);
@@ -504,46 +502,26 @@ export function saveClientCase(
       `INSERT INTO account_sleeves (account_id, bucket, amount_cents, model_id, mode)
        VALUES (?, ?, ?, ?, ?)`,
     );
+    // Locked shares go with their account (cascade), so they are rewritten here too.
+    const addProposalShare = db.prepare(
+      `INSERT INTO proposal_positions (account_id, bucket, ticker_symbol, shares, price_cents)
+       VALUES (?, ?, ?, ?, ?)`,
+    );
     // Lines go with their sleeve (cascade), so there is nothing to clear first.
     const addSleeveLine = db.prepare(
       `INSERT INTO sleeve_lines (account_id, bucket, position, ticker_symbol, weight_bps)
        VALUES (?, ?, ?, ?, ?)`,
     );
-    const addPosition = db.prepare(
-      `INSERT INTO account_positions (account_id, bucket, ticker_symbol, shares_micros)
-       VALUES (?, ?, ?, ?)`,
-    );
-    const getTickerPrice = db.prepare<[string], { price_cents: number | null }>(
-      'SELECT price_cents FROM tickers WHERE symbol = ?',
-    );
     input.accounts.forEach((account, position) => {
-      const balanceCents = addCents(
-        ...account.positions.flatMap((actualPosition) => {
-          const ticker = getTickerPrice.get(actualPosition.tickerSymbol);
-          if (ticker === undefined) {
-            throw new HttpError(400, `Ticker ${actualPosition.tickerSymbol} is not in the ticker list`);
-          }
-          if (ticker.price_cents === null) return [];
-          return [positionValueCents(actualPosition.sharesMicros, ticker.price_cents)];
-        }),
-      );
       const { lastInsertRowid } = addAccount.run(
         caseId,
         position,
         account.accountType,
         account.taxFunnel,
         account.maskedNumber,
-        balanceCents,
+        account.balanceCents,
       );
       const accountId = Number(lastInsertRowid);
-      for (const actualPosition of account.positions) {
-        addPosition.run(
-          accountId,
-          actualPosition.bucket,
-          actualPosition.tickerSymbol,
-          actualPosition.sharesMicros,
-        );
-      }
       for (const sleeve of account.sleeves) {
         addSleeve.run(
           accountId,
@@ -557,6 +535,9 @@ export function saveClientCase(
         sleeve.lines.forEach((line, position) =>
           addSleeveLine.run(accountId, sleeve.bucket, position, line.tickerSymbol, line.weightBps),
         );
+      }
+      for (const share of account.proposalShares) {
+        addProposalShare.run(accountId, share.bucket, share.tickerSymbol, share.shares, share.priceCents);
       }
     });
 

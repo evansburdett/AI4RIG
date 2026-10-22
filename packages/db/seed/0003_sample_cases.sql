@@ -1,10 +1,11 @@
 -- Two sample client cases. Client numbers and initials are invented. The
 -- figures on case 1042 come from RIG's Bucket Plan Deliverable workbook:
--- $3,000,000 investable, and the target amounts land exactly on the worksheet's
--- $190,000 / $914,700 / $1,895,300. Case 2317 is an early accumulator whose
--- target split is deliberately off target, with $15,000 not yet placed in a
--- target bucket and one slice with no model chosen. No actual shares or ticker
--- prices are seeded; those must be entered by the advisor.
+-- $3,000,000 investable, and the accounts are split so the buckets land
+-- exactly on the plan: the worksheet's $190,000 Now plus $39,000 of advisory
+-- fee cash held in each account's own Now (US-19: $15,000 + $18,750 +
+-- $5,250 under RIG's tiers), $914,700 Soon, and $1,856,300 Later. Case 2317 is an
+-- early accumulator whose split is deliberately off target, with $15,000 not
+-- yet placed in any bucket and one slice with no model chosen.
 --
 -- These match apps/web/src/fixtures/clients.ts, which the front-end unit tests
 -- use. Keep the two in step if you change either.
@@ -31,13 +32,15 @@ INSERT OR REPLACE INTO client_cases (
      0, 10, 7500000,
      '2026-09-11T09:20:00.000Z', '2026-09-11T09:20:00.000Z');
 
+-- The spouse's 85 stands in for an accepted AI estimate (US-28); the others
+-- were typed by the advisor.
 INSERT OR REPLACE INTO people (
-    id, client_case_id, role, birth_year, health_concern_other, life_expectancy_age,
-    gender, other_health_concern_adjustment_years
+    id, client_case_id, role, birth_year, gender, health_concern_other,
+    life_expectancy_age, life_expectancy_source
 ) VALUES
-    (9001, 9001, 'CLIENT', 1960, '',                      88, 'MALE',   NULL),
-    (9002, 9001, 'SPOUSE', 1963, 'Managed hypertension',  85, 'FEMALE', 3),
-    (9003, 9002, 'CLIENT', 1988, '',                      90, 'MALE',   NULL);
+    (9001, 9001, 'CLIENT', 1960, 'MALE',   '',                      88, 'ADVISOR'),
+    (9002, 9001, 'SPOUSE', 1963, 'FEMALE', 'Managed hypertension',  85, 'AI'),
+    (9003, 9002, 'CLIENT', 1988, 'FEMALE', '',                      90, 'ADVISOR');
 
 -- US-27: a person carries any combination of concerns, so these are rows
 -- rather than a column. No rows means nothing reported. The spouse on case
@@ -49,23 +52,24 @@ INSERT OR REPLACE INTO person_health_concerns (person_id, concern) VALUES
     (9002, 'OTHER');
 
 INSERT OR REPLACE INTO accounts (id, client_case_id, position, account_type, tax_funnel, masked_number, balance_cents) VALUES
-    (9001, 9001, 0, 'JOINT',    'TAXABLE',  '4417', 0),
-    (9002, 9001, 1, 'IRA',      'PRE_TAX',  '8830', 0),
-    (9003, 9001, 2, 'ROTH_IRA', 'TAX_FREE', '2291', 0),
-    (9004, 9002, 0, 'SINGLE',   'TAXABLE',  '1005', 0),
-    (9005, 9002, 1, 'ROTH_IRA', 'TAX_FREE', '7742', 0);
+    (9001, 9001, 0, 'JOINT',    'TAXABLE',  '4417', 120000000),
+    (9002, 9001, 1, 'IRA',      'PRE_TAX',  '8830', 150000000),
+    (9003, 9001, 2, 'ROTH_IRA', 'TAX_FREE', '2291',  30000000),
+    (9004, 9002, 0, 'SINGLE',   'TAXABLE',  '1005',  28000000),
+    (9005, 9002, 1, 'ROTH_IRA', 'TAX_FREE', '7742',  24000000);
 
 INSERT OR REPLACE INTO account_sleeves (account_id, bucket, amount_cents, model_id, mode) VALUES
-    -- 1042: Now 190,000 / Soon 400,000 + 514,700 / Later 610,000 + 985,300 + 300,000
-    (9001, 'NOW',    19000000, 9001, 'MODEL'),
+    -- 1042: Now 205,000 + 18,750 + 5,250 / Soon 400,000 + 514,700
+    --       Later 595,000 + 966,550 + 294,750
+    (9001, 'NOW',    20500000, 9001, 'MODEL'),
     (9001, 'SOON',   40000000, 9002, 'MODEL'),
-    (9001, 'LATER',  61000000, 9003, 'MODEL'),
-    (9002, 'NOW',           0, NULL, 'MODEL'),
+    (9001, 'LATER',  59500000, 9003, 'MODEL'),
+    (9002, 'NOW',     1875000, 9001, 'MODEL'),
     (9002, 'SOON',   51470000, 9002, 'MODEL'),
-    (9002, 'LATER',  98530000, 9003, 'MODEL'),
-    (9003, 'NOW',           0, NULL, 'MODEL'),
+    (9002, 'LATER',  96655000, 9003, 'MODEL'),
+    (9003, 'NOW',      525000, 9001, 'MODEL'),
     (9003, 'SOON',          0, NULL, 'MODEL'),
-    (9003, 'LATER',  30000000, 9004, 'MODEL'),
+    (9003, 'LATER',  29475000, 9004, 'MODEL'),
     -- 2317: $15,000 of the Single account is not in any bucket yet; its Later
     -- money is picked by hand rather than from a model (US-23); and the Roth's
     -- Soon money follows nothing at all.

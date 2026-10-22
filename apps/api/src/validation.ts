@@ -13,7 +13,9 @@ import {
   BUCKETS,
   GENDERS,
   HEALTH_CONCERNS,
+  LIFE_EXPECTANCY_SOURCES,
   LIFE_STAGES,
+  LIFE_STAGES_BY_PHASE,
   MONEY_CYCLE_PHASES,
   SLEEVE_MODES,
   TAX_BRACKETS,
@@ -42,7 +44,8 @@ const person = z
         'A health concern can only be selected once',
       ),
     healthConcernOther: z.string().trim().max(200),
-    otherHealthConcernAdjustmentYears: z.number().finite().min(0).max(130).nullable(),
+    lifeExpectancyAge: z.int().min(0).max(130).nullable(),
+    lifeExpectancySource: z.enum(LIFE_EXPECTANCY_SOURCES).nullable(),
   })
   // Free text with no OTHER ticked describes nothing, and would sit in the
   // database unreachable from the screen that wrote it.
@@ -50,15 +53,10 @@ const person = z
     error: 'Describe an "other" health concern only when Other is selected',
     path: ['healthConcernOther'],
   })
-  .refine(
-    (p) =>
-      p.healthConcerns.includes('OTHER') ===
-      (p.otherHealthConcernAdjustmentYears !== null),
-    {
-      error: 'A custom life-expectancy adjustment is required only when Other is selected',
-      path: ['otherHealthConcernAdjustmentYears'],
-    },
-  );
+  .refine((p) => (p.lifeExpectancyAge === null) === (p.lifeExpectancySource === null), {
+    error: 'A life expectancy age and where it came from go together',
+    path: ['lifeExpectancySource'],
+  });
 
 const taxFunnel = z.enum(TAX_FUNNELS);
 
@@ -106,19 +104,18 @@ const account = z.object({
   // Last four only (ADR 0006). Anything longer is a real account number.
   maskedNumber: z.string().trim().max(4, 'Masked number is the last four digits only'),
   balanceCents: cents,
-  positions: z
+  proposalShares: z
     .array(
       z.object({
         bucket,
         tickerSymbol: z.string().trim().toUpperCase().min(1).max(10),
-        sharesMicros: z.int().min(0),
+        shares: z.int().min(0, 'A share count cannot be negative'),
+        priceCents: cents.min(1, 'A locked price has to be above $0'),
       }),
     )
     .refine(
-      (positions) =>
-        new Set(positions.map((position) => `${position.bucket}:${position.tickerSymbol}`)).size ===
-        positions.length,
-      'A ticker can appear only once per account and bucket',
+      (shares) => new Set(shares.map((s) => `${s.bucket}:${s.tickerSymbol}`)).size === shares.length,
+      'A ticker can be locked in once per bucket of an account',
     ),
   sleeves: z
     .array(sleeve)
@@ -178,12 +175,35 @@ export const clientCaseSchema = z.object({
     forcedWithdrawals: z.array(gapEntry),
     conservativeReserveCents: cents,
   }),
+  proposalLockedAt: z.iso.datetime().nullable(),
   // Ignored: the server stamps updatedAt on save. Accepted so the client can
   // send back exactly what it received.
   updatedAt: z.string().optional(),
 });
 
 export type ClientCaseInput = z.infer<typeof clientCaseSchema>;
+
+/** Locked shares mean nothing without the moment they were locked. */
+export const checkedClientCaseSchema = clientCaseSchema
+  .refine(
+    (c) => c.proposalLockedAt !== null || c.accounts.every((a) => a.proposalShares.length === 0),
+    { error: 'Share counts can only be saved with the time they were locked in', path: ['proposalLockedAt'] },
+  )
+  // US-25: a stage of life only makes sense inside its own phase.
+  .refine((c) => LIFE_STAGES_BY_PHASE[c.moneyCyclePhase].includes(c.lifeStage), {
+    error: 'That stage of life is not part of the chosen money cycle phase',
+    path: ['lifeStage'],
+  });
+
+/** Only what US-28 sends to the model. Extra keys are dropped, not passed on. */
+export const lifeExpectancyRequestSchema = z.object({
+  age: z.int().min(0).max(120),
+  gender: z.enum(GENDERS),
+  healthConcerns: z
+    .array(z.enum(HEALTH_CONCERNS))
+    .refine((concerns) => new Set(concerns).size === concerns.length, 'A health concern can only be listed once'),
+  healthConcernOther: z.string().trim().max(200),
+});
 
 export const tickerSchema = z.object({
   symbol: z
@@ -195,7 +215,11 @@ export const tickerSchema = z.object({
     .regex(/^[A-Z0-9.-]+$/, 'Letters, digits, dots, and dashes only'),
   assetClass: z.enum(ASSET_CLASSES),
   defaultBucket: bucket,
-  priceCents: cents.min(0).nullable(),
+  // Optional so a caller that only changes the bucket cannot wipe the price
+  // by leaving it out. null clears it.
+  priceCents: cents.min(1, 'A price has to be above $0').nullable().optional(),
+  // Ignored: the server stamps it when the price changes.
+  priceAsOf: z.string().nullable().optional(),
 });
 
 export const modelPortfolioSchema = z.object({
@@ -225,6 +249,21 @@ export const bucketDefinitionSchema = z.object({
   horizonMonths: z.int().min(0).max(1200),
   purposeText: z.string().max(2000),
 });
+
+/** The whole schedule, replaced at once (US-19). */
+export const advisoryFeeTiersSchema = z
+  .array(
+    z.object({
+      minBalanceCents: cents.min(0, 'A tier cannot start below $0'),
+      rateBps: z.int().min(0).max(10_000, 'A rate cannot be over 100%'),
+    }),
+  )
+  .min(1, 'The schedule needs at least one tier')
+  .refine((tiers) => tiers[0]?.minBalanceCents === 0, 'The first tier has to start at $0')
+  .refine(
+    (tiers) => tiers.every((tier, i) => i === 0 || tier.minBalanceCents > (tiers[i - 1]?.minBalanceCents ?? 0)),
+    'Tiers have to be listed lowest balance first, with no two starting at the same balance',
+  );
 
 export const bucketParam = bucket;
 

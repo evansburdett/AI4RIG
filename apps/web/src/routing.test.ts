@@ -29,7 +29,7 @@ describe('parseHash', () => {
   });
 
   it('round-trips through hrefFor', () => {
-    for (const hash of ['#/clients/1042/profile', '#/clients/1042/breakdown', '#/tickers']) {
+    for (const hash of ['#/clients/1042/profile', '#/clients/1042/breakdown', '#/tickers', '#/fees']) {
       expect(hrefFor(parseHash(hash))).toBe(hash);
     }
   });

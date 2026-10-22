@@ -30,11 +30,33 @@ export const LIFE_STAGES = [
 ] as const;
 export type LifeStage = (typeof LIFE_STAGES)[number];
 
+/**
+ * US-26. Picks the baseline the life expectancy estimate starts from. Two
+ * options because that is what RIG's profile sheet and the period life tables
+ * the estimate leans on both use.
+ */
 export const GENDERS = ['MALE', 'FEMALE'] as const;
 export type Gender = (typeof GENDERS)[number];
 
+/**
+ * Where a person's life expectancy age came from (US-28): an AI estimate the
+ * advisor accepted, or a figure the advisor typed or changed.
+ */
+export const LIFE_EXPECTANCY_SOURCES = ['AI', 'ADVISOR'] as const;
+export type LifeExpectancySource = (typeof LIFE_EXPECTANCY_SOURCES)[number];
+
 export const MONEY_CYCLE_PHASES = ['ACCUMULATION', 'PRESERVATION', 'DISTRIBUTION'] as const;
 export type MoneyCyclePhase = (typeof MONEY_CYCLE_PHASES)[number];
+
+/**
+ * US-25: the stages of life that belong to each money cycle phase (Blake,
+ * Sept 23: pick Distribution and only go-go, slow-go, and no-go show).
+ */
+export const LIFE_STAGES_BY_PHASE: Readonly<Record<MoneyCyclePhase, readonly LifeStage[]>> = {
+  ACCUMULATION: ['ACCUMULATION_YOUNG_PROFESSIONAL', 'ACCUMULATION_PEAK_EARNINGS'],
+  PRESERVATION: ['PRESERVATION'],
+  DISTRIBUTION: ['DISTRIBUTION_GO_GO', 'DISTRIBUTION_SLOW_GO', 'DISTRIBUTION_NO_GO'],
+};
 
 export const ACCOUNT_TYPES = ['SINGLE', 'JOINT', 'IRA', 'ROTH_IRA', 'OTHER'] as const;
 export type AccountType = (typeof ACCOUNT_TYPES)[number];
@@ -79,7 +101,7 @@ export interface Person {
   readonly role: 'CLIENT' | 'SPOUSE';
   /** Year only. Age is all the planning needs; a full date of birth is PII. */
   readonly birthYear: number | null;
-  /** Used to select the corresponding SSA period life-table estimate. */
+  /** Null until the advisor picks one. */
   readonly gender: Gender | null;
   /** Any combination, kept in HEALTH_CONCERNS order. Empty means nothing reported. */
   readonly healthConcerns: readonly HealthConcern[];
@@ -89,8 +111,31 @@ export interface Person {
    * condition and nothing else — never anything identifying (ADR 0006).
    */
   readonly healthConcernOther: string;
-  /** Advisor-entered years subtracted for an OTHER health concern. */
-  readonly otherHealthConcernAdjustmentYears: number | null;
+  /** The age the plan has to last to. Null until estimated or typed. */
+  readonly lifeExpectancyAge: number | null;
+  /** Null exactly when lifeExpectancyAge is. */
+  readonly lifeExpectancySource: LifeExpectancySource | null;
+}
+
+/**
+ * Everything the life expectancy estimate is given (US-28). Age rather than
+ * birth year, and nothing that identifies the person: no case number, no
+ * initials (ADR 0006).
+ */
+export interface LifeExpectancyRequest {
+  readonly age: number;
+  readonly gender: Gender;
+  readonly healthConcerns: readonly HealthConcern[];
+  /** The OTHER description, or ''. */
+  readonly healthConcernOther: string;
+}
+
+export interface LifeExpectancyEstimate {
+  readonly lifeExpectancyAge: number;
+  /** One or two sentences from the model on how it got there. */
+  readonly explanation: string;
+  /** The model that answered, for the record. */
+  readonly model: string;
 }
 
 /**
@@ -132,23 +177,31 @@ export interface Account {
   readonly taxFunnel: TaxFunnel;
   /** Last four only, as RIG masks them today. */
   readonly maskedNumber: string;
-  /** Derived from the current prices of the account's priced positions. */
+  /** Typed by the advisor, as on RIG's profile sheet. */
   readonly balanceCents: Cents;
-  /** Actual positions, each assigned to one Now / Soon / Later bucket. */
-  readonly positions: readonly AccountPosition[];
   /**
    * Exactly three, Now then Soon then Later. Their amounts should add up to the
    * balance; anything left over shows as unallocated. Not enforced, so a
    * half-finished case can still be saved.
    */
   readonly sleeves: readonly BucketSleeve[];
+  /**
+   * Whole share counts locked in for this account's proposal (US-21). Empty
+   * until the advisor locks the proposal in; not recalculated on save.
+   */
+  readonly proposalShares: readonly ProposalShare[];
 }
 
-/** A ticker position and its bucket, stored as millionths of a share. */
-export interface AccountPosition {
+/**
+ * One locked-in position: how many whole shares of a ticker the proposal puts
+ * in one bucket of one account, and the price they were worked out at.
+ */
+export interface ProposalShare {
   readonly bucket: BucketType;
   readonly tickerSymbol: string;
-  readonly sharesMicros: number;
+  readonly shares: number;
+  /** Price per share when locked in. Today's value uses the ticker's current price. */
+  readonly priceCents: Cents;
 }
 
 /** One ticker in a model. Basis points: 100 is 1%, and a model's lines add up to 10000. */
@@ -188,8 +241,25 @@ export interface Ticker {
   readonly symbol: string;
   readonly assetClass: AssetClass;
   readonly defaultBucket: BucketType;
-  /** Manually maintained quote in cents per share; null means no quote entered. */
+  /**
+   * Price per share (US-21), typed on the Tickers screen until RIG picks a
+   * price provider. Null when nobody has entered one; shares cannot be worked
+   * out for this ticker until then.
+   */
   readonly priceCents: Cents | null;
+  /** The day the price was last changed, YYYY-MM-DD. Set by the server. */
+  readonly priceAsOf: string | null;
+}
+
+/**
+ * One row of RIG's advisory fee schedule (US-19). A balance at or above
+ * `minBalanceCents`, and below the next row's, is charged `rateBps` on all of
+ * it. The schedule always has a row starting at 0.
+ */
+export interface AdvisoryFeeTier {
+  readonly minBalanceCents: Cents;
+  /** Basis points: 125 is 1.25%. */
+  readonly rateBps: number;
 }
 
 export interface BucketDefinition {
@@ -270,6 +340,11 @@ export interface ClientCase {
   readonly spareTireCents: Cents;
   readonly nowInputs: NowInputs;
   readonly soonInputs: SoonInputs;
+  /**
+   * When the advisor last locked in the proposal's share counts (US-21), or
+   * null if never. Each account's proposalShares hold what was locked.
+   */
+  readonly proposalLockedAt: string | null;
   readonly updatedAt: string;
 }
 

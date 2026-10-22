@@ -1,12 +1,13 @@
 import type { ReactNode } from 'react';
 
 interface Props {
-  tone: 'blocked' | 'warning' | 'info';
+  /** info: context. warning: something to act on. error: something failed. */
+  tone: 'info' | 'warning' | 'error';
   title: string;
   children: ReactNode;
 }
 
-/** A standing notice about something the software cannot know yet. */
+/** A notice at the top of a screen or section. Amber and red are for action only. */
 export function Callout({ tone, title, children }: Props) {
   return (
     <div className={`callout callout-${tone}`}>

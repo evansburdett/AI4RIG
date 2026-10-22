@@ -9,7 +9,16 @@ export interface ApiConfig {
   /** Browser origins allowed to call this API. */
   webOrigins: string[];
   nodeEnv: string;
+  /**
+   * US-28. Optional: without a key the life expectancy estimate answers 503
+   * and the advisor types the age in. Read from this machine's .env only.
+   */
+  openAiApiKey?: string | undefined;
+  openAiModel?: string;
 }
+
+/** Used when OPENAI_MODEL is not set. Check it is still offered when RIG's key arrives. */
+export const DEFAULT_OPENAI_MODEL = 'gpt-4.1-mini';
 
 function intFromEnv(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -40,5 +49,7 @@ export function loadConfig(): ApiConfig {
       .map((origin) => origin.trim())
       .filter(Boolean),
     nodeEnv: process.env.NODE_ENV ?? 'development',
+    openAiApiKey: process.env.OPENAI_API_KEY?.trim() || undefined,
+    openAiModel: process.env.OPENAI_MODEL?.trim() || DEFAULT_OPENAI_MODEL,
   };
 }

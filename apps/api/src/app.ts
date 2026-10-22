@@ -2,9 +2,11 @@ import { appliedMigrationCount, openDatabase, type Db } from '@ai4rig/db';
 import cors from 'cors';
 import express, { type ErrorRequestHandler, type Express } from 'express';
 
-import type { ApiConfig } from './config.js';
+import { DEFAULT_OPENAI_MODEL, type ApiConfig } from './config.js';
 import { constraintStatus } from './errors.js';
+import { openAiEstimator, type Estimator } from './lifeExpectancy.js';
 import { createClientsRouter } from './routes/clients.js';
+import { createLifeExpectancyRouter } from './routes/lifeExpectancy.js';
 import { createModelsRouter } from './routes/models.js';
 import { createReferenceDataRouter } from './routes/referenceData.js';
 
@@ -12,6 +14,8 @@ export interface AppDeps {
   config: ApiConfig;
   /** Injected by tests so they can point at a temp database. */
   db?: Db;
+  /** Injected by tests so they never call OpenAI. */
+  estimator?: Estimator;
 }
 
 export interface CreatedApp {
@@ -29,7 +33,14 @@ export interface CreatedApp {
  * /api/health proves that the web app, the API, and the database are all
  * talking to each other. The web app's header shows its result.
  */
-export function createApp({ config, db = openDatabase() }: AppDeps): CreatedApp {
+export function createApp({
+  config,
+  db = openDatabase(),
+  estimator = openAiEstimator({
+    apiKey: config.openAiApiKey,
+    model: config.openAiModel ?? DEFAULT_OPENAI_MODEL,
+  }),
+}: AppDeps): CreatedApp {
   const app = express();
 
   // Whole client cases come through here; the default 100kb is tight for a
@@ -47,6 +58,8 @@ export function createApp({ config, db = openDatabase() }: AppDeps): CreatedApp 
       apiHost: config.host,
       apiPort: config.port,
       nodeEnv: config.nodeEnv,
+      // Whether US-28 estimates can work here. Never the key itself.
+      lifeExpectancyEstimates: config.openAiApiKey !== undefined,
       time: new Date().toISOString(),
     });
   });
@@ -54,6 +67,7 @@ export function createApp({ config, db = openDatabase() }: AppDeps): CreatedApp 
   app.use(createClientsRouter(db));
   app.use(createReferenceDataRouter(db));
   app.use(createModelsRouter(db));
+  app.use(createLifeExpectancyRouter(estimator));
 
   app.use((_req, res) => {
     res.status(404).json({ error: 'Not found' });

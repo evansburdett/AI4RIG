@@ -1,31 +1,20 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  ageFromBirthYear,
-  STAGES_BY_PHASE,
-  stageForPhase,
-  estimatedLifeExpectancyAge,
-  householdPlanYears,
-  planYears,
-} from './lifeStage.js';
-import type { Gender, HealthConcern, Person } from './types.js';
-import { LIFE_STAGES } from './types.js';
+import { ageFromBirthYear, householdPlanYears, planYears, stageForPhase } from './lifeStage.js';
+import { LIFE_STAGES, LIFE_STAGES_BY_PHASE } from './types.js';
+import type { Person } from './types.js';
 
 const TODAY = new Date('2026-09-17T00:00:00Z');
 
-function person(
-  birthYear: number | null,
-  gender: Gender | null = 'MALE',
-  healthConcerns: readonly HealthConcern[] = [],
-  otherHealthConcernAdjustmentYears: number | null = null,
-): Person {
+function person(birthYear: number | null, lifeExpectancyAge: number | null): Person {
   return {
     role: 'CLIENT',
     birthYear,
-    gender,
-    healthConcerns,
+    gender: null,
+    healthConcerns: [],
     healthConcernOther: '',
-    otherHealthConcernAdjustmentYears,
+    lifeExpectancyAge,
+    lifeExpectancySource: lifeExpectancyAge === null ? null : 'ADVISOR',
   };
 }
 
@@ -42,67 +31,45 @@ describe('ageFromBirthYear', () => {
 });
 
 describe('planYears', () => {
-  it('uses the SSA remaining life expectancy for age and gender', () => {
-    expect(estimatedLifeExpectancyAge(person(1961, 'MALE'), TODAY)).toBe(82);
-    expect(estimatedLifeExpectancyAge(person(1961, 'FEMALE'), TODAY)).toBe(85);
-    expect(planYears(person(1961, 'MALE'), TODAY)).toBe(17);
+  it('is life expectancy minus current age', () => {
+    expect(planYears(person(1960, 88), TODAY)).toBe(22);
   });
 
-  it('subtracts three years for each standard concern and the custom Other adjustment', () => {
-    expect(
-      estimatedLifeExpectancyAge(person(1961, 'MALE', ['CANCER', 'HEART']), TODAY),
-    ).toBe(76);
-    expect(
-      estimatedLifeExpectancyAge(person(1961, 'MALE', ['HEART', 'OTHER'], 2.5), TODAY),
-    ).toBe(77);
+  it('never goes negative', () => {
+    expect(planYears(person(1930, 88), TODAY)).toBe(0);
   });
 
-  it('does not estimate without age, gender, or the Other adjustment', () => {
-    expect(estimatedLifeExpectancyAge(person(null), TODAY)).toBeNull();
-    expect(estimatedLifeExpectancyAge(person(1960, null), TODAY)).toBeNull();
-    expect(estimatedLifeExpectancyAge(person(1960, 'MALE', ['OTHER']), TODAY)).toBeNull();
-  });
-
-  it('never estimates an age earlier than the current age', () => {
-    expect(estimatedLifeExpectancyAge(person(1930, 'MALE', ['CANCER', 'STROKE', 'HEART']), TODAY))
-      .toBe(96);
+  it('is null until both halves are entered', () => {
+    expect(planYears(person(1960, null), TODAY)).toBeNull();
+    expect(planYears(person(null, 88), TODAY)).toBeNull();
   });
 });
 
 describe('householdPlanYears', () => {
   it('takes the longer horizon, because the plan outlasts both', () => {
-    expect(householdPlanYears([person(1960, 'MALE'), person(1964, 'FEMALE')], TODAY)).toBe(23);
+    expect(householdPlanYears([person(1960, 88), person(1964, 92)], TODAY)).toBe(30);
   });
 
   it('ignores a person who is not filled in yet', () => {
-    expect(householdPlanYears([person(1960, 'MALE'), person(null)], TODAY)).toBe(17);
+    expect(householdPlanYears([person(1960, 88), person(null, null)], TODAY)).toBe(22);
   });
 });
 
-describe('stage of life follows the money cycle phase', () => {
-  it('offers only the stages that belong to each phase', () => {
-    expect(STAGES_BY_PHASE.ACCUMULATION).toEqual([
-      'ACCUMULATION_YOUNG_PROFESSIONAL',
-      'ACCUMULATION_PEAK_EARNINGS',
-    ]);
-    expect(STAGES_BY_PHASE.PRESERVATION).toEqual(['PRESERVATION']);
-    expect(STAGES_BY_PHASE.DISTRIBUTION).toEqual([
-      'DISTRIBUTION_GO_GO',
-      'DISTRIBUTION_SLOW_GO',
-      'DISTRIBUTION_NO_GO',
-    ]);
+
+describe('stageForPhase (US-25)', () => {
+  it('keeps a stage that belongs to the new phase', () => {
+    expect(stageForPhase('DISTRIBUTION', 'DISTRIBUTION_SLOW_GO')).toBe('DISTRIBUTION_SLOW_GO');
   });
 
+  // From Sarabeth's version of US-25 (2a0d58d).
   it('puts every life stage under exactly one phase', () => {
-    const all = Object.values(STAGES_BY_PHASE).flat();
+    const all = Object.values(LIFE_STAGES_BY_PHASE).flat();
     expect([...all].sort()).toEqual([...LIFE_STAGES].sort());
   });
 
-  it('keeps a valid stage and resets an invalid one when the phase changes', () => {
-    expect(stageForPhase('DISTRIBUTION', 'DISTRIBUTION_SLOW_GO')).toBe('DISTRIBUTION_SLOW_GO');
-    expect(stageForPhase('ACCUMULATION', 'DISTRIBUTION_GO_GO')).toBe(
-      'ACCUMULATION_YOUNG_PROFESSIONAL',
-    );
-    expect(stageForPhase('PRESERVATION', 'ACCUMULATION_PEAK_EARNINGS')).toBe('PRESERVATION');
+  it("moves to the new phase's first stage otherwise", () => {
+    expect(stageForPhase('DISTRIBUTION', 'ACCUMULATION_PEAK_EARNINGS')).toBe('DISTRIBUTION_GO_GO');
+    expect(stageForPhase('PRESERVATION', 'DISTRIBUTION_NO_GO')).toBe('PRESERVATION');
+    expect(stageForPhase('ACCUMULATION', 'PRESERVATION')).toBe('ACCUMULATION_YOUNG_PROFESSIONAL');
   });
 });

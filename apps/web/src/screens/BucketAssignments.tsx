@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
 
 import { Callout } from '../components/Callout.js';
+import { About } from '../components/Help.js';
+import { NewTickerFields } from '../components/NewTickerFields.js';
 import { ASSET_CLASS_LABELS, BUCKET_LABELS } from '../domain/lifeStage.js';
+import { formatDay } from '../domain/dates.js';
 import { centsToInput, parseCents } from '../domain/money.js';
+import { isValidSymbol, normalizeSymbol } from '../domain/tickers.js';
 import { ASSET_CLASSES, BUCKETS } from '../domain/types.js';
 import type { AssetClass, BucketDefinition, BucketType, Ticker } from '../domain/types.js';
 
@@ -10,6 +14,8 @@ interface Props {
   tickers: readonly Ticker[];
   definitions: readonly BucketDefinition[];
   onSaveTicker: (ticker: Ticker) => Promise<void>;
+  /** Adds a symbol to the universe (US-24). Rejects with the reason when it cannot. */
+  onAddTicker: (ticker: Ticker) => Promise<Ticker>;
   onSaveDefinition: (definition: BucketDefinition) => Promise<void>;
 }
 
@@ -23,9 +29,13 @@ export function BucketAssignments({
   tickers,
   definitions,
   onSaveTicker,
+  onAddTicker,
   onSaveDefinition,
 }: Props) {
   const [filter, setFilter] = useState('');
+  const [newSymbolText, setNewSymbolText] = useState('');
+  const newSymbol = normalizeSymbol(newSymbolText);
+  const alreadyListed = tickers.some((t) => t.symbol === newSymbol);
   const [savingSymbol, setSavingSymbol] = useState<string | null>(null);
 
   const query = filter.trim().toUpperCase();
@@ -49,17 +59,55 @@ export function BucketAssignments({
         </p>
       </header>
 
-      <Callout tone="warning" title="Placeholder investment universe">
+      <Callout tone="info" title="Placeholder investment universe">
         RIG has not sent the Common Investments list yet. These symbols come from the sample seed
         data and are not the firm&rsquo;s approved set (US-06).
       </Callout>
 
       <section className="card">
         <h3>Default bucket by ticker</h3>
-        <p className="muted">
-          Which bucket each symbol normally belongs in. A model that uses a symbol in a different
-          bucket is flagged on the Models screen, not blocked.
-        </p>
+        <p className="muted">Each symbol&rsquo;s usual bucket, asset class, and price per share.</p>
+        <About>
+          <p>
+            A model that uses a symbol in a different bucket is flagged on the Models screen, not
+            blocked. A symbol typed on a model or a manual bucket that is not listed here can be
+            added from there too. Prices are typed here until RIG picks a price provider.
+          </p>
+        </About>
+
+        <div className="add-ticker">
+          <div className="field">
+            <label htmlFor="new-ticker">Add a symbol</label>
+            <input
+              id="new-ticker"
+              type="text"
+              className="symbol-input"
+              autoComplete="off"
+              spellCheck={false}
+              value={newSymbolText}
+              placeholder="SCHD"
+              aria-invalid={newSymbol !== '' && !isValidSymbol(newSymbol)}
+              onChange={(event) => setNewSymbolText(event.target.value)}
+            />
+          </div>
+          {newSymbol !== '' && alreadyListed && (
+            <span className="muted">
+              <code>{newSymbol}</code> is already in the list.
+            </span>
+          )}
+          {newSymbol !== '' && !alreadyListed && !isValidSymbol(newSymbol) && (
+            <span className="field-error">Letters, digits, dots, and dashes, up to 10.</span>
+          )}
+          {newSymbol !== '' && !alreadyListed && isValidSymbol(newSymbol) && (
+            <NewTickerFields
+              key={newSymbol}
+              symbol={newSymbol}
+              suggestedBucket="LATER"
+              onAdd={onAddTicker}
+              onAdded={() => setNewSymbolText('')}
+            />
+          )}
+        </div>
 
         <div className="field">
           <label htmlFor="ticker-filter">Filter by symbol</label>
@@ -142,7 +190,7 @@ export function BucketAssignments({
 
       <section className="card">
         <h3>What each bucket is for</h3>
-        <p className="muted">Editable wording, shown to the advisor when assigning a holding.</p>
+        <p className="muted">The wording shown to the advisor when assigning a holding.</p>
 
         {definitions.map((definition) => (
           <BucketDefinitionEditor
@@ -153,14 +201,20 @@ export function BucketAssignments({
         ))}
       </section>
 
-      <Callout tone="info" title="Asset-class rules not built">
-        <code>ClassificationRule</code> maps a whole asset class to a bucket. The table does not
-        exist yet; per-ticker defaults cover the same ground for a universe this size.
-      </Callout>
+      <About title="Why there are no asset-class rules">
+        <p>
+          A rule mapping a whole asset class to a bucket was planned but not built; the per-ticker
+          defaults above cover the same ground for a universe this size.
+        </p>
+      </About>
     </div>
   );
 }
 
+/**
+ * US-21: the price shares are worked out at. Typed here until RIG picks a
+ * price provider; the date shows how old it is.
+ */
 function TickerPriceEditor({
   ticker,
   saving,
@@ -170,11 +224,9 @@ function TickerPriceEditor({
   saving: boolean;
   onSave: (priceCents: Ticker['priceCents']) => Promise<void>;
 }) {
-  const [draft, setDraft] = useState(
-    ticker.priceCents === null ? '' : centsToInput(ticker.priceCents),
-  );
+  const [draft, setDraft] = useState(ticker.priceCents === null ? '' : centsToInput(ticker.priceCents));
   const parsed = draft.trim() === '' ? null : parseCents(draft);
-  const invalid = draft.trim() !== '' && parsed === null;
+  const invalid = draft.trim() !== '' && (parsed === null || parsed <= 0);
   const dirty = parsed !== ticker.priceCents;
 
   useEffect(() => {
@@ -182,7 +234,7 @@ function TickerPriceEditor({
   }, [ticker.priceCents]);
 
   return (
-    <div className="field">
+    <div className="inline-action">
       <div className="money-input">
         <span aria-hidden="true">$</span>
         <input
@@ -195,14 +247,11 @@ function TickerPriceEditor({
           onChange={(event) => setDraft(event.target.value)}
         />
       </div>
-      {invalid && <p className="field-error">Enter a price like 123.45</p>}
-      <button
-        type="button"
-        disabled={!dirty || invalid || saving}
-        onClick={() => void onSave(parsed)}
-      >
+      <button type="button" disabled={!dirty || invalid || saving} onClick={() => void onSave(parsed)}>
         Save price
       </button>
+      {ticker.priceAsOf !== null && !dirty && <span className="muted">as of {formatDay(ticker.priceAsOf)}</span>}
+      {invalid && <span className="field-error">A price above $0, like 123.45</span>}
     </div>
   );
 }

@@ -1,16 +1,26 @@
 /** Age derivation and the display labels for each enum. */
 
+import { LIFE_STAGES_BY_PHASE } from './types.js';
 import type {
   AccountType,
   AssetClass,
   BucketType,
+  Gender,
   HealthConcern,
   LifeStage,
   MoneyCyclePhase,
   Person,
   TaxFunnel,
 } from './types.js';
-import { SSA_2022_REMAINING_YEARS } from './ssaLifeTable.js';
+
+/**
+ * US-25: the stage to keep when the phase changes. The current one if it
+ * belongs to the new phase, otherwise the new phase's first stage.
+ */
+export function stageForPhase(phase: MoneyCyclePhase, current: LifeStage): LifeStage {
+  const stages = LIFE_STAGES_BY_PHASE[phase];
+  return stages.includes(current) ? current : (stages[0] ?? current);
+}
 
 /** `today` is a parameter so tests can pin the year. */
 export function ageFromBirthYear(birthYear: number | null, today: Date): number | null {
@@ -19,33 +29,10 @@ export function ageFromBirthYear(birthYear: number | null, today: Date): number 
   return age >= 0 && age < 130 ? age : null;
 }
 
-export function estimatedLifeExpectancyAge(person: Person, today: Date): number | null {
-  const age = ageFromBirthYear(person.birthYear, today);
-  if (age === null || person.gender === null) return null;
-  if (person.healthConcerns.includes('OTHER') && person.otherHealthConcernAdjustmentYears === null) {
-    return null;
-  }
-
-  const tableAge = Math.min(age, 119);
-  const remainingYears = SSA_2022_REMAINING_YEARS[person.gender][tableAge];
-  if (remainingYears === undefined) {
-    throw new Error(`Missing SSA life-table value for ${person.gender} at age ${tableAge}`);
-  }
-
-  const standardConcernYears =
-    person.healthConcerns.filter((concern) => concern !== 'OTHER').length * 3;
-  const otherConcernYears = person.healthConcerns.includes('OTHER')
-    ? (person.otherHealthConcernAdjustmentYears ?? 0)
-    : 0;
-
-  return Math.max(age, Math.round(age + remainingYears - standardConcernYears - otherConcernYears));
-}
-
 export function planYears(person: Person, today: Date): number | null {
   const age = ageFromBirthYear(person.birthYear, today);
-  const lifeExpectancyAge = estimatedLifeExpectancyAge(person, today);
-  if (age === null || lifeExpectancyAge === null) return null;
-  return Math.max(0, lifeExpectancyAge - age);
+  if (age === null || person.lifeExpectancyAge === null) return null;
+  return Math.max(0, person.lifeExpectancyAge - age);
 }
 
 /** The longer of the two horizons — the plan has to outlast both. */
@@ -69,17 +56,6 @@ export const MONEY_CYCLE_LABELS: Record<MoneyCyclePhase, string> = {
   DISTRIBUTION: 'Distribution',
 };
 
-export const STAGES_BY_PHASE: Record<MoneyCyclePhase, readonly LifeStage[]> = {
-  ACCUMULATION: ['ACCUMULATION_YOUNG_PROFESSIONAL', 'ACCUMULATION_PEAK_EARNINGS'],
-  PRESERVATION: ['PRESERVATION'],
-  DISTRIBUTION: ['DISTRIBUTION_GO_GO', 'DISTRIBUTION_SLOW_GO', 'DISTRIBUTION_NO_GO'],
-};
-
-export function stageForPhase(phase: MoneyCyclePhase, current: LifeStage): LifeStage {
-  const allowed = STAGES_BY_PHASE[phase];
-  return allowed.includes(current) ? current : (allowed[0] ?? current);
-}
-
 export const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
   SINGLE: 'Single',
   JOINT: 'Joint',
@@ -93,6 +69,11 @@ export const HEALTH_CONCERN_LABELS: Record<HealthConcern, string> = {
   STROKE: 'Stroke',
   HEART: 'Heart',
   OTHER: 'Other',
+};
+
+export const GENDER_LABELS: Record<Gender, string> = {
+  MALE: 'Male',
+  FEMALE: 'Female',
 };
 
 export const ASSET_CLASS_LABELS: Record<AssetClass, string> = {

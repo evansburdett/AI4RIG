@@ -1,21 +1,23 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { api, ApiError } from './api.js';
 import { Callout } from './components/Callout.js';
 import { ClientSwitcher } from './components/ClientSwitcher.js';
 import { ConnectionStatus } from './components/ConnectionStatus.js';
 import type {
+  AdvisoryFeeTier,
   BucketDefinition,
   ClientCase,
   ClientSummary,
   ModelPortfolio,
   Ticker,
 } from './domain/types.js';
-import { revalueClientCase } from './domain/breakdown.js';
+import { withTicker } from './domain/tickers.js';
 import { hrefFor, isReferenceScreen, useRoute, type Screen } from './routing.js';
 import { AssetClassBreakdown } from './screens/AssetClassBreakdown.js';
 import { BucketAssignments } from './screens/BucketAssignments.js';
 import { ClientProfile } from './screens/ClientProfile.js';
+import { FeeTiers } from './screens/FeeTiers.js';
 import { Models } from './screens/Models.js';
 
 /**
@@ -31,6 +33,7 @@ export function App() {
   const [tickers, setTickers] = useState<readonly Ticker[]>([]);
   const [models, setModels] = useState<readonly ModelPortfolio[]>([]);
   const [definitions, setDefinitions] = useState<readonly BucketDefinition[]>([]);
+  const [feeTiers, setFeeTiers] = useState<readonly AdvisoryFeeTier[]>([]);
   const [referenceError, setReferenceError] = useState<string | null>(null);
 
   /** Where to return from the model and ticker screens, which belong to no client. */
@@ -47,13 +50,20 @@ export function App() {
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([api.listClients(), api.listTickers(), api.listModels(), api.listBucketDefinitions()])
-      .then(([clientList, tickerList, modelList, definitionList]) => {
+    Promise.all([
+      api.listClients(),
+      api.listTickers(),
+      api.listModels(),
+      api.listBucketDefinitions(),
+      api.listAdvisoryFeeTiers(),
+    ])
+      .then(([clientList, tickerList, modelList, definitionList, feeTierList]) => {
         if (cancelled) return;
         setClients(clientList);
         setTickers(tickerList);
         setModels(modelList);
         setDefinitions(definitionList);
+        setFeeTiers(feeTierList);
       })
       .catch((error: unknown) => {
         if (!cancelled) setReferenceError(describeError(error));
@@ -75,9 +85,17 @@ export function App() {
     if (target !== undefined) navigate({ screen: 'profile', clientNumber: target });
   }, [clients, lastClientNumber, route.clientNumber, route.screen, navigate]);
 
+  /**
+   * The case the working copy belongs to. Coming back to it from the model,
+   * ticker, or fee screens keeps the unsaved edits instead of reloading over
+   * them; those screens send the advisor away mid-case (to price a ticker,
+   * say), so a reload there would quietly throw the work away.
+   */
+  const loadedClientNumber = useRef<string | null>(null);
+
   useEffect(() => {
     const clientNumber = route.clientNumber;
-    if (clientNumber === null) return;
+    if (clientNumber === null || clientNumber === loadedClientNumber.current) return;
 
     let cancelled = false;
     setCaseError(null);
@@ -87,11 +105,13 @@ export function App() {
       .getClient(clientNumber)
       .then((clientCase) => {
         if (cancelled) return;
+        loadedClientNumber.current = clientNumber;
         setSaved(clientCase);
         setDraft(clientCase);
       })
       .catch((error: unknown) => {
         if (cancelled) return;
+        loadedClientNumber.current = null;
         setDraft(null);
         setSaved(null);
         setCaseError(describeError(error));
@@ -107,11 +127,18 @@ export function App() {
 
   const selectClient = useCallback(
     (clientNumber: string) => {
+      if (
+        clientNumber !== loadedClientNumber.current &&
+        dirty &&
+        !window.confirm('Discard unsaved changes to the open case?')
+      ) {
+        return;
+      }
       // Stay on the screen the advisor is reading.
       const screen: Screen = isReferenceScreen(route.screen) ? 'profile' : route.screen;
       navigate({ screen, clientNumber });
     },
-    [navigate, route.screen],
+    [dirty, navigate, route.screen],
   );
 
   const save = useCallback(async () => {
@@ -166,6 +193,7 @@ export function App() {
       await api.deleteClient(activeClientNumber);
       const remaining = clients.filter((c) => c.clientNumber !== activeClientNumber);
       setClients(remaining);
+      loadedClientNumber.current = null;
       setDraft(null);
       setSaved(null);
       setLastClientNumber(null);
@@ -185,18 +213,22 @@ export function App() {
   const saveTicker = useCallback(async (ticker: Ticker) => {
     try {
       const result = await api.saveTicker(ticker);
-      const nextTickers = tickers.map((t) => (t.symbol === result.symbol ? result : t));
-      const wasClean = draft === saved;
-      const nextDraft = draft === null ? null : revalueClientCase(draft, nextTickers);
-      const nextSaved = wasClean ? nextDraft : saved === null ? null : revalueClientCase(saved, nextTickers);
-      setTickers(nextTickers);
-      setDraft(nextDraft);
-      setSaved(nextSaved);
+      setTickers((current) => current.map((t) => (t.symbol === result.symbol ? result : t)));
       setReferenceError(null);
     } catch (error: unknown) {
       setReferenceError(describeError(error));
     }
-  }, [draft, saved, tickers]);
+  }, []);
+
+  /**
+   * US-24: a symbol typed on a model or a manual bucket that the universe did
+   * not have. Throws on failure so the message shows where it was typed.
+   */
+  const addTicker = useCallback(async (ticker: Ticker): Promise<Ticker> => {
+    const result = await api.saveTicker(ticker);
+    setTickers((current) => withTicker(current, result));
+    return result;
+  }, []);
 
   /** Throws on failure so the model editor can show the message next to the model. */
   const saveModel = useCallback(async (model: ModelPortfolio): Promise<ModelPortfolio> => {
@@ -231,6 +263,11 @@ export function App() {
     } catch (error: unknown) {
       setReferenceError(describeError(error));
     }
+  }, []);
+
+  /** Throws on failure so the fee screen can show the message next to the schedule. */
+  const saveFeeTiers = useCallback(async (tiers: AdvisoryFeeTier[]) => {
+    setFeeTiers(await api.saveAdvisoryFeeTiers(tiers));
   }, []);
 
   const today = useMemo(() => new Date(), []);
@@ -279,6 +316,12 @@ export function App() {
           >
             Tickers
           </a>
+          <a
+            href={hrefFor({ screen: 'fees', clientNumber: null })}
+            aria-current={route.screen === 'fees' ? 'page' : undefined}
+          >
+            Fee tiers
+          </a>
         </nav>
 
         {!isReferenceScreen(route.screen) && (
@@ -306,28 +349,37 @@ export function App() {
 
       <main>
         {referenceError !== null && (
-          <Callout tone="warning" title="Could not load or save reference data">
+          <Callout tone="error" title="Could not load or save reference data">
             {referenceError}
           </Callout>
         )}
 
         {actionError !== null && (
-          <Callout tone="warning" title="That did not go through">
+          <Callout tone="error" title="That did not go through">
             {actionError}
           </Callout>
         )}
 
         {route.screen === 'models' ? (
-          <Models models={models} tickers={tickers} onSave={saveModel} onDelete={deleteModel} />
+          <Models
+            models={models}
+            tickers={tickers}
+            onSave={saveModel}
+            onDelete={deleteModel}
+            onAddTicker={addTicker}
+          />
         ) : route.screen === 'tickers' ? (
           <BucketAssignments
             tickers={tickers}
             definitions={definitions}
             onSaveTicker={saveTicker}
+            onAddTicker={addTicker}
             onSaveDefinition={saveDefinition}
           />
+        ) : route.screen === 'fees' ? (
+          <FeeTiers tiers={feeTiers} onSave={saveFeeTiers} />
         ) : caseError !== null ? (
-          <Callout tone="warning" title="Could not open this case">
+          <Callout tone="error" title="Could not open this case">
             {caseError}
           </Callout>
         ) : clients.length === 0 && draft === null ? (
@@ -335,14 +387,17 @@ export function App() {
         ) : draft === null ? (
           <p className="empty">Loading…</p>
         ) : route.screen === 'breakdown' ? (
-          <AssetClassBreakdown clientCase={draft} tickers={tickers} />
+          <AssetClassBreakdown clientCase={draft} tickers={tickers} models={models} feeTiers={feeTiers} />
         ) : (
           <ClientProfile
             clientCase={draft}
             models={models}
             tickers={tickers}
+            feeTiers={feeTiers}
             onChange={setDraft}
             onSaveAsModel={saveModel}
+            onAddTicker={addTicker}
+            onEstimateLifeExpectancy={api.estimateLifeExpectancy}
             today={today}
           />
         )}

@@ -8,9 +8,12 @@
  */
 
 import type {
+  AdvisoryFeeTier,
   BucketDefinition,
   ClientCase,
   ClientSummary,
+  LifeExpectancyEstimate,
+  LifeExpectancyRequest,
   ModelPortfolio,
   Ticker,
 } from './domain/types.js';
@@ -94,6 +97,8 @@ export interface Health {
   apiHost: string;
   apiPort: number;
   nodeEnv: string;
+  /** Whether this machine has an OpenAI key for US-28. */
+  lifeExpectancyEstimates: boolean;
   time: string;
 }
 
@@ -139,4 +144,14 @@ export const api = {
 
   saveBucketDefinition: (definition: BucketDefinition) =>
     send<BucketDefinition>(`/api/bucket-definitions/${definition.bucket}`, 'PUT', definition),
+
+  listAdvisoryFeeTiers: () => get<AdvisoryFeeTier[]>('/api/advisory-fee-tiers'),
+
+  /** Replaces the whole schedule. */
+  saveAdvisoryFeeTiers: (tiers: readonly AdvisoryFeeTier[]) =>
+    send<AdvisoryFeeTier[]>('/api/advisory-fee-tiers', 'PUT', tiers),
+
+  /** US-28. Nothing is saved; the answer goes in the person's field. */
+  estimateLifeExpectancy: (request: LifeExpectancyRequest) =>
+    send<LifeExpectancyEstimate>('/api/life-expectancy/estimate', 'POST', request),
 };

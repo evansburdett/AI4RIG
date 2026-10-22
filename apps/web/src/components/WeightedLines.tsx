@@ -6,11 +6,21 @@
  *
  * Weights are kept as typed text while editing and only parsed to basis points
  * on the way out, so a half-typed "12." does not blank the field.
+ *
+ * Symbols are typed, not picked from a list (US-24). A line's `tickerSymbol`
+ * only ever holds a symbol the universe knows, or ''; a symbol that is not in
+ * the universe yet stays in the input box, with an offer to add it, until it
+ * is added. Everything downstream can keep assuming a line's symbol is real.
  */
+
+import { Fragment, useId, useState } from 'react';
 
 import type { BucketType, SleeveLine, Ticker } from '../domain/types.js';
 import { BUCKET_LABELS } from '../domain/lifeStage.js';
 import { WHOLE_BPS, bpsToPercentInput, formatBps, parsePercentToBps } from '../domain/percent.js';
+import { isValidSymbol, normalizeSymbol } from '../domain/tickers.js';
+
+import { NewTickerFields } from './NewTickerFields.js';
 
 export interface DraftLine {
   readonly key: number;
@@ -59,7 +69,7 @@ export function draftProblem(
   lines: readonly DraftLine[],
   { requireFull }: { requireFull: boolean },
 ): string | null {
-  if (lines.some((l) => l.tickerSymbol === '')) return 'Choose a ticker on every line.';
+  if (lines.some((l) => l.tickerSymbol === '')) return 'Enter a ticker on every line, adding any new ones.';
   if (new Set(lines.map((l) => l.tickerSymbol)).size !== lines.length) {
     return 'Each ticker can appear once.';
   }
@@ -79,13 +89,25 @@ interface Props {
   /** Which bucket this money sits in, to flag a symbol RIG usually puts elsewhere. */
   bucket: BucketType;
   onChange: (lines: DraftLine[]) => void;
+  /** Adds a symbol to the universe. Rejects with the reason when it cannot. */
+  onAddTicker: (ticker: Ticker) => Promise<Ticker>;
   /** Label on the add button, which differs between a model and a bucket. */
   addLabel?: string;
 }
 
-export function WeightedLines({ lines, tickers, bucket, onChange, addLabel = 'Add ticker' }: Props) {
+export function WeightedLines({
+  lines,
+  tickers,
+  bucket,
+  onChange,
+  onAddTicker,
+  addLabel = 'Add ticker',
+}: Props) {
   const tickerBySymbol = new Map(tickers.map((t) => [t.symbol, t]));
   const totalBps = draftTotalBps(lines);
+  const listId = useId();
+  /** What is in each symbol box, by line key, when it differs from the line's symbol. */
+  const [typed, setTyped] = useState<Record<number, string>>({});
 
   function patchLine(key: number, changes: Partial<DraftLine>) {
     onChange(lines.map((l) => (l.key === key ? { ...l, ...changes } : l)));
@@ -109,55 +131,92 @@ export function WeightedLines({ lines, tickers, bucket, onChange, addLabel = 'Ad
         <tbody>
           {lines.map((line) => {
             const ticker = tickerBySymbol.get(line.tickerSymbol);
+            const text = typed[line.key] ?? line.tickerSymbol;
+            const symbol = normalizeSymbol(text);
+            const isNew = symbol !== '' && !tickerBySymbol.has(symbol);
+            const valid = isValidSymbol(symbol);
+
+            function onType(value: string) {
+              setTyped((current) => ({ ...current, [line.key]: value }));
+              const next = normalizeSymbol(value);
+              // Only a known symbol reaches the line; anything else leaves it blank.
+              const known = tickerBySymbol.has(next) ? next : '';
+              if (known !== line.tickerSymbol) patchLine(line.key, { tickerSymbol: known });
+            }
+
             return (
-              <tr key={line.key}>
-                <td>
-                  <select
-                    aria-label="Ticker"
-                    value={line.tickerSymbol}
-                    onChange={(event) => patchLine(line.key, { tickerSymbol: event.target.value })}
-                  >
-                    <option value="">Choose…</option>
-                    {tickers.map((t) => (
-                      <option key={t.symbol} value={t.symbol}>
-                        {t.symbol}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td>
-                  <span className="percent-input">
+              <Fragment key={line.key}>
+                <tr>
+                  <td>
                     <input
-                      aria-label="Weight"
+                      aria-label="Ticker"
+                      className="symbol-input"
                       type="text"
-                      inputMode="decimal"
-                      value={line.percentText}
-                      aria-invalid={parsePercentToBps(line.percentText) === null}
-                      onChange={(event) => patchLine(line.key, { percentText: event.target.value })}
+                      list={listId}
+                      autoComplete="off"
+                      spellCheck={false}
+                      value={text}
+                      aria-invalid={isNew && !valid}
+                      onChange={(event) => onType(event.target.value)}
                     />
-                    <span aria-hidden="true">%</span>
-                  </span>
-                </td>
-                <td>
-                  {ticker !== undefined && ticker.defaultBucket !== bucket && (
-                    <span
-                      className="tag"
-                      title="RIG's ticker mapping puts this symbol in another bucket"
-                    >
-                      usually {BUCKET_LABELS[ticker.defaultBucket]}
+                  </td>
+                  <td>
+                    <span className="percent-input">
+                      <input
+                        aria-label="Weight"
+                        type="text"
+                        inputMode="decimal"
+                        value={line.percentText}
+                        aria-invalid={parsePercentToBps(line.percentText) === null}
+                        onChange={(event) => patchLine(line.key, { percentText: event.target.value })}
+                      />
+                      <span aria-hidden="true">%</span>
                     </span>
-                  )}
-                </td>
-                <td className="row-actions">
-                  <button
-                    type="button"
-                    className="link"
-                    onClick={() => onChange(lines.filter((l) => l.key !== line.key))}
-                  >
-                    Remove
-                  </button>
-                </td>
-              </tr>
+                  </td>
+                  <td>
+                    {ticker !== undefined && ticker.defaultBucket !== bucket && (
+                      <span
+                        className="tag"
+                        title="RIG's ticker mapping puts this symbol in another bucket"
+                      >
+                        usually {BUCKET_LABELS[ticker.defaultBucket]}
+                      </span>
+                    )}
+                  </td>
+                  <td className="row-actions">
+                    <button
+                      type="button"
+                      className="link"
+                      onClick={() => onChange(lines.filter((l) => l.key !== line.key))}
+                    >
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+                {/* Its own row under the line, so the columns do not shift while typing. */}
+                {isNew && (
+                  <tr className="new-ticker-row">
+                    <td colSpan={4}>
+                      {valid ? (
+                        <NewTickerFields
+                          key={symbol}
+                          symbol={symbol}
+                          suggestedBucket={bucket}
+                          onAdd={onAddTicker}
+                          onAdded={(added) => {
+                            setTyped((current) => ({ ...current, [line.key]: added.symbol }));
+                            patchLine(line.key, { tickerSymbol: added.symbol });
+                          }}
+                        />
+                      ) : (
+                        <span className="field-error">
+                          Symbols are letters, digits, dots, and dashes, up to 10.
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
             );
           })}
         </tbody>
@@ -169,6 +228,12 @@ export function WeightedLines({ lines, tickers, bucket, onChange, addLabel = 'Ad
           </tr>
         </tfoot>
       </table>
+
+      <datalist id={listId}>
+        {tickers.map((t) => (
+          <option key={t.symbol} value={t.symbol} />
+        ))}
+      </datalist>
 
       <div className="button-row">
         <button type="button" onClick={() => onChange([...lines, newDraftLine()])}>

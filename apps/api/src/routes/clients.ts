@@ -8,7 +8,7 @@ import {
   listClientSummaries,
   saveClientCase,
 } from '../repositories/clientCases.js';
-import { clientCaseSchema, parseOr400 } from '../validation.js';
+import { checkedClientCaseSchema, parseOr400 } from '../validation.js';
 
 /**
  * Client cases (US-01 intake, US-02 generated numbers, US-03 switching, US-04
@@ -42,7 +42,7 @@ export function createClientsRouter(db: Db): Router {
   });
 
   router.put('/api/clients/:clientNumber', (req, res) => {
-    const input = parseOr400(clientCaseSchema, req.body, res);
+    const input = parseOr400(checkedClientCaseSchema, req.body, res);
     if (input === null) return;
 
     if (input.clientNumber !== req.params.clientNumber) {

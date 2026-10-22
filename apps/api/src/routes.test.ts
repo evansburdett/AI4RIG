@@ -3,10 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { openDatabase, runMigrations, runSeeds, type Db } from '@ai4rig/db';
-import type { BucketDefinition, ClientCase, ClientSummary, ModelPortfolio, Ticker } from '@ai4rig/shared';
+import type { AdvisoryFeeTier, BucketDefinition, ClientCase, ClientSummary, ModelPortfolio, Ticker } from '@ai4rig/shared';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { createApp } from './app.js';
+import { HttpError } from './errors.js';
 
 /**
  * Every route against a temp database built from the real migrations and
@@ -35,6 +36,11 @@ beforeEach(async () => {
   const { app } = createApp({
     config: { host: '127.0.0.1', port: 0, webOrigins: [], nodeEnv: 'test' },
     db,
+    // Stands in for OpenAI: 84, or a 503 for anyone over 100, so both paths run.
+    estimator: async (request) => {
+      if (request.age > 100) throw new HttpError(503, 'not set up');
+      return { lifeExpectancyAge: 84, explanation: `Estimated for ${request.age}.`, model: 'stub' };
+    },
   });
 
   await new Promise<void>((resolve) => {
@@ -77,24 +83,19 @@ describe('client cases', () => {
 
     expect(status).toBe(200);
     expect(body.people.map((p) => p.role)).toEqual(['CLIENT', 'SPOUSE']);
-    expect(body.people.map((p) => [p.gender, p.otherHealthConcernAdjustmentYears])).toEqual([
-      ['MALE', null],
-      ['FEMALE', 3],
-    ]);
     expect(body.taxBracketPct).toBe(22);
     expect(body.accounts.map((a) => [a.accountType, a.taxFunnel, a.balanceCents])).toEqual([
-      ['JOINT', 'TAXABLE', 0],
-      ['IRA', 'PRE_TAX', 0],
-      ['ROTH_IRA', 'TAX_FREE', 0],
+      ['JOINT', 'TAXABLE', 1_200_000_00],
+      ['IRA', 'PRE_TAX', 1_500_000_00],
+      ['ROTH_IRA', 'TAX_FREE', 300_000_00],
     ]);
-    expect(body.accounts.every((account) => account.positions.length === 0)).toBe(true);
     expect(body.accounts[0]?.sleeves).toEqual([
-      { bucket: 'NOW', amountCents: 190_000_00, mode: 'MODEL', modelId: '9001', lines: [] },
+      { bucket: 'NOW', amountCents: 205_000_00, mode: 'MODEL', modelId: '9001', lines: [] },
       { bucket: 'SOON', amountCents: 400_000_00, mode: 'MODEL', modelId: '9002', lines: [] },
-      { bucket: 'LATER', amountCents: 610_000_00, mode: 'MODEL', modelId: '9003', lines: [] },
+      { bucket: 'LATER', amountCents: 595_000_00, mode: 'MODEL', modelId: '9003', lines: [] },
     ]);
-    expect(body.accounts[2]?.sleeves[0]).toEqual({
-      bucket: 'NOW',
+    expect(body.accounts[2]?.sleeves[1]).toEqual({
+      bucket: 'SOON',
       amountCents: 0,
       mode: 'MODEL',
       modelId: null,
@@ -132,6 +133,7 @@ describe('client cases', () => {
     const edited: ClientCase = {
       ...original,
       initials: 'C.D.E.',
+      moneyCyclePhase: 'PRESERVATION',
       lifeStage: 'PRESERVATION',
       taxBracketPct: 24,
       accounts: [
@@ -141,8 +143,8 @@ describe('client cases', () => {
           accountType: 'OTHER',
           taxFunnel: 'PRE_TAX',
           maskedNumber: '0042',
-          balanceCents: 0,
-          positions: [],
+          balanceCents: 50_000_00,
+          proposalShares: [],
           sleeves: [
             { bucket: 'NOW', amountCents: 0, mode: 'MODEL', modelId: null, lines: [] },
             { bucket: 'SOON', amountCents: 12_345_67, mode: 'MODEL', modelId: '9002', lines: [] },
@@ -168,7 +170,7 @@ describe('client cases', () => {
     expect(reread.lifeStage).toBe('PRESERVATION');
     expect(reread.taxBracketPct).toBe(24);
     expect(reread.accounts).toHaveLength(3);
-    expect(reread.accounts[2]).toMatchObject({ accountType: 'OTHER', taxFunnel: 'PRE_TAX', balanceCents: 0 });
+    expect(reread.accounts[2]).toMatchObject({ accountType: 'OTHER', taxFunnel: 'PRE_TAX', balanceCents: 50_000_00 });
     expect(reread.accounts[2]?.sleeves[1]).toEqual({
       bucket: 'SOON',
       amountCents: 12_345_67,
@@ -179,45 +181,6 @@ describe('client cases', () => {
     // Local ids are replaced by database ids.
     expect(reread.accounts[2]?.id).not.toBe('acct-local-1');
     expect(reread.soonInputs.forcedWithdrawals[0]?.multiplier).toBe(1.15);
-  });
-
-  it('derives account balances from actual shares and current ticker prices', async () => {
-    await call('PUT', '/api/tickers/SGOV', {
-      symbol: 'SGOV',
-      assetClass: 'CASH',
-      defaultBucket: 'NOW',
-      priceCents: 10_000,
-    });
-    const { body: original } = await call<ClientCase>('GET', '/api/clients/1042');
-    const edited: ClientCase = {
-      ...original,
-      accounts: original.accounts.map((account, index) =>
-        index === 0
-          ? {
-              ...account,
-              balanceCents: 1,
-              positions: [{ bucket: 'NOW', tickerSymbol: 'SGOV', sharesMicros: 2_500_000 }],
-            }
-          : account,
-      ),
-    };
-
-    const saved = await call<ClientCase>('PUT', '/api/clients/1042', edited);
-    expect(saved.status).toBe(200);
-    expect(saved.body.accounts[0]).toMatchObject({
-      balanceCents: 25_000,
-      positions: [{ bucket: 'NOW', tickerSymbol: 'SGOV', sharesMicros: 2_500_000 }],
-    });
-
-    const refreshedPrice = await call('PUT', '/api/tickers/SGOV', {
-      symbol: 'SGOV',
-      assetClass: 'CASH',
-      defaultBucket: 'NOW',
-      priceCents: 12_000,
-    });
-    expect(refreshedPrice.status).toBe(200);
-    const reread = await call<ClientCase>('GET', '/api/clients/1042');
-    expect(reread.body.accounts[0]?.balanceCents).toBe(30_000);
   });
 
   it('can remove every account and line from a case', async () => {
@@ -328,12 +291,39 @@ describe('tickers', () => {
   it('lists the universe alphabetically', async () => {
     const { body } = await call<Ticker[]>('GET', '/api/tickers');
     expect(body).toHaveLength(10);
-    expect(body[0]).toEqual({
-      symbol: 'BIL',
-      assetClass: 'CASH',
-      defaultBucket: 'NOW',
-      priceCents: null,
+    expect(body[0]).toMatchObject({ symbol: 'BIL', assetClass: 'CASH', defaultBucket: 'NOW' });
+  });
+
+  it('stamps a changed price with the day, and keeps it when only the bucket changes', async () => {
+    const priced = await call<Ticker>('PUT', '/api/tickers/SCHD', {
+      symbol: 'SCHD',
+      assetClass: 'EQUITY',
+      defaultBucket: 'LATER',
+      priceCents: 27_50,
     });
+    expect(priced.body).toMatchObject({ priceCents: 27_50, priceAsOf: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
+
+    // A caller that leaves the price out (US-24's add-a-symbol, a bucket
+    // change) must not wipe it.
+    const moved = await call<Ticker>('PUT', '/api/tickers/SCHD', {
+      symbol: 'SCHD',
+      assetClass: 'EQUITY',
+      defaultBucket: 'SOON',
+    });
+    expect(moved.body).toMatchObject({ defaultBucket: 'SOON', priceCents: 27_50, priceAsOf: priced.body.priceAsOf });
+
+    const cleared = await call<Ticker>('PUT', '/api/tickers/SCHD', { ...moved.body, priceCents: null });
+    expect(cleared.body).toMatchObject({ priceCents: null, priceAsOf: null });
+  });
+
+  it('refuses a price of zero', async () => {
+    const { status } = await call('PUT', '/api/tickers/SCHD', {
+      symbol: 'SCHD',
+      assetClass: 'EQUITY',
+      defaultBucket: 'LATER',
+      priceCents: 0,
+    });
+    expect(status).toBe(400);
   });
 
   it('updates an existing ticker and adds a new one', async () => {
@@ -341,7 +331,6 @@ describe('tickers', () => {
       symbol: 'GLD',
       assetClass: 'ALTERNATIVE',
       defaultBucket: 'LATER',
-      priceCents: 15_000,
     });
     expect(updated.status).toBe(200);
 
@@ -349,15 +338,11 @@ describe('tickers', () => {
       symbol: 'schd',
       assetClass: 'EQUITY',
       defaultBucket: 'LATER',
-      priceCents: null,
     });
     expect(added.body.symbol).toBe('SCHD');
 
     const { body } = await call<Ticker[]>('GET', '/api/tickers');
-    expect(body.find((t) => t.symbol === 'GLD')).toMatchObject({
-      assetClass: 'ALTERNATIVE',
-      priceCents: 15_000,
-    });
+    expect(body.find((t) => t.symbol === 'GLD')).toMatchObject({ assetClass: 'ALTERNATIVE' });
     expect(body).toHaveLength(11);
   });
 
@@ -366,7 +351,6 @@ describe('tickers', () => {
       symbol: 'GLD',
       assetClass: 'CRYPTO',
       defaultBucket: 'LATER',
-      priceCents: null,
     });
     expect(status).toBe(400);
   });
@@ -382,30 +366,27 @@ describe('tickers', () => {
     expect(body.error).toMatch(/Placeholder Now: Cash/);
   });
 
-  it('refuses to delete a ticker held in an actual account position', async () => {
-    await call('PUT', '/api/tickers/GLD', {
-      symbol: 'GLD',
-      assetClass: 'ALTERNATIVE',
-      defaultBucket: 'LATER',
-      priceCents: 10_000,
-    });
-    const { body: original } = await call<ClientCase>('GET', '/api/clients/1042');
-    const edited: ClientCase = {
+  it('refuses to delete a ticker a client case picks by hand, and says which', async () => {
+    await call('PUT', '/api/tickers/SCHD', { symbol: 'SCHD', assetClass: 'EQUITY', defaultBucket: 'LATER' });
+    const { body: original } = await call<ClientCase>('GET', '/api/clients/2317');
+    const edited = {
       ...original,
-      accounts: original.accounts.map((account, index) =>
-        index === 0
+      accounts: original.accounts.map((a, i) =>
+        i === 0
           ? {
-              ...account,
-              positions: [{ bucket: 'LATER', tickerSymbol: 'GLD', sharesMicros: 1_000_000 }],
+              ...a,
+              sleeves: a.sleeves.map((s) =>
+                s.bucket === 'LATER' ? { ...s, lines: [{ tickerSymbol: 'SCHD', weightBps: 10_000 }] } : s,
+              ),
             }
-          : account,
+          : a,
       ),
     };
-    expect((await call('PUT', '/api/clients/1042', edited)).status).toBe(200);
+    expect((await call('PUT', '/api/clients/2317', edited)).status).toBe(200);
 
-    const { status, body } = await call<{ error: string }>('DELETE', '/api/tickers/GLD');
+    const { status, body } = await call<{ error: string }>('DELETE', '/api/tickers/SCHD');
     expect(status).toBe(409);
-    expect(body.error).toMatch(/held in client accounts/);
+    expect(body.error).toMatch(/client case 2317/);
   });
 });
 
@@ -481,7 +462,7 @@ describe('models', () => {
     const { body } = await call<ClientCase>('GET', '/api/clients/1042');
     expect(body.accounts[0]?.sleeves[0]).toEqual({
       bucket: 'NOW',
-      amountCents: 190_000_00,
+      amountCents: 205_000_00,
       mode: 'MODEL',
       modelId: null,
       lines: [],
@@ -516,6 +497,184 @@ describe('bucket definitions', () => {
   });
 });
 
+describe('advisory fee tiers (US-19)', () => {
+  it('ships RIG\'s schedule, lowest balance first', async () => {
+    const { body } = await call<AdvisoryFeeTier[]>('GET', '/api/advisory-fee-tiers');
+    expect(body.map((t) => [t.minBalanceCents, t.rateBps])).toEqual([
+      [0, 195],
+      [250_000_00, 175],
+      [500_000_00, 150],
+      [1_000_000_00, 125],
+      [2_500_000_00, 100],
+      [5_000_000_00, 85],
+    ]);
+  });
+
+  it('replaces the whole schedule', async () => {
+    const tiers = [
+      { minBalanceCents: 0, rateBps: 150 },
+      { minBalanceCents: 1_000_000_00, rateBps: 100 },
+    ];
+    const saved = await call<AdvisoryFeeTier[]>('PUT', '/api/advisory-fee-tiers', tiers);
+    expect(saved.status).toBe(200);
+    expect((await call<AdvisoryFeeTier[]>('GET', '/api/advisory-fee-tiers')).body).toEqual(tiers);
+  });
+
+  it('refuses a schedule that does not start at $0, or is out of order', async () => {
+    expect(
+      (await call('PUT', '/api/advisory-fee-tiers', [{ minBalanceCents: 100, rateBps: 100 }])).status,
+    ).toBe(400);
+    expect(
+      (
+        await call('PUT', '/api/advisory-fee-tiers', [
+          { minBalanceCents: 0, rateBps: 100 },
+          { minBalanceCents: 500_00, rateBps: 90 },
+          { minBalanceCents: 200_00, rateBps: 80 },
+        ])
+      ).status,
+    ).toBe(400);
+    expect((await call('PUT', '/api/advisory-fee-tiers', [])).status).toBe(400);
+  });
+});
+
+describe('stage of life follows money cycle phase (US-25)', () => {
+  it('refuses a stage from another phase, and says which field', async () => {
+    const { body: original } = await call<ClientCase>('GET', '/api/clients/1042');
+    const { status, body } = await call<{ issues: { path: string }[] }>('PUT', '/api/clients/1042', {
+      ...original,
+      moneyCyclePhase: 'DISTRIBUTION',
+      lifeStage: 'ACCUMULATION_PEAK_EARNINGS',
+    });
+    expect(status).toBe(400);
+    expect(body.issues.map((i) => i.path)).toContain('lifeStage');
+  });
+});
+
+describe('gender (US-26)', () => {
+  it('reads back and saves each person\'s gender', async () => {
+    const { body: original } = await call<ClientCase>('GET', '/api/clients/1042');
+    expect(original.people.map((p) => p.gender)).toEqual(['MALE', 'FEMALE']);
+
+    const { status, body } = await call<ClientCase>('PUT', '/api/clients/1042', {
+      ...original,
+      people: original.people.map((p) => (p.role === 'SPOUSE' ? { ...p, gender: null } : p)),
+    });
+    expect(status).toBe(200);
+    expect(body.people.map((p) => p.gender)).toEqual(['MALE', null]);
+  });
+
+  it('refuses a value that is not on the list', async () => {
+    const { body: original } = await call<ClientCase>('GET', '/api/clients/1042');
+    const { status } = await call('PUT', '/api/clients/1042', {
+      ...original,
+      people: original.people.map((p) => ({ ...p, gender: 'X' })),
+    });
+    expect(status).toBe(400);
+  });
+});
+
+describe('locked proposal shares (US-21)', () => {
+  const lockedAt = '2026-10-21T15:00:00.000Z';
+
+  async function lockJoint(shares: { bucket: string; tickerSymbol: string; shares: number; priceCents: number }[]) {
+    const { body: original } = await call<ClientCase>('GET', '/api/clients/1042');
+    return call<ClientCase>('PUT', '/api/clients/1042', {
+      ...original,
+      proposalLockedAt: lockedAt,
+      accounts: original.accounts.map((a, i) => (i === 0 ? { ...a, proposalShares: shares } : a)),
+    });
+  }
+
+  it('saves and reads back whole share counts with the price they were locked at', async () => {
+    const { status, body } = await lockJoint([
+      { bucket: 'NOW', tickerSymbol: 'SGOV', shares: 1230, priceCents: 100_00 },
+      { bucket: 'LATER', tickerSymbol: 'VTI', shares: 1983, priceCents: 300_00 },
+    ]);
+    expect(status).toBe(200);
+    expect(body.proposalLockedAt).toBe(lockedAt);
+    expect(body.accounts[0]?.proposalShares).toEqual([
+      { bucket: 'NOW', tickerSymbol: 'SGOV', shares: 1230, priceCents: 100_00 },
+      { bucket: 'LATER', tickerSymbol: 'VTI', shares: 1983, priceCents: 300_00 },
+    ]);
+    // Typed balances are untouched by locking: shares never derive the balance.
+    expect(body.accounts[0]?.balanceCents).toBe(1_200_000_00);
+  });
+
+  it('refuses a fraction of a share, and shares with no lock time', async () => {
+    expect((await lockJoint([{ bucket: 'NOW', tickerSymbol: 'SGOV', shares: 1.5, priceCents: 100_00 }])).status).toBe(400);
+
+    const { body: original } = await call<ClientCase>('GET', '/api/clients/1042');
+    const { status } = await call('PUT', '/api/clients/1042', {
+      ...original,
+      proposalLockedAt: null,
+      accounts: original.accounts.map((a, i) =>
+        i === 0 ? { ...a, proposalShares: [{ bucket: 'NOW', tickerSymbol: 'SGOV', shares: 1, priceCents: 100_00 }] } : a,
+      ),
+    });
+    expect(status).toBe(400);
+  });
+
+  it('refuses to delete a ticker with locked shares, and says which case', async () => {
+    await call('PUT', '/api/tickers/SCHD', { symbol: 'SCHD', assetClass: 'EQUITY', defaultBucket: 'LATER' });
+    expect((await lockJoint([{ bucket: 'LATER', tickerSymbol: 'SCHD', shares: 10, priceCents: 27_50 }])).status).toBe(200);
+
+    const { status, body } = await call<{ error: string }>('DELETE', '/api/tickers/SCHD');
+    expect(status).toBe(409);
+    expect(body.error).toMatch(/locked in for client case 1042/);
+  });
+});
+
+describe('life expectancy (US-28)', () => {
+  it('passes age, gender, and concerns to the estimator and returns its answer', async () => {
+    const { status, body } = await call('POST', '/api/life-expectancy/estimate', {
+      age: 63,
+      gender: 'FEMALE',
+      healthConcerns: ['HEART'],
+      healthConcernOther: '',
+    });
+    expect(status).toBe(200);
+    expect(body).toEqual({ lifeExpectancyAge: 84, explanation: 'Estimated for 63.', model: 'stub' });
+  });
+
+  it('refuses a request without a gender', async () => {
+    const { status } = await call('POST', '/api/life-expectancy/estimate', {
+      age: 63,
+      healthConcerns: [],
+      healthConcernOther: '',
+    });
+    expect(status).toBe(400);
+  });
+
+  it('passes the estimator\'s own failure through', async () => {
+    const { status, body } = await call<{ error: string }>('POST', '/api/life-expectancy/estimate', {
+      age: 101,
+      gender: 'MALE',
+      healthConcerns: [],
+      healthConcernOther: '',
+    });
+    expect(status).toBe(503);
+    expect(body.error).toBe('not set up');
+  });
+
+  it('saves where the age came from, and refuses a source with no age', async () => {
+    const { body: original } = await call<ClientCase>('GET', '/api/clients/1042');
+    expect(original.people.map((p) => p.lifeExpectancySource)).toEqual(['ADVISOR', 'AI']);
+
+    const cleared = await call('PUT', '/api/clients/1042', {
+      ...original,
+      people: original.people.map((p) => ({ ...p, lifeExpectancyAge: null })),
+    });
+    expect(cleared.status).toBe(400);
+
+    const { status, body } = await call<ClientCase>('PUT', '/api/clients/1042', {
+      ...original,
+      people: original.people.map((p) => ({ ...p, lifeExpectancyAge: null, lifeExpectancySource: null })),
+    });
+    expect(status).toBe(200);
+    expect(body.people.map((p) => p.lifeExpectancyAge)).toEqual([null, null]);
+  });
+});
+
 describe('health concerns (US-27)', () => {
   it('reads back every concern a person has', async () => {
     const { body } = await call<ClientCase>('GET', '/api/clients/1042');
@@ -536,7 +695,6 @@ describe('health concerns (US-27)', () => {
         // Deliberately not in HEALTH_CONCERNS order.
         healthConcerns: ['OTHER', 'CANCER', 'STROKE'],
         healthConcernOther: 'Family history',
-        otherHealthConcernAdjustmentYears: 3,
       })),
     };
 
@@ -553,12 +711,7 @@ describe('health concerns (US-27)', () => {
     const { body: original } = await call<ClientCase>('GET', '/api/clients/1042');
     const cleared = {
       ...original,
-      people: original.people.map((p) => ({
-        ...p,
-        healthConcerns: [],
-        healthConcernOther: '',
-        otherHealthConcernAdjustmentYears: null,
-      })),
+      people: original.people.map((p) => ({ ...p, healthConcerns: [], healthConcernOther: '' })),
     };
 
     const { status, body } = await call<ClientCase>('PUT', '/api/clients/1042', cleared);
@@ -588,26 +741,6 @@ describe('health concerns (US-27)', () => {
 
     expect(status).toBe(400);
     expect(body.issues.some((i) => i.path.endsWith('healthConcernOther'))).toBe(true);
-  });
-
-  it('requires a custom life-expectancy adjustment for Other', async () => {
-    const { body: original } = await call<ClientCase>('GET', '/api/clients/1042');
-    const { status, body } = await call<{ issues: { path: string; message: string }[] }>(
-      'PUT',
-      '/api/clients/1042',
-      {
-        ...original,
-        people: original.people.map((person) =>
-          person.role === 'SPOUSE'
-            ? { ...person, otherHealthConcernAdjustmentYears: null }
-            : person,
-        ),
-      },
-    );
-
-    expect(status).toBe(400);
-    expect(body.issues.some((issue) => issue.path.endsWith('otherHealthConcernAdjustmentYears')))
-      .toBe(true);
   });
 
   it('refuses the same concern twice', async () => {
