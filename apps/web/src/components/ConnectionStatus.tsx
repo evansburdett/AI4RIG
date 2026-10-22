@@ -45,6 +45,7 @@ export function ConnectionStatus() {
   const { health } = state;
   return (
     <span className="status status-ok" role="status" title={`API at ${api.baseUrl}`}>
+      {health.appVersion !== null && <>Version {health.appVersion} · </>}
       Connected · {health.databasePath} · {health.migrationsApplied} migration
       {health.migrationsApplied === 1 ? '' : 's'} applied
     </span>
