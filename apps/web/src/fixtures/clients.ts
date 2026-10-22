@@ -31,9 +31,10 @@ function sleeves(now: SleeveSpec, soon: SleeveSpec, later: SleeveSpec): Account[
 }
 
 /**
- * Buckets land exactly on the plan: the workbook's $190,000 Now plus $39,000 of
- * advisory fee cash (US-19: $15,000 + $18,750 + $5,250, each held in its own
- * account's Now), the workbook's $914,700 Soon, and $1,856,300 Later.
+ * Buckets land exactly on the plan: the workbook's $190,000 Now plus $30,000 of
+ * advisory fee cash (US-19: $3,000,000 in all is the 1.00% tier, so $12,000 +
+ * $15,000 + $3,000, each held in its own account's Now), the workbook's
+ * $914,700 Soon, and $1,865,300 Later.
  */
 const WORKBOOK_CASE: ClientCase = {
   clientNumber: '1042',
@@ -71,7 +72,7 @@ const WORKBOOK_CASE: ClientCase = {
       maskedNumber: '4417',
       balanceCents: 1_200_000_00,
       proposalShares: [],
-      sleeves: sleeves([205_000, '9001'], [400_000, '9002'], [595_000, '9003']),
+      sleeves: sleeves([202_000, '9001'], [400_000, '9002'], [598_000, '9003']),
     },
     {
       id: '9002',
@@ -80,7 +81,7 @@ const WORKBOOK_CASE: ClientCase = {
       maskedNumber: '8830',
       balanceCents: 1_500_000_00,
       proposalShares: [],
-      sleeves: sleeves([18_750, '9001'], [514_700, '9002'], [966_550, '9003']),
+      sleeves: sleeves([15_000, '9001'], [514_700, '9002'], [970_300, '9003']),
     },
     {
       id: '9003',
@@ -89,7 +90,7 @@ const WORKBOOK_CASE: ClientCase = {
       maskedNumber: '2291',
       balanceCents: 300_000_00,
       proposalShares: [],
-      sleeves: sleeves([5_250, '9001'], [0, null], [294_750, '9004']),
+      sleeves: sleeves([3_000, '9001'], [0, null], [297_000, '9004']),
     },
   ],
   cashOnHandCents: 85_000_00,

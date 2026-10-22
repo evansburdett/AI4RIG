@@ -20,13 +20,13 @@ const withPrice = (symbol: string, priceCents: number | null): Ticker[] =>
 
 describe('proposedPositions', () => {
   it('turns percent into dollars into whole shares, keeping the rest as cash', () => {
-    // Joint Now: $205,000 in the cash model, SGOV 60% / BIL 40%.
+    // Joint Now: $202,000 in the cash model, SGOV 60% / BIL 40%.
     const now = proposedPositions(WORKBOOK_CASE.accounts[0]!, PLACEHOLDER_MODELS, PLACEHOLDER_TICKERS).filter(
       (p) => p.bucket === 'NOW',
     );
     expect(now).toEqual([
-      { bucket: 'NOW', tickerSymbol: 'SGOV', amountCents: 123_000_00, priceCents: 100_00, shares: 1230, costCents: 123_000_00, cashCents: 0 },
-      { bucket: 'NOW', tickerSymbol: 'BIL', amountCents: 82_000_00, priceCents: 91_50, shares: 896, costCents: 81_984_00, cashCents: 16_00 },
+      { bucket: 'NOW', tickerSymbol: 'SGOV', amountCents: 121_200_00, priceCents: 100_00, shares: 1212, costCents: 121_200_00, cashCents: 0 },
+      { bucket: 'NOW', tickerSymbol: 'BIL', amountCents: 80_800_00, priceCents: 91_50, shares: 883, costCents: 80_794_50, cashCents: 5_50 },
     ]);
   });
 
@@ -41,8 +41,8 @@ describe('lockProposal', () => {
     const locked = lockProposal(WORKBOOK_CASE, PLACEHOLDER_MODELS, PLACEHOLDER_TICKERS, NOW);
     expect(locked.proposalLockedAt).toBe(NOW.toISOString());
     expect(locked.accounts[0]?.proposalShares.slice(0, 2)).toEqual([
-      { bucket: 'NOW', tickerSymbol: 'SGOV', shares: 1230, priceCents: 100_00 },
-      { bucket: 'NOW', tickerSymbol: 'BIL', shares: 896, priceCents: 91_50 },
+      { bucket: 'NOW', tickerSymbol: 'SGOV', shares: 1212, priceCents: 100_00 },
+      { bucket: 'NOW', tickerSymbol: 'BIL', shares: 883, priceCents: 91_50 },
     ]);
     // Typed balances are untouched: shares never derive them.
     expect(locked.accounts.map((a) => a.balanceCents)).toEqual(WORKBOOK_CASE.accounts.map((a) => a.balanceCents));
@@ -67,10 +67,10 @@ describe('valueLockedShares', () => {
       (v) => v.accountId === '9001' && v.tickerSymbol === 'SGOV',
     );
     expect(sgov).toMatchObject({
-      shares: 1230,
-      lockedValueCents: 123_000_00,
+      shares: 1212,
+      lockedValueCents: 121_200_00,
       currentPriceCents: 100_50,
-      currentValueCents: 123_615_00,
+      currentValueCents: 121_806_00,
     });
   });
 
