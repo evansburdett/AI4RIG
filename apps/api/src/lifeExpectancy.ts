@@ -7,9 +7,10 @@
  * answer is a suggestion; the profile shows it as one and the advisor can type
  * over it.
  *
- * The key lives in the machine's own .env as OPENAI_API_KEY, never in the
- * repository. Without one, the route answers 503 and the advisor types the
- * age in by hand, exactly as before.
+ * The key is never in the repository. It comes from a SecretStore (see
+ * secrets.ts): .env in development, the Settings screen in the desktop app.
+ * Without one, the route answers 503 and the advisor types the age in by
+ * hand, exactly as before.
  *
  * Everything the model returns is checked before it reaches the screen. A
  * financial plan built on a hallucinated number is the failure RIG named in
@@ -25,8 +26,8 @@ import { HttpError } from './errors.js';
 export type Estimator = (request: LifeExpectancyRequest) => Promise<LifeExpectancyEstimate>;
 
 export interface OpenAiSettings {
-  /** Undefined or '' means not configured. */
-  apiKey: string | undefined;
+  /** Read on every request, so a key saved in Settings works at once. Undefined or '' means none. */
+  apiKey: () => string | undefined;
   model: string;
   /** Overridable for tests. */
   baseUrl?: string;
@@ -110,11 +111,12 @@ export function openAiEstimator(settings: OpenAiSettings): Estimator {
   const baseUrl = (settings.baseUrl ?? 'https://api.openai.com/v1').replace(/\/$/, '');
 
   return async (request) => {
-    if (settings.apiKey === undefined || settings.apiKey.trim() === '') {
+    const apiKey = settings.apiKey()?.trim();
+    if (apiKey === undefined || apiKey === '') {
       throw new HttpError(
         503,
-        'AI life expectancy estimates are not set up on this computer (no OPENAI_API_KEY in .env). ' +
-          'Type the age in for now.',
+        'AI life expectancy estimates are not set up on this computer. Add an OpenAI API key on ' +
+          'the Settings screen, or type the age in for now.',
       );
     }
 
@@ -124,7 +126,7 @@ export function openAiEstimator(settings: OpenAiSettings): Estimator {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${settings.apiKey.trim()}`,
+          Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
           model: settings.model,

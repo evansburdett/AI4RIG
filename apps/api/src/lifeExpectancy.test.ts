@@ -63,7 +63,7 @@ describe('readEstimate', () => {
 describe('openAiEstimator', () => {
   it('answers 503 without a key, and never calls out', async () => {
     const { fn, calls } = fakeFetch({ content: '{}' });
-    const estimate = openAiEstimator({ apiKey: '', model: 'm', fetch: fn });
+    const estimate = openAiEstimator({ apiKey: () => '', model: 'm', fetch: fn });
     await expect(estimate(PERSON)).rejects.toMatchObject({ status: 503 });
     expect(calls).toHaveLength(0);
   });
@@ -72,7 +72,7 @@ describe('openAiEstimator', () => {
     const { fn, calls } = fakeFetch({
       content: '{"lifeExpectancyAge": 84, "explanation": "Baseline, less a little for heart."}',
     });
-    const estimate = openAiEstimator({ apiKey: 'sk-test', model: 'm', fetch: fn });
+    const estimate = openAiEstimator({ apiKey: () => 'sk-test', model: 'm', fetch: fn });
 
     await expect(estimate(PERSON)).resolves.toEqual({
       lifeExpectancyAge: 84,
@@ -88,7 +88,7 @@ describe('openAiEstimator', () => {
 
   it('turns an OpenAI failure into a 502 that does not repeat the response', async () => {
     const { fn } = fakeFetch({ status: 401, body: { error: { message: 'Incorrect API key sk-te***' } } });
-    const estimate = openAiEstimator({ apiKey: 'sk-test', model: 'm', fetch: fn });
+    const estimate = openAiEstimator({ apiKey: () => 'sk-test', model: 'm', fetch: fn });
     const failure = estimate(PERSON);
     await expect(failure).rejects.toMatchObject({ status: 502 });
     await expect(failure).rejects.not.toThrow(/sk-te/);
