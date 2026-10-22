@@ -1,14 +1,19 @@
 # apps/desktop
 
-Intentionally empty.
+The Electron shell that turns AI4RIG into a desktop app RIG installs on their
+own laptops. It starts the API and the built front end inside the app, on
+127.0.0.1, and shows them in a window. Each install has its own database.
 
-Electron is a **packaging step at the end of the project, not an
-architecture**. We build a web app on localhost; late in the semester an
-Electron shell gets added here that boots the API in-process and points a
-window at the built front end.
+```bash
+npm run desktop:start              # run it from source in a window
+npm run desktop:dist -- --mac      # build the Mac installers into release/
+npm run desktop:smoke              # start the packaged app and check it works
+```
 
-Nothing in `apps/api`, `apps/web`, or `packages/` should know Electron exists.
-If you find yourself importing `electron` outside this folder, the design has
-drifted.
+Everything else (installing for RIG, where data lives, backups, and releasing
+updates) is in [docs/DESKTOP.md](../../docs/DESKTOP.md). The reasoning is in
+[ADR 0007](../../docs/decisions/0007-desktop-packaging-and-updates.md).
 
-See `docs/decisions/0003-electron-is-packaging.md`.
+Only this folder may import `electron` (ADR 0003). `src/server.ts` and
+`src/secretStore.ts` deliberately don't, so they are tested in plain Node with
+the rest of the suite.
