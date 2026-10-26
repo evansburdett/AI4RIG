@@ -1104,3 +1104,10 @@ table caption {
   font-size: var(--text-caption);
   color: var(--text-muted);
 }
+
+/* What the variances mean, under the target table. */
+.variance-advice {
+  margin: var(--space-2) 0 0;
+  padding-left: 1.2rem;
+  color: var(--warning-text);
+}

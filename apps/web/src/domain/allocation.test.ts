@@ -22,6 +22,7 @@ import {
   modelChoices,
   modelsById,
   tickersBySymbol,
+  varianceAdvice,
   weightBpsOf,
 } from './breakdown.js';
 import { SAMPLE_CASES } from '../fixtures/clients.js';
@@ -306,5 +307,22 @@ describe('a statement account (shares held, valued at today\'s price)', () => {
     expect(cashForFeeCents(valued, TICKERS)).toBe(9_000_00);
     // No separate fee cash: SGOV already is the cash.
     expect(accountHoldings(valued, TICKERS, 900_00).map((h) => h.tickerSymbol)).toEqual(['SGOV', 'VTI', 'BND']);
+  });
+});
+
+describe('varianceAdvice', () => {
+  it('says money in Now or Soon beyond the need could be in Later, never that Later is short', () => {
+    expect(varianceAdvice(137_602_00, 177_300_00)).toEqual([
+      'Now and Soon hold $314,902 more than the plan needs. That money could be in Later funds, for growth.',
+    ]);
+  });
+
+  it('says when Now or Soon is short of the need', () => {
+    expect(varianceAdvice(-5_000_00, 2_000_00)).toEqual([
+      'Soon holds $2,000 more than the plan needs. That money could be in Later funds, for growth.',
+      "Now is $5,000 short of the next year's needs. Put more in cash funds.",
+    ]);
+    expect(varianceAdvice(-5_000_00, 0, 5_000_00)[0]).toBe('$5,000 is not in a fund yet. Pick a model or add funds to the accounts.');
+    expect(varianceAdvice(0, 0)).toEqual([]);
   });
 });

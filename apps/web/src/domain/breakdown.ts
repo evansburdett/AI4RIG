@@ -394,6 +394,36 @@ export function computeDrift(target: AllocationTarget, breakdown: Breakdown): Bu
   });
 }
 
+/**
+ * What the variances mean, in words. Only Now and Soon are needs: the plan
+ * works them out from the client's answers. Later is the rest of the money,
+ * so it is never short of a need. When it holds less than it could, that is
+ * because Now or Soon hold more than they need, and that is what to say.
+ */
+export function varianceAdvice(nowVarianceCents: Cents, soonVarianceCents: Cents, unallocatedCents: Cents = 0): string[] {
+  const advice: string[] = [];
+  if (unallocatedCents > 0) {
+    advice.push(`${formatWholeDollars(unallocatedCents)} is not in a fund yet. Pick a model or add funds to the accounts.`);
+  }
+  const extra = Math.max(nowVarianceCents, 0) + Math.max(soonVarianceCents, 0);
+  if (extra > 0) {
+    const where =
+      nowVarianceCents > 0 && soonVarianceCents > 0 ? 'Now and Soon hold' : nowVarianceCents > 0 ? 'Now holds' : 'Soon holds';
+    advice.push(`${where} ${formatWholeDollars(extra)} more than the plan needs. That money could be in Later funds, for growth.`);
+  }
+  if (nowVarianceCents < 0) {
+    advice.push(`Now is ${formatWholeDollars(-nowVarianceCents)} short of the next year's needs. Put more in cash funds.`);
+  }
+  if (soonVarianceCents < 0) {
+    advice.push(`Soon is ${formatWholeDollars(-soonVarianceCents)} short of what the plan needs. Put more in bond or income funds.`);
+  }
+  return advice;
+}
+
+function formatWholeDollars(cents: Cents): string {
+  return `$${Math.round(cents / 100).toLocaleString('en-US')}`;
+}
+
 export interface AccountBuckets {
   readonly accountId: string;
   readonly accountType: AccountType;
