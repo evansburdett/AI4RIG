@@ -3,7 +3,7 @@ import cors from 'cors';
 import express, { type ErrorRequestHandler, type Express } from 'express';
 
 import { DEFAULT_OPENAI_MODEL, type ApiConfig } from './config.js';
-import { constraintStatus } from './errors.js';
+import { constraintStatus, HttpError } from './errors.js';
 import { openAiEstimator, type Estimator } from './lifeExpectancy.js';
 import { createClientsRouter } from './routes/clients.js';
 import { createLifeExpectancyRouter } from './routes/lifeExpectancy.js';
@@ -139,9 +139,16 @@ function jsonErrors(config: ApiConfig): ErrorRequestHandler {
 
     if (status >= 500) console.error(error);
 
+    // An HttpError's message is written for the advisor ("Add an OpenAI API key
+    // on the Settings screen"), whatever its status. Only an unexpected crash
+    // is hidden in the installed app, since its message is meant for us.
+    const meantForTheAdvisor = error instanceof HttpError || constraint !== null;
     const message = constraint?.message ?? (error instanceof Error ? error.message : String(error));
     res.status(status).json({
-      error: status >= 500 && config.nodeEnv === 'production' ? 'Internal server error' : message,
+      error:
+        status >= 500 && config.nodeEnv === 'production' && !meantForTheAdvisor
+          ? 'Internal server error'
+          : message,
     });
   };
 }

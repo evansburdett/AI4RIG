@@ -7,6 +7,7 @@ import type { AppSettings } from '@ai4rig/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createApp, type AppDeps } from './app.js';
+import { HttpError } from './errors.js';
 import { envSecretStore, memorySecretStore } from './secrets.js';
 
 /**
@@ -31,9 +32,9 @@ afterEach(async () => {
   rmSync(workspace, { recursive: true, force: true });
 });
 
-async function serve(deps: Omit<AppDeps, 'config' | 'db'>): Promise<string> {
+async function serve(deps: Omit<AppDeps, 'config' | 'db'>, nodeEnv = 'test'): Promise<string> {
   const { app } = createApp({
-    config: { host: '127.0.0.1', port: 0, webOrigins: [], nodeEnv: 'test', appVersion: '9.9.9' },
+    config: { host: '127.0.0.1', port: 0, webOrigins: [], nodeEnv, appVersion: '9.9.9' },
     db,
     ...deps,
   });
@@ -110,5 +111,47 @@ describe('serving the built front end', () => {
   it('serves nothing but the API when no front end is given', async () => {
     const base = await serve({});
     expect((await fetch(`${base}/`)).status).toBe(404);
+  });
+});
+
+describe('error messages in the installed app', () => {
+  const request = {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ age: 63, gender: 'FEMALE', healthConcerns: [], healthConcernOther: '' }),
+  };
+
+  it('tells the advisor how to set up the AI estimate, rather than "Internal server error"', async () => {
+    const base = await serve({ openAiKey: envSecretStore(undefined) }, 'production');
+    const response = await fetch(`${base}/api/life-expectancy/estimate`, request);
+    expect(response.status).toBe(503);
+    expect(((await response.json()) as { error: string }).error).toMatch(/Settings screen/);
+  });
+
+  it('passes on an OpenAI problem the advisor can act on', async () => {
+    const base = await serve(
+      {
+        estimator: async () => {
+          throw new HttpError(502, 'OpenAI refused the API key in .env. Type the age in for now.');
+        },
+      },
+      'production',
+    );
+    const response = await fetch(`${base}/api/life-expectancy/estimate`, request);
+    expect(((await response.json()) as { error: string }).error).toMatch(/refused the API key/);
+  });
+
+  it('still hides an unexpected crash, whose message is meant for us', async () => {
+    const base = await serve(
+      {
+        estimator: async () => {
+          throw new Error('Cannot read properties of undefined (reading "x") at internal.ts:12');
+        },
+      },
+      'production',
+    );
+    const response = await fetch(`${base}/api/life-expectancy/estimate`, request);
+    expect(response.status).toBe(500);
+    expect(((await response.json()) as { error: string }).error).toBe('Internal server error');
   });
 });
