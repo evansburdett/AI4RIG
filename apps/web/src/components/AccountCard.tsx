@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 import {
   accountHoldings,
@@ -33,6 +33,8 @@ import { NewTickerFields } from './NewTickerFields.js';
 interface Props {
   /** Its place in the case, for the title: "Account 2". */
   number: number;
+  /** Just added: scroll to it and put the cursor in its balance. */
+  justAdded?: boolean;
   account: Account;
   /** This account's advisory fee (US-19), held in the account as cash. */
   fee: AccountFee | undefined;
@@ -62,6 +64,7 @@ function parseDollars(text: string): number | null {
  */
 export function AccountCard({
   number,
+  justAdded = false,
   account,
   fee,
   models,
@@ -71,6 +74,20 @@ export function AccountCard({
   onSaveAsModel,
   onAddTicker,
 }: Props) {
+  const root = useRef<HTMLDivElement>(null);
+
+  // Add account puts the new one at the bottom of a long page; take the
+  // advisor there, ready to type the balance. Only on mount: the key is the
+  // account id, so this runs once for the new account.
+  useEffect(() => {
+    if (!justAdded || root.current === null) return;
+    // Focus first: focusing during a smooth scroll stops it where it is.
+    root.current.querySelector<HTMLInputElement>('.money-input input')?.focus({ preventScroll: true });
+    const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    root.current.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const feeCents = fee?.feeCents ?? 0;
   const investable = investableCents(account, feeCents);
   const allocated = allocatedCents(account);
@@ -119,7 +136,7 @@ export function AccountCard({
   }
 
   return (
-    <div className="account">
+    <div className="account" ref={root}>
       <div className="account-title">
         <h4>
           Account {number}: {ACCOUNT_TYPE_LABELS[account.accountType]}

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 
 import { AccountCard } from '../components/AccountCard.js';
 import { BucketBar } from '../components/BucketBar.js';
@@ -98,6 +98,8 @@ export function ClientProfile({
   // Every account pays the household's tier rate; shown exactly, not averaged.
   const feeRateBps = totals.advisoryFees.find((f) => f.rateBps > 0)?.rateBps;
   const fees = useMemo(() => feesByAccount(totals.advisoryFees), [totals.advisoryFees]);
+  /** The account Add account just made, which scrolls itself into view. */
+  const [addedAccountId, setAddedAccountId] = useState<string | null>(null);
   const { nowInputs, soonInputs } = clientCase;
 
   function patch(changes: Partial<ClientCase>) {
@@ -408,7 +410,11 @@ export function ClientProfile({
           <h3>Accounts</h3>
           <button
             type="button"
-            onClick={() => patchAccounts([...clientCase.accounts, newAccount()])}
+            onClick={() => {
+              const added = newAccount();
+              setAddedAccountId(added.id);
+              patchAccounts([...clientCase.accounts, added]);
+            }}
           >
             Add account
           </button>
@@ -427,6 +433,7 @@ export function ClientProfile({
           <AccountCard
             key={account.id}
             number={index + 1}
+            justAdded={account.id === addedAccountId}
             account={account}
             fee={totals.advisoryFees.find((f) => f.accountId === account.id)}
             models={models}

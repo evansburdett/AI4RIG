@@ -665,6 +665,8 @@ table.funds {
   margin-top: var(--space-4);
   background: var(--bg);
   overflow: hidden;
+  /* Room above it when Add account scrolls to it. */
+  scroll-margin-top: var(--space-4);
 }
 
 /* Each account opens with its own title bar, so one ends clearly before the next. */
