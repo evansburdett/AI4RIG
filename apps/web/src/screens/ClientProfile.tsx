@@ -401,9 +401,11 @@ export function ClientProfile({
         </About>
       </section>
 
+      <HouseholdBuckets clientCase={clientCase} tickers={tickers} fees={fees} target={target} />
+
       <section className="card">
         <div className="card-head">
-          <h3>Place the plan in accounts</h3>
+          <h3>Accounts</h3>
           <button
             type="button"
             onClick={() => patchAccounts([...clientCase.accounts, newAccount()])}
@@ -417,15 +419,14 @@ export function ClientProfile({
           bucket.
         </p>
 
-        <BucketTotals clientCase={clientCase} tickers={tickers} fees={fees} target={target} />
-
         {clientCase.accounts.length === 0 && (
           <p className="empty">No accounts yet. Add one to start.</p>
         )}
 
-        {clientCase.accounts.map((account) => (
+        {clientCase.accounts.map((account, index) => (
           <AccountCard
             key={account.id}
+            number={index + 1}
             account={account}
             fee={totals.advisoryFees.find((f) => f.accountId === account.id)}
             models={models}
@@ -436,7 +437,6 @@ export function ClientProfile({
             onRemove={() => patchAccounts(clientCase.accounts.filter((a) => a.id !== account.id))}
           />
         ))}
-
       </section>
 
       <section className="card">
@@ -481,9 +481,10 @@ const TAX_BRACKET_LABELS: Record<string, string> = Object.fromEntries(
  * US-22: the plan's totals against the accounts. RIG sets targets for the
  * household, not per account (10/26): what the questionnaire says each bucket
  * needs, what the accounts' fee cash and funds add up to there, and the
- * difference, which is what the advisor adjusts toward.
+ * difference, which is what the advisor adjusts toward. Its own card, apart
+ * from the accounts, because it is the sum of all of them.
  */
-function BucketTotals({
+function HouseholdBuckets({
   clientCase,
   tickers,
   fees,
@@ -505,54 +506,71 @@ function BucketTotals({
   const unallocated = sum((r) => r.unallocatedCents);
 
   return (
-    <table className="bucket-totals">
-      <thead>
-        <tr>
-          <th scope="col">Bucket</th>
-          <th scope="col" className="amount">
-            Target
-          </th>
-          <th scope="col" className="amount">
-            In accounts
-          </th>
-          <th scope="col" className="amount">
-            Variance
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {lines.map((line) => {
-          const variance = line.actual - line.target;
-          return (
-            <tr key={line.label}>
-              <th scope="row">{line.label}</th>
-              <td className="amount">{formatCentsWhole(line.target)}</td>
-              <td className="amount">{formatCentsWhole(line.actual)}</td>
-              <td className="amount">
-                {variance === 0 ? (
-                  <span className="muted">on target</span>
-                ) : (
-                  <span className="text-warn">
-                    {variance > 0 ? '+' : '−'}
-                    {formatCentsWhole(Math.abs(variance))} {variance > 0 ? 'over' : 'under'}
-                  </span>
-                )}
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-      {unallocated !== 0 && (
-        <tfoot>
+    <section className="card">
+      <h3>All accounts against the plan</h3>
+      <p className="muted">
+        The fee cash and funds in every account added up by bucket, against what the plan needs.
+      </p>
+
+      <BucketBar
+        totalCents={sum((r) => r.balanceCents)}
+        unallocatedCents={unallocated}
+        segments={[
+          { bucket: 'NOW', valueCents: lines[0]!.actual },
+          { bucket: 'SOON', valueCents: lines[1]!.actual },
+          { bucket: 'LATER', valueCents: lines[2]!.actual },
+        ]}
+      />
+
+      <table className="bucket-totals">
+        <thead>
           <tr>
-            <th scope="row">{unallocated > 0 ? 'Not in a fund' : 'Funds over the amount to invest'}</th>
-            <td />
-            <td className="amount text-warn">{formatCentsWhole(Math.abs(unallocated))}</td>
-            <td />
+            <th scope="col">Bucket</th>
+            <th scope="col" className="amount">
+              Target
+            </th>
+            <th scope="col" className="amount">
+              In accounts
+            </th>
+            <th scope="col" className="amount">
+              Variance
+            </th>
           </tr>
-        </tfoot>
-      )}
-    </table>
+        </thead>
+        <tbody>
+          {lines.map((line) => {
+            const variance = line.actual - line.target;
+            return (
+              <tr key={line.label}>
+                <th scope="row">{line.label}</th>
+                <td className="amount">{formatCentsWhole(line.target)}</td>
+                <td className="amount">{formatCentsWhole(line.actual)}</td>
+                <td className="amount">
+                  {variance === 0 ? (
+                    <span className="muted">on target</span>
+                  ) : (
+                    <span className="text-warn">
+                      {variance > 0 ? '+' : '−'}
+                      {formatCentsWhole(Math.abs(variance))} {variance > 0 ? 'over' : 'under'}
+                    </span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+        {unallocated !== 0 && (
+          <tfoot>
+            <tr>
+              <th scope="row">{unallocated > 0 ? 'Not in a fund' : 'Funds over the amount to invest'}</th>
+              <td />
+              <td className="amount text-warn">{formatCentsWhole(Math.abs(unallocated))}</td>
+              <td />
+            </tr>
+          </tfoot>
+        )}
+      </table>
+    </section>
   );
 }
 

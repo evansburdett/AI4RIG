@@ -31,6 +31,8 @@ import { MoneyInput } from './MoneyInput.js';
 import { NewTickerFields } from './NewTickerFields.js';
 
 interface Props {
+  /** Its place in the case, for the title: "Account 2". */
+  number: number;
   account: Account;
   /** This account's advisory fee (US-19), held in the account as cash. */
   fee: AccountFee | undefined;
@@ -59,6 +61,7 @@ function parseDollars(text: string): number | null {
  * bucket, and its dollars become whole shares (US-21).
  */
 export function AccountCard({
+  number,
   account,
   fee,
   models,
@@ -117,6 +120,15 @@ export function AccountCard({
 
   return (
     <div className="account">
+      <div className="account-title">
+        <h4>
+          Account {number}: {ACCOUNT_TYPE_LABELS[account.accountType]}
+          {account.maskedNumber === '' ? '' : ` ····${account.maskedNumber}`}{' '}
+          <span className="tag">{TAX_FUNNEL_LABELS[account.taxFunnel]}</span>
+        </h4>
+        <strong className="amount">{formatCents(account.balanceCents)}</strong>
+      </div>
+
       <div className="account-head">
         <SelectField
           label="Account type"
