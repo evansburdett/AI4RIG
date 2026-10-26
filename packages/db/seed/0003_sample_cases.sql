@@ -3,8 +3,8 @@
 -- $3,000,000 investable, and the accounts are split so the buckets land
 -- exactly on the plan: the worksheet's $190,000 Now plus $30,000 of advisory
 -- fee cash held in each account's own Now (US-19: $3,000,000 in all is RIG's
--- 1.00% tier, so $12,000 + $15,000 + $3,000), $914,700 Soon, and $1,865,300
--- Later. Case 2317 is an
+-- 1.00% tier, so $12,000 + $15,000 + $3,000), $910,200 Soon (with RIG's 3%
+-- inflation hedge), and $1,869,800 Later. Case 2317 is an
 -- early accumulator whose split is deliberately off target, with $15,000 not
 -- yet placed in any bucket and one slice with no model chosen.
 --
@@ -60,14 +60,14 @@ INSERT OR REPLACE INTO accounts (id, client_case_id, position, account_type, tax
     (9005, 9002, 1, 'ROTH_IRA', 'TAX_FREE', '7742',  24000000);
 
 INSERT OR REPLACE INTO account_sleeves (account_id, bucket, amount_cents, model_id, mode) VALUES
-    -- 1042: Now 202,000 + 15,000 + 3,000 / Soon 400,000 + 514,700
-    --       Later 598,000 + 970,300 + 297,000
+    -- 1042: Now 202,000 + 15,000 + 3,000 / Soon 400,000 + 510,200
+    --       Later 598,000 + 974,800 + 297,000
     (9001, 'NOW',    20200000, 9001, 'MODEL'),
     (9001, 'SOON',   40000000, 9002, 'MODEL'),
     (9001, 'LATER',  59800000, 9003, 'MODEL'),
     (9002, 'NOW',     1500000, 9001, 'MODEL'),
-    (9002, 'SOON',   51470000, 9002, 'MODEL'),
-    (9002, 'LATER',  97030000, 9003, 'MODEL'),
+    (9002, 'SOON',   51020000, 9002, 'MODEL'),
+    (9002, 'LATER',  97480000, 9003, 'MODEL'),
     (9003, 'NOW',      300000, 9001, 'MODEL'),
     (9003, 'SOON',          0, NULL, 'MODEL'),
     (9003, 'LATER',  29700000, 9004, 'MODEL'),

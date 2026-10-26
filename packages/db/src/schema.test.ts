@@ -234,10 +234,10 @@ describe('the repo seed data', () => {
       )
       .all();
     expect(totals).toEqual([
-      // $1,865,300 Later; $190,000 Now plus $30,000 fee cash; $914,700 Soon.
-      { bucket: 'LATER', total: 186_530_000 },
+      // $1,869,800 Later; $190,000 Now plus $30,000 fee cash; $910,200 Soon.
+      { bucket: 'LATER', total: 186_980_000 },
       { bucket: 'NOW', total: 22_000_000 },
-      { bucket: 'SOON', total: 91_470_000 },
+      { bucket: 'SOON', total: 91_020_000 },
     ]);
   });
 

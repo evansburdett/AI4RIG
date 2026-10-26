@@ -27,16 +27,16 @@ describe('targetAllocation', () => {
     const target = targetAllocation(WORKBOOK_CASE, totals);
 
     // The workbook's $190,000 Now plus $30,000 of fee cash ($3,000,000 is the
-    // 1.00% household tier), $914,700 Soon, and the rest in Later.
+    // 1.00% household tier), $910,200 Soon, and the rest in Later.
     expect(totals.investableAssetsCents).toBe(3_000_000_00);
     expect(totals.advisoryFeeCents).toBe(30_000_00);
     expect(target.nowCents).toBe(220_000_00);
-    expect(target.soonCents).toBe(914_700_00);
-    expect(target.laterCents).toBe(1_865_300_00);
+    expect(target.soonCents).toBe(910_200_00);
+    expect(target.laterCents).toBe(1_869_800_00);
 
     expect(target.nowPct).toBe(7.3);
-    expect(target.soonPct).toBe(30.5);
-    expect(target.laterPct).toBe(62.2);
+    expect(target.soonPct).toBe(30.3);
+    expect(target.laterPct).toBe(62.3);
   });
 
   it('gives an accumulator a small Soon bucket without weighting anything', () => {
