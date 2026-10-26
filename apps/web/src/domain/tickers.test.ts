@@ -28,11 +28,11 @@ describe('isValidSymbol', () => {
 });
 
 describe('withTicker', () => {
-  const vti: Ticker = { symbol: 'VTI', name: null, assetClass: 'EQUITY', defaultBucket: 'LATER', priceCents: null, priceAsOf: null };
-  const bnd: Ticker = { symbol: 'BND', name: null, assetClass: 'FIXED_INCOME', defaultBucket: 'SOON', priceCents: null, priceAsOf: null };
+  const vti: Ticker = { symbol: 'VTI', name: null, assetClass: 'EQUITY', defaultBucket: 'LATER', priceCents: null, priceMicros: null, priceAsOf: null };
+  const bnd: Ticker = { symbol: 'BND', name: null, assetClass: 'FIXED_INCOME', defaultBucket: 'SOON', priceCents: null, priceMicros: null, priceAsOf: null };
 
   it('adds a new ticker in symbol order', () => {
-    const schd: Ticker = { symbol: 'SCHD', name: null, assetClass: 'EQUITY', defaultBucket: 'LATER', priceCents: null, priceAsOf: null };
+    const schd: Ticker = { symbol: 'SCHD', name: null, assetClass: 'EQUITY', defaultBucket: 'LATER', priceCents: null, priceMicros: null, priceAsOf: null };
     expect(withTicker([bnd, vti], schd).map((t) => t.symbol)).toEqual(['BND', 'SCHD', 'VTI']);
   });
 

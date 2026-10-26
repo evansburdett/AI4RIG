@@ -78,6 +78,7 @@ export function ImportModels({ models, tickers, onImport }: Props) {
             defaultBucket: choice.bucket,
             // Cash is always worth a dollar, so its shares can be worked out.
             priceCents: choice.symbol === CASH_SYMBOL ? 100 : null,
+            priceMicros: null,
             priceAsOf: null,
           })),
         prices: [],
@@ -116,7 +117,7 @@ export function ImportModels({ models, tickers, onImport }: Props) {
     ...tickers.map((t): [string, Ticker] => [t.symbol, t]),
     ...(preview?.choices ?? []).map((c): [string, Ticker] => [
       c.symbol,
-      { symbol: c.symbol, name: c.name, assetClass: c.assetClass, defaultBucket: c.bucket, priceCents: null, priceAsOf: null },
+      { symbol: c.symbol, name: c.name, assetClass: c.assetClass, defaultBucket: c.bucket, priceCents: null, priceMicros: null, priceAsOf: null },
     ]),
   ]);
 

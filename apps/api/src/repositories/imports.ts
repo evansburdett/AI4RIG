@@ -23,10 +23,14 @@ export function runImport(db: Db, input: ImportInput, now: Date = new Date()): I
       if (getTicker(db, ticker.symbol) === null) upsertTicker(db, ticker, now);
     }
 
-    for (const { symbol, priceCents } of input.prices) {
+    for (const { symbol, priceMicros } of input.prices) {
       const existing = getTicker(db, symbol);
       if (existing === null) throw new HttpError(400, `${symbol} is not in the ticker list, so it cannot be priced`);
-      upsertTicker(db, { ...existing, priceCents }, now);
+      upsertTicker(
+        db,
+        { symbol, name: existing.name, assetClass: existing.assetClass, defaultBucket: existing.defaultBucket, priceMicros },
+        now,
+      );
     }
 
     // A model with the same name is a vendor's new quarter: its lines are

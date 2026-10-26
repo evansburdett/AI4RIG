@@ -185,7 +185,8 @@ export function BucketAssignments({
                   <TickerPriceEditor
                     ticker={ticker}
                     saving={savingSymbol === ticker.symbol}
-                    onSave={(priceCents) => updateTicker(ticker, { priceCents })}
+                    // A typed price is exact to the cent, replacing any finer one.
+                    onSave={(priceCents) => updateTicker(ticker, { priceCents, priceMicros: null })}
                   />
                 </td>
                 <td className="muted">{savingSymbol === ticker.symbol ? 'Saving…' : ''}</td>

@@ -230,8 +230,8 @@ export interface ModelPortfolio {
 export interface ImportRequest {
   /** Added; one already in the universe is left as it is. */
   readonly newTickers: readonly Ticker[];
-  /** Prices from a statement, stamped with today's date. */
-  readonly prices: readonly { readonly symbol: string; readonly priceCents: Cents }[];
+  /** Prices from a statement, exact (millionths of a dollar), stamped with today's date. */
+  readonly prices: readonly { readonly symbol: string; readonly priceMicros: number }[];
   /** Added, or replacing the lines of the model with the same name. Ids are ignored. */
   readonly models: readonly ModelPortfolio[];
 }
@@ -267,6 +267,13 @@ export interface Ticker {
    * out for this ticker until then.
    */
   readonly priceCents: Cents | null;
+  /**
+   * The exact price, in millionths of a dollar ($53.0092 is 53_009_200), as
+   * a statement or quote gives it. priceCents is this rounded; shares held
+   * are valued at this one so they match the statement. Set together with
+   * priceCents by the server.
+   */
+  readonly priceMicros: number | null;
   /** The day the price was last changed, YYYY-MM-DD. Set by the server. */
   readonly priceAsOf: string | null;
 }

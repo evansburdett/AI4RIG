@@ -27,6 +27,8 @@ export interface ImportedHolding {
   readonly custodianClass: string;
   readonly sharesMicros: number | null;
   readonly priceCents: number | null;
+  /** The price exactly as the file gives it, in millionths of a dollar. */
+  readonly priceMicros: number | null;
   readonly marketValueCents: number;
   /** Our asset class and bucket for this holding, guessed from the custodian's class. */
   readonly assetClass: AssetClass;
@@ -102,6 +104,7 @@ export function readHoldingsSheet(rows: readonly (readonly unknown[])[]): Holdin
 
     const sharesMicros = toScaledInteger(read(row, 'quantity'), 6);
     const priceCents = toScaledInteger(read(row, 'price'), 2);
+    const priceMicros = toScaledInteger(read(row, 'price'), 6);
     const statedValue = toScaledInteger(read(row, 'marketValue'), 2);
     const worked =
       sharesMicros === null || read(row, 'price') === ''
@@ -140,6 +143,7 @@ export function readHoldingsSheet(rows: readonly (readonly unknown[])[]): Holdin
       custodianClass,
       sharesMicros,
       priceCents: priceCents !== null && priceCents > 0 ? priceCents : null,
+      priceMicros: priceMicros !== null && priceMicros > 0 ? priceMicros : null,
       marketValueCents,
       assetClass,
       bucket,
@@ -203,19 +207,12 @@ function dollars(cents: number): string {
 
 /**
  * The account after importing these holdings: its funds replaced by them (a
- * symbol listed twice is added together), no model, and optionally its
- * balance set to their total.
- *
- * The advisory fee is held as cash on top of the funds, so an account whose
- * funds are its whole balance shows the fee as over. When `feeFrom` names a
- * cash holding, the fee is taken out of it instead, which is what holding the
- * fee in cash means for money that is already there.
+ * symbol listed twice is added together), each with the shares it holds, and
+ * no model. Its balance is what they add up to; from here on it follows the
+ * shares at today's prices (atCurrentPrices). The year's fee is paid from the
+ * cash funds among them, which the account card checks.
  */
-export function holdingsToAccount(
-  account: Account,
-  holdings: readonly ImportedHolding[],
-  options: { setBalance: boolean; feeCents: number; feeFrom: string | null },
-): Account {
+export function holdingsToAccount(account: Account, holdings: readonly ImportedHolding[]): Account {
   const merged = new Map<string, { amountCents: number; sharesMicros: number | null }>();
   for (const holding of holdings) {
     const earlier = merged.get(holding.symbol);
@@ -230,35 +227,15 @@ export function holdingsToAccount(
     });
   }
 
-  const total = holdings.reduce((sum, h) => sum + h.marketValueCents, 0);
-  const lines = [...merged].map(([tickerSymbol, { amountCents, sharesMicros }]): AccountLine => {
-    if (tickerSymbol !== options.feeFrom || options.feeCents <= 0) {
-      return { tickerSymbol, amountCents, heldSharesMicros: sharesMicros };
-    }
-    const kept = Math.max(amountCents - options.feeCents, 0);
-    return {
-      tickerSymbol,
-      amountCents: kept,
-      // The same share of the shares as of the dollars.
-      heldSharesMicros: sharesMicros === null || amountCents === 0 ? null : Math.round((sharesMicros * kept) / amountCents),
-    };
-  });
-
+  const lines = [...merged].map(
+    ([tickerSymbol, { amountCents, sharesMicros }]): AccountLine => ({ tickerSymbol, amountCents, heldSharesMicros: sharesMicros }),
+  );
   return {
     ...account,
-    balanceCents: options.setBalance ? total : account.balanceCents,
+    balanceCents: lines.reduce((sum, line) => sum + line.amountCents, 0),
     modelId: null,
     lines,
     // Locked shares described the old funds.
     proposalShares: [],
   };
-}
-
-/** The cash holding the fee can come out of: the largest one big enough, or null. */
-export function cashForFee(holdings: readonly ImportedHolding[], feeCents: number): string | null {
-  if (feeCents <= 0) return null;
-  const cash = holdings
-    .filter((h) => h.assetClass === 'CASH' && h.marketValueCents >= feeCents)
-    .sort((a, b) => b.marketValueCents - a.marketValueCents);
-  return cash[0]?.symbol ?? null;
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { toScaledInteger } from './decimal.js';
-import { cashForFee, guessFromCustodianClass, holdingsToAccount, readHoldingsSheet } from './importHoldings.js';
+import { guessFromCustodianClass, holdingsToAccount, readHoldingsSheet } from './importHoldings.js';
 import { readModelsSheet } from './importModels.js';
 import { newAccount } from './factory.js';
 
@@ -185,23 +185,14 @@ describe('holdingsToAccount', () => {
     ['MSFT', 'Microsoft', 'Large US Bl Eq', '2.5', '500', '1250', ''],
   ]).holdings;
 
-  it('replaces the funds with the holdings, adding a symbol listed twice together', () => {
-    const account = holdingsToAccount(newAccount(), holdings, { setBalance: true, feeCents: 0, feeFrom: null });
+  it('replaces the funds with the holdings and their shares, adding a symbol listed twice together', () => {
+    const account = holdingsToAccount({ ...newAccount(), balanceCents: 5_00, modelId: '9003' }, holdings);
     expect(account.balanceCents).toBe(26_250_00);
     expect(account.modelId).toBeNull();
     expect(account.lines).toEqual([
       { tickerSymbol: 'VXPXX', amountCents: 20_000_00, heldSharesMicros: 20_000_000_000 },
       { tickerSymbol: 'MSFT', amountCents: 6_250_00, heldSharesMicros: 12_500_000 },
     ]);
-  });
-
-  it('can take the fee cash out of a cash holding, shares and all', () => {
-    expect(cashForFee(holdings, 300_00)).toBe('VXPXX');
-    expect(cashForFee(holdings, 50_000_00)).toBeNull();
-
-    const account = holdingsToAccount(newAccount(), holdings, { setBalance: true, feeCents: 300_00, feeFrom: 'VXPXX' });
-    expect(account.balanceCents).toBe(26_250_00);
-    expect(account.lines[0]).toEqual({ tickerSymbol: 'VXPXX', amountCents: 19_700_00, heldSharesMicros: 19_700_000_000 });
   });
 });
 

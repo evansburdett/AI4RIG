@@ -334,7 +334,7 @@ see what a request and response look like.
 | `planned_expenses` | Now "large upcoming expenses" and Soon "miscellaneous costs" lines |
 | `gap_entries` | Social Security bridge, healthcare gap, and forced withdrawal lines |
 | `proposal_positions` | Whole share count locked in for one ticker in one account, with the price it was worked out at (US-21) |
-| `tickers` | Symbol in the approved universe, with its name, default bucket, and price per share |
+| `tickers` | Symbol in the approved universe, with its name, default bucket, and price per share: to the cent, and exactly (millionths of a dollar) for valuing shares held |
 | `bucket_definitions` | Bucket (always exactly three rows) |
 | `advisory_fee_tiers` | Row of RIG's fee schedule: a starting balance and a rate in basis points (US-19) |
 

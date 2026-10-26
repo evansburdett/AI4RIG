@@ -47,8 +47,78 @@ export function allocatedCents(account: Account): Cents {
   return addCents(...account.lines.map((line) => line.amountCents));
 }
 
-/** The balance less the fee cash: what the funds should add up to. */
+/**
+ * Whether the account is what a client holds, from a statement, rather than
+ * a plan to invest a balance: at least one fund carries the shares it holds.
+ * RIG (meeting, 10/26): shares rarely change between reviews, the price is
+ * live, and the value should be today's without anyone retyping it.
+ */
+export function holdsShares(account: Account): boolean {
+  return account.lines.some((line) => line.heldSharesMicros !== null);
+}
+
+/** A ticker's exact price in millionths of a dollar, or its price in cents when that is all there is. */
+export function exactPriceMicros(ticker: Ticker | undefined): number | null {
+  if (ticker === undefined) return null;
+  return ticker.priceMicros ?? (ticker.priceCents === null ? null : ticker.priceCents * 10_000);
+}
+
+/**
+ * Shares times an exact price, to the cent, rounded once. Both are
+ * millionths, so the product is held as a BigInt: 93,572.35 shares of a
+ * money market at $1.000000 is already past what a double holds exactly.
+ */
+export function heldValueCents(sharesMicros: number, priceMicros: number): Cents {
+  const product = BigInt(sharesMicros) * BigInt(priceMicros);
+  return Number((product + 5_000_000_000n) / 10_000_000_000n);
+}
+
+/**
+ * A statement account at today's prices: each held fund is worth its shares
+ * times the ticker's current price, and the balance is what the funds add up
+ * to, so it is never typed. A fund with no price keeps its last value. Any
+ * other account comes back unchanged (the same object).
+ */
+export function atCurrentPrices(account: Account, tickers: ReadonlyMap<string, Ticker>): Account {
+  if (!holdsShares(account)) return account;
+  const lines = account.lines.map((line) => {
+    const price = exactPriceMicros(tickers.get(line.tickerSymbol));
+    if (line.heldSharesMicros === null || price === null) return line;
+    const amountCents = heldValueCents(line.heldSharesMicros, price);
+    return amountCents === line.amountCents ? line : { ...line, amountCents };
+  });
+  const balanceCents = addCents(...lines.map((line) => line.amountCents));
+  const unchanged = balanceCents === account.balanceCents && lines.every((line, i) => line === account.lines[i]);
+  return unchanged ? account : { ...account, lines, balanceCents };
+}
+
+/** Every statement account in the case at today's prices. The same object when nothing moved. */
+export function caseAtCurrentPrices(clientCase: ClientCase, tickerList: readonly Ticker[]): ClientCase {
+  const tickers = tickersBySymbol(tickerList);
+  const accounts = clientCase.accounts.map((account) => atCurrentPrices(account, tickers));
+  return accounts.every((account, i) => account === clientCase.accounts[i]) ? clientCase : { ...clientCase, accounts };
+}
+
+/**
+ * What the account has in cash funds (money market, sweep) against a year of
+ * its fee. For a statement account the fee is paid from cash it already
+ * holds, so this is the check that it can be.
+ */
+export function cashForFeeCents(account: Account, tickers: ReadonlyMap<string, Ticker>): Cents {
+  return addCents(
+    ...account.lines
+      .filter((line) => tickers.get(line.tickerSymbol)?.assetClass === 'CASH')
+      .map((line) => line.amountCents),
+  );
+}
+
+/**
+ * The balance less the fee cash: what the funds should add up to. A
+ * statement account's balance is its funds, fee cash included in whatever
+ * cash it holds, so all of it counts.
+ */
 export function investableCents(account: Account, feeCents: Cents): Cents {
+  if (holdsShares(account)) return account.balanceCents;
   return Math.max(account.balanceCents - feeCents, 0);
 }
 
@@ -162,8 +232,10 @@ export function accountHoldings(
   tickers: ReadonlyMap<string, Ticker>,
   feeCents: Cents,
 ): Holding[] {
+  // A statement account's fee is paid from the cash funds it holds, which
+  // are already in Now; counting it again would double it.
   const cash: Holding[] =
-    feeCents > 0 && account.balanceCents > 0
+    feeCents > 0 && account.balanceCents > 0 && !holdsShares(account)
       ? [{ accountId: account.id, bucket: 'NOW', tickerSymbol: null, marketValueCents: Math.min(feeCents, account.balanceCents) }]
       : [];
   return [

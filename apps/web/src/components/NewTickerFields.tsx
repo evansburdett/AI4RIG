@@ -42,7 +42,7 @@ export function NewTickerFields({ symbol, suggestedBucket, onAdd, onAdded }: Pro
     setBusy(true);
     setError(null);
     try {
-      const saved = await onAdd({ symbol, name: null, assetClass, defaultBucket, priceCents, priceAsOf: null });
+      const saved = await onAdd({ symbol, name: null, assetClass, defaultBucket, priceCents, priceMicros: null, priceAsOf: null });
       onAdded?.(saved);
     } catch (caught: unknown) {
       setError(caught instanceof Error ? caught.message : String(caught));

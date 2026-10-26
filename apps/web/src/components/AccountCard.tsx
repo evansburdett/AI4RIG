@@ -3,6 +3,10 @@ import { useEffect, useId, useRef, useState } from 'react';
 import {
   accountHoldings,
   allocatedCents,
+  atCurrentPrices,
+  cashForFeeCents,
+  exactPriceMicros,
+  holdsShares,
   amountForWeight,
   applyModel,
   bucketOf,
@@ -16,7 +20,8 @@ import {
   weightBpsOf,
 } from '../domain/breakdown.js';
 import { ACCOUNT_TYPE_LABELS, TAX_FUNNEL_LABELS } from '../domain/lifeStage.js';
-import { centsToInput, formatCents, parseCents } from '../domain/money.js';
+import { toScaledInteger } from '../domain/decimal.js';
+import { centsToInput, formatCents, formatPrice, groupThousands, parseCents } from '../domain/money.js';
 import { bpsToPercentInput, formatBps, parsePercentToBps } from '../domain/percent.js';
 import { proposedPositions, type ProposedPosition } from '../domain/proposal.js';
 import { isValidSymbol, normalizeSymbol } from '../domain/tickers.js';
@@ -36,8 +41,7 @@ import { BucketBar } from './BucketBar.js';
 import { BucketTag } from './BucketTag.js';
 import { CellInput } from './CellInput.js';
 import { ImportHoldings } from './ImportHoldings.js';
-import { formatShares } from './shares.js';
-import { SelectField, TextField } from './Fields.js';
+import { DerivedField, SelectField, TextField } from './Fields.js';
 import { MoneyInput } from './MoneyInput.js';
 import { NewTickerFields } from './NewTickerFields.js';
 
@@ -106,6 +110,9 @@ export function AccountCard({
   }, []);
 
   const feeCents = fee?.feeCents ?? 0;
+  // What the client holds, from a statement: valued at today's prices, with
+  // the fee paid from its cash funds rather than set aside on top.
+  const held = holdsShares(account);
   const investable = investableCents(account, feeCents);
   const allocated = allocatedCents(account);
   const left = leftToAllocateCents(account, feeCents);
@@ -122,9 +129,17 @@ export function AccountCard({
     valueCents: holdings.filter((h) => h.bucket === bucket).reduce((sum, h) => sum + h.marketValueCents, 0),
   }));
   const unpriced = account.lines.filter((l) => l.amountCents > 0 && tickerMap.get(l.tickerSymbol)?.priceCents == null);
+  const cashCents = held ? cashForFeeCents(account, tickerMap) : 0;
 
   function patch(changes: Partial<Account>) {
-    onChange({ ...account, ...changes });
+    // A statement account's balance is its funds at today's prices, so any
+    // change to its funds carries through to the balance.
+    onChange(atCurrentPrices({ ...account, ...changes }, tickerMap));
+  }
+
+  /** RIG's override (10/26): the client bought or sold, so the shares held change. */
+  function setShares(symbol: string, heldSharesMicros: number) {
+    patch({ lines: account.lines.map((l) => (l.tickerSymbol === symbol ? { ...l, heldSharesMicros } : l)) });
   }
 
   function setLine(symbol: string, amountCents: number) {
@@ -189,11 +204,19 @@ export function AccountCard({
           placeholder="Last four"
           onChange={(maskedNumber) => patch({ maskedNumber })}
         />
-        <MoneyInput
-          label="Account balance"
-          valueCents={account.balanceCents}
-          onChange={(balanceCents) => patch({ balanceCents })}
-        />
+        {held ? (
+          <DerivedField
+            label="Account balance"
+            value={formatCents(account.balanceCents)}
+            hint="Shares held at today's prices"
+          />
+        ) : (
+          <MoneyInput
+            label="Account balance"
+            valueCents={account.balanceCents}
+            onChange={(balanceCents) => patch({ balanceCents })}
+          />
+        )}
         <div className="field">
           <button type="button" className="danger" onClick={onRemove}>
             Remove account
@@ -201,6 +224,26 @@ export function AccountCard({
         </div>
       </div>
 
+      {held ? (
+        <p className="account-math">
+          <span>
+            Holdings at today&rsquo;s prices <strong>{formatCents(account.balanceCents)}</strong>
+          </span>
+          <span aria-hidden="true">·</span>
+          <span>
+            Fee <strong>{formatCents(feeCents)}</strong> a year
+            {fee !== undefined && fee.rateBps > 0 && <span className="muted"> ({formatBps(fee.rateBps)})</span>}, paid
+            from cash funds:{' '}
+            {cashCents >= feeCents ? (
+              <span className="muted">{formatCents(cashCents)} covers it</span>
+            ) : (
+              <span className="text-warn">
+                {formatCents(cashCents)} in cash, {formatCents(feeCents - cashCents)} short
+              </span>
+            )}
+          </span>
+        </p>
+      ) : (
       <p className="account-math">
         <span>
           Balance <strong>{formatCents(account.balanceCents)}</strong>
@@ -215,6 +258,7 @@ export function AccountCard({
           To invest <strong>{formatCents(investable)}</strong>
         </span>
       </p>
+      )}
 
       {account.balanceCents > 0 && (
         <div className="account-buckets">
@@ -283,7 +327,7 @@ export function AccountCard({
           </tr>
         </thead>
         <tbody>
-          {feeCents > 0 && (
+          {feeCents > 0 && !held && (
             <tr className="fee-cash">
               <th scope="row">Cash</th>
               <td>
@@ -303,8 +347,10 @@ export function AccountCard({
               investable={investable}
               bucket={bucketOf(line.tickerSymbol, tickerMap)}
               name={tickerMap.get(line.tickerSymbol)?.name ?? null}
+              priceMicros={exactPriceMicros(tickerMap.get(line.tickerSymbol))}
               position={positions.get(line.tickerSymbol)}
               onAmount={(cents) => setLine(line.tickerSymbol, cents)}
+              onShares={(micros) => setShares(line.tickerSymbol, micros)}
               onRemove={() => patch({ lines: account.lines.filter((l) => l.tickerSymbol !== line.tickerSymbol) })}
             />
           ))}
@@ -372,19 +418,26 @@ function FundRow({
   investable,
   bucket,
   name,
+  priceMicros,
   position,
   onAmount,
+  onShares,
   onRemove,
 }: {
   line: AccountLine;
   investable: number;
   bucket: BucketType;
   name: string | null;
+  /** The exact price, for a held fund: what its shares are valued at. */
+  priceMicros: number | null;
   position: ProposedPosition | undefined;
   onAmount: (cents: number) => void;
+  onShares: (micros: number) => void;
   onRemove: () => void;
 }) {
   const symbol = line.tickerSymbol;
+  const weight = bpsToPercentInput(weightBpsOf(line.amountCents, investable));
+  const priceCents = position?.priceCents ?? null;
   return (
     <tr>
       <th scope="row" className="fund-symbol">
@@ -398,44 +451,58 @@ function FundRow({
       <td>
         <BucketTag bucket={bucket} />
       </td>
-      <td className="amount">
-        <CellInput
-          label={`${symbol} weight`}
-          text={bpsToPercentInput(weightBpsOf(line.amountCents, investable))}
-          parse={parsePercentToBps}
-          onChange={(bps) => onAmount(amountForWeight(bps, investable))}
-          suffix="%"
-        />
-      </td>
-      <td className="amount">
-        <CellInput
-          label={`${symbol} dollars`}
-          text={centsToInput(line.amountCents)}
-          parse={parseDollars}
-          onChange={onAmount}
-          prefix="$"
-          money
-        />
-      </td>
-      {position === undefined || position.priceCents === null ? (
+      {line.heldSharesMicros !== null ? (
+        // Held from a statement: the shares are what the advisor keeps up to
+        // date, and the dollars are those shares at today's price.
         <>
-          <td className="amount muted">{position === undefined ? '—' : 'No price'}</td>
-          <td className="amount muted">—</td>
+          <td className="amount muted">{weight}%</td>
+          <td className="amount">{formatCents(line.amountCents)}</td>
+          <td className="amount">{priceMicros === null ? <span className="muted">No price</span> : formatPrice(priceMicros)}</td>
+          <td className="amount" title="Shares held. Change it when the client buys or sells.">
+            <CellInput
+              label={`${symbol} shares held`}
+              text={groupThousands(sharesToInput(line.heldSharesMicros))}
+              parse={(text) => {
+                const micros = toScaledInteger(text, 6);
+                return micros === null || micros < 0 ? null : micros;
+              }}
+              onChange={onShares}
+              suffix="held"
+              money
+            />
+          </td>
           <td className="amount muted">—</td>
         </>
       ) : (
         <>
-          <td className="amount">{formatCents(position.priceCents)}</td>
-          {line.heldSharesMicros !== null ? (
-            // From a statement: what the account holds, fractions and all.
+          <td className="amount">
+            <CellInput
+              label={`${symbol} weight`}
+              text={weight}
+              parse={parsePercentToBps}
+              onChange={(bps) => onAmount(amountForWeight(bps, investable))}
+              suffix="%"
+            />
+          </td>
+          <td className="amount">
+            <CellInput
+              label={`${symbol} dollars`}
+              text={centsToInput(line.amountCents)}
+              parse={parseDollars}
+              onChange={onAmount}
+              prefix="$"
+              money
+            />
+          </td>
+          {position === undefined || priceCents === null ? (
             <>
-              <td className="amount" title="Shares held, from the imported statement">
-                <strong>{formatShares(line.heldSharesMicros)}</strong> <span className="tag">held</span>
-              </td>
+              <td className="amount muted">{position === undefined ? '—' : 'No price'}</td>
+              <td className="amount muted">—</td>
               <td className="amount muted">—</td>
             </>
           ) : (
             <>
+              <td className="amount">{formatCents(priceCents)}</td>
               <td className="amount">
                 <strong>{(position.shares ?? 0).toLocaleString('en-US')}</strong>
               </td>
@@ -451,6 +518,11 @@ function FundRow({
       </td>
     </tr>
   );
+}
+
+/** Millionths of a share as typed text: "2060", "3.796". */
+function sharesToInput(micros: number): string {
+  return (micros / 1_000_000).toFixed(6).replace(/\.?0+$/, '');
 }
 
 /**

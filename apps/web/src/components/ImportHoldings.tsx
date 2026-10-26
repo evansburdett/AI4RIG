@@ -1,7 +1,8 @@
 import { useRef, useState, type RefObject } from 'react';
 
-import { cashForFee, holdingsToAccount, readHoldingsSheet, type HoldingsFile } from '../domain/importHoldings.js';
-import { formatCents } from '../domain/money.js';
+import { holdingsToAccount, readHoldingsSheet, type HoldingsFile } from '../domain/importHoldings.js';
+import { exactPriceMicros } from '../domain/breakdown.js';
+import { formatCents, formatPrice } from '../domain/money.js';
 import { TICKER_GUESSES } from '../domain/tickerGuesses.js';
 import type { Account, ImportRequest, ImportResult, Ticker } from '../domain/types.js';
 import { readFirstSheet } from '../spreadsheet.js';
@@ -27,19 +28,18 @@ interface Preview {
   /** File rows to import. Every row that can be, to start with. */
   included: Set<number>;
   choices: NewTickerChoice[];
-  setBalance: boolean;
   updatePrices: boolean;
-  takeFeeFromCash: boolean;
 }
 
 /**
  * Importing what an account holds from a custodian export (10/26): each
- * holding becomes one of the account's funds, at its market value, with the
- * exact shares held. The advisor checks every row first: rows that do not
- * add up are flagged, symbols new to the universe get an asset class and
- * bucket suggested from the custodian's own class, and the balance, prices,
- * and fee cash are each the advisor's choice. The funds go into the working
- * copy of the case like any other edit, so Save case keeps them.
+ * holding becomes one of the account's funds with the exact shares held, and
+ * from then on its value is those shares at today's price. The advisor checks
+ * every row first: rows that do not add up are flagged, symbols new to the
+ * universe get an asset class and bucket suggested from the custodian's own
+ * class, and the file's prices are only used if the advisor wants them. The
+ * funds go into the working copy of the case like any other edit, so Save
+ * case keeps them.
  */
 export function ImportHoldings({ account, tickers, feeFor, onImport, onApply }: Props) {
   const input = useRef<HTMLInputElement>(null);
@@ -78,9 +78,7 @@ export function ImportHoldings({ account, tickers, feeFor, onImport, onApply }: 
         file: read,
         included: new Set(usable.map((h) => h.row)),
         choices: [...fresh.values()],
-        setBalance: true,
         updatePrices: true,
-        takeFeeFromCash: true,
       });
     } catch (caught: unknown) {
       setPreview(null);
@@ -103,11 +101,15 @@ export function ImportHoldings({ account, tickers, feeFor, onImport, onApply }: 
 
   const chosen = preview.file.holdings.filter((h) => preview.included.has(h.row));
   const totalCents = chosen.reduce((sum, h) => sum + h.marketValueCents, 0);
-  const balanceCents = preview.setBalance ? totalCents : account.balanceCents;
-  const feeCents = feeFor(balanceCents);
-  const feeSource = cashForFee(chosen, feeCents);
+  const feeCents = feeFor(totalCents);
+  // The year's fee is paid from the cash funds the account holds.
+  const classOf = (symbol: string, fallback: Ticker['assetClass']) =>
+    bySymbol.get(symbol)?.assetClass ?? preview.choices.find((c) => c.symbol === symbol)?.assetClass ?? fallback;
+  const cashCents = chosen.filter((h) => classOf(h.symbol, h.assetClass) === 'CASH').reduce((sum, h) => sum + h.marketValueCents, 0);
   const newSymbols = new Set(preview.choices.map((c) => c.symbol));
-  const priced = chosen.filter((h) => h.priceCents !== null && !newSymbols.has(h.symbol) && bySymbol.get(h.symbol)?.priceCents !== h.priceCents);
+  const priced = chosen.filter(
+    (h) => h.priceMicros !== null && !newSymbols.has(h.symbol) && exactPriceMicros(bySymbol.get(h.symbol)) !== h.priceMicros,
+  );
 
   function patch(changes: Partial<Preview>) {
     if (preview !== null) setPreview({ ...preview, ...changes });
@@ -118,7 +120,7 @@ export function ImportHoldings({ account, tickers, feeFor, onImport, onApply }: 
     setError(null);
     try {
       const used = new Set(chosen.map((h) => h.symbol));
-      const filePrice = new Map(chosen.filter((h) => h.priceCents !== null).map((h) => [h.symbol, h.priceCents!]));
+      const filePrice = new Map(chosen.filter((h) => h.priceMicros !== null).map((h) => [h.symbol, h.priceMicros!]));
       await onImport({
         newTickers: current.choices
           .filter((c) => used.has(c.symbol))
@@ -127,19 +129,15 @@ export function ImportHoldings({ account, tickers, feeFor, onImport, onApply }: 
             name: c.name,
             assetClass: c.assetClass,
             defaultBucket: c.bucket,
-            priceCents: filePrice.get(c.symbol) ?? null,
+            // Server works out cents from the exact price when both agree.
+            priceCents: centsOrNull(filePrice.get(c.symbol)),
+            priceMicros: filePrice.get(c.symbol) ?? null,
             priceAsOf: null,
           })),
-        prices: current.updatePrices ? priced.map((h) => ({ symbol: h.symbol, priceCents: h.priceCents! })) : [],
+        prices: current.updatePrices ? priced.map((h) => ({ symbol: h.symbol, priceMicros: h.priceMicros! })) : [],
         models: [],
       });
-      onApply(
-        holdingsToAccount(account, chosen, {
-          setBalance: current.setBalance,
-          feeCents,
-          feeFrom: current.takeFeeFromCash ? feeSource : null,
-        }),
-      );
+      onApply(holdingsToAccount(account, chosen));
       setDone(`Imported ${chosen.length} holdings from ${current.fileName}. Save the case to keep them.`);
       setPreview(null);
     } catch (caught: unknown) {
@@ -239,7 +237,7 @@ export function ImportHoldings({ account, tickers, feeFor, onImport, onApply }: 
                     )}
                   </td>
                   <td className="amount">{h.sharesMicros === null ? '—' : formatShares(h.sharesMicros)}</td>
-                  <td className="amount">{h.priceCents === null ? '—' : formatCents(h.priceCents)}</td>
+                  <td className="amount">{h.priceMicros === null ? '—' : formatPrice(h.priceMicros)}</td>
                   <td className="amount">{formatCents(h.marketValueCents)}</td>
                   <td>
                     <BucketTag bucket={known?.defaultBucket ?? choice?.bucket ?? h.bucket} />
@@ -261,10 +259,6 @@ export function ImportHoldings({ account, tickers, feeFor, onImport, onApply }: 
       <fieldset className="import-options">
         <legend>When importing</legend>
         <label>
-          <input type="checkbox" checked={preview.setBalance} onChange={(e) => patch({ setBalance: e.target.checked })} />{' '}
-          Set the account balance to {formatCents(totalCents)} (now {formatCents(account.balanceCents)})
-        </label>
-        <label>
           <input
             type="checkbox"
             checked={preview.updatePrices}
@@ -273,17 +267,13 @@ export function ImportHoldings({ account, tickers, feeFor, onImport, onApply }: 
           />{' '}
           Update the price of {priced.length} ticker{priced.length === 1 ? '' : 's'} already in the list from this file
         </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={preview.takeFeeFromCash && feeSource !== null}
-            disabled={feeSource === null}
-            onChange={(e) => patch({ takeFeeFromCash: e.target.checked })}
-          />{' '}
-          {feeSource === null
-            ? `Hold the ${formatCents(feeCents)} advisory fee out of a cash holding (none is large enough)`
-            : `Hold the ${formatCents(feeCents)} advisory fee out of ${feeSource}`}
-        </label>
+        <p className={cashCents >= feeCents ? 'muted' : 'text-warn'}>
+          The account&rsquo;s balance becomes {formatCents(totalCents)} (now {formatCents(account.balanceCents)}) and then
+          follows the shares at today&rsquo;s prices. Its {formatCents(feeCents)} yearly fee is paid from its cash funds:{' '}
+          {cashCents >= feeCents
+            ? `${formatCents(cashCents)} in cash covers it.`
+            : `only ${formatCents(cashCents)} is in cash, ${formatCents(feeCents - cashCents)} short.`}
+        </p>
         {account.lines.length > 0 && (
           <p className="text-warn">
             Replaces the {account.lines.length} fund{account.lines.length === 1 ? '' : 's'} in this account, and its model.
@@ -308,6 +298,10 @@ export function ImportHoldings({ account, tickers, feeFor, onImport, onApply }: 
       </div>
     </div>
   );
+}
+
+function centsOrNull(priceMicros: number | undefined): number | null {
+  return priceMicros === undefined ? null : Math.max(Math.round(priceMicros / 10_000), 1);
 }
 
 function FileInput({ input, onFile }: { input: RefObject<HTMLInputElement | null>; onFile: (file: File) => void }) {

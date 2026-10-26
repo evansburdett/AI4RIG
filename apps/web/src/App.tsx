@@ -14,6 +14,7 @@ import type {
   ModelPortfolio,
   Ticker,
 } from './domain/types.js';
+import { caseAtCurrentPrices } from './domain/breakdown.js';
 import { withTicker } from './domain/tickers.js';
 import { hrefFor, isReferenceScreen, useRoute, type Screen } from './routing.js';
 import { AssetClassBreakdown } from './screens/AssetClassBreakdown.js';
@@ -126,6 +127,12 @@ export function App() {
   }, [route.clientNumber]);
 
   const dirty = draft !== null && saved !== null && draft !== saved;
+  /**
+   * The open case as the screens show it: statement accounts valued at
+   * today's prices (RIG, 10/26). Worked out on the way to the screen, not
+   * stored, so a price change does not count as an unsaved edit.
+   */
+  const shown = useMemo(() => (draft === null ? null : caseAtCurrentPrices(draft, tickers)), [draft, tickers]);
   const activeClientNumber = route.clientNumber ?? lastClientNumber;
 
   const selectClient = useCallback(
@@ -149,7 +156,8 @@ export function App() {
     setBusy(true);
     setActionError(null);
     try {
-      const result = await api.saveClient(draft);
+      // Saved as shown, so the stored values are today's.
+      const result = await api.saveClient(caseAtCurrentPrices(draft, tickers));
       setSaved(result);
       setDraft(result);
       setClients((current) =>
@@ -162,7 +170,7 @@ export function App() {
     } finally {
       setBusy(false);
     }
-  }, [draft]);
+  }, [draft, tickers]);
 
   const createClient = useCallback(async () => {
     if (dirty && !window.confirm('Discard unsaved changes to the open case?')) return;
@@ -408,13 +416,13 @@ export function App() {
           </Callout>
         ) : clients.length === 0 && draft === null ? (
           <p className="empty">No client cases. Use “New client” to create one.</p>
-        ) : draft === null ? (
+        ) : shown === null ? (
           <p className="empty">Loading…</p>
         ) : route.screen === 'breakdown' ? (
-          <AssetClassBreakdown clientCase={draft} tickers={tickers} feeTiers={feeTiers} />
+          <AssetClassBreakdown clientCase={shown} tickers={tickers} feeTiers={feeTiers} />
         ) : (
           <ClientProfile
-            clientCase={draft}
+            clientCase={shown}
             models={models}
             tickers={tickers}
             feeTiers={feeTiers}

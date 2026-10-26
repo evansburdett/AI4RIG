@@ -814,7 +814,7 @@ describe('importing from spreadsheets (10/26)', () => {
   it('adds new tickers with their names, prices others, and adds or replaces models by name', async () => {
     const { status, body } = await call<ImportResult>('POST', '/api/import', {
       newTickers: [ticker('FXAIX', 'Fidelity 500 Index Fund'), ticker('VTI', 'Ignored: VTI is already here')],
-      prices: [{ symbol: 'FXAIX', priceCents: 230_12 }],
+      prices: [{ symbol: 'FXAIX', priceMicros: 230_123_400 }],
       models: [
         { id: '', name: 'Index 100', taxFunnel: null, lines: [{ tickerSymbol: 'FXAIX', weightBps: 10_000 }] },
         // Same name as 9004, different case: its lines are replaced and its id kept.
@@ -826,6 +826,7 @@ describe('importing from spreadsheets (10/26)', () => {
     expect(body.tickers.find((t) => t.symbol === 'FXAIX')).toMatchObject({
       name: 'Fidelity 500 Index Fund',
       priceCents: 230_12,
+      priceMicros: 230_123_400,
       priceAsOf: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
     });
     // An existing ticker keeps RIG's own classification and name.
@@ -840,7 +841,7 @@ describe('importing from spreadsheets (10/26)', () => {
   it('saves nothing when any part fails', async () => {
     const { status, body } = await call<{ error: string }>('POST', '/api/import', {
       newTickers: [ticker('FXAIX')],
-      prices: [{ symbol: 'NOPE', priceCents: 1_00 }],
+      prices: [{ symbol: 'NOPE', priceMicros: 1_000_000 }],
       models: [],
     });
     expect(status).toBe(400);
@@ -872,6 +873,15 @@ describe('importing from spreadsheets (10/26)', () => {
     });
     expect(saved.status).toBe(200);
     expect(saved.body.accounts[0]?.lines).toEqual(lines);
+  });
+
+  it('keeps an exact price, and lets a typed price in cents replace it', async () => {
+    const exact = await call<Ticker>('PUT', '/api/tickers/VTI', { ...ticker('VTI'), priceCents: 53_01, priceMicros: 53_009_200 });
+    expect(exact.body).toMatchObject({ priceCents: 53_01, priceMicros: 53_009_200 });
+
+    // The whole ticker back with only the cents changed: the cents win.
+    const typed = await call<Ticker>('PUT', '/api/tickers/VTI', { ...exact.body, priceCents: 54_00 });
+    expect(typed.body).toMatchObject({ priceCents: 54_00, priceMicros: 54_000_000 });
   });
 
   it('keeps a ticker name across an edit that leaves it out', async () => {

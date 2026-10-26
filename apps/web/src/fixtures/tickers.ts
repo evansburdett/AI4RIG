@@ -19,16 +19,16 @@ export const RIG_FEE_TIERS: readonly AdvisoryFeeTier[] = [
 
 /** Prices are round placeholders, not quotes, and match the seed. */
 export const PLACEHOLDER_TICKERS: readonly Ticker[] = [
-  { symbol: 'SGOV', name: null, assetClass: 'CASH', defaultBucket: 'NOW', priceCents: 100_00, priceAsOf: '2026-10-21' },
-  { symbol: 'BIL', name: null, assetClass: 'CASH', defaultBucket: 'NOW', priceCents: 91_50, priceAsOf: '2026-10-21' },
-  { symbol: 'SHY', name: null, assetClass: 'FIXED_INCOME', defaultBucket: 'SOON', priceCents: 82_00, priceAsOf: '2026-10-21' },
-  { symbol: 'BND', name: null, assetClass: 'FIXED_INCOME', defaultBucket: 'SOON', priceCents: 73_00, priceAsOf: '2026-10-21' },
-  { symbol: 'TIP', name: null, assetClass: 'FIXED_INCOME', defaultBucket: 'SOON', priceCents: 110_00, priceAsOf: '2026-10-21' },
-  { symbol: 'VTI', name: null, assetClass: 'EQUITY', defaultBucket: 'LATER', priceCents: 300_00, priceAsOf: '2026-10-21' },
-  { symbol: 'VOO', name: null, assetClass: 'EQUITY', defaultBucket: 'LATER', priceCents: 550_00, priceAsOf: '2026-10-21' },
-  { symbol: 'VXUS', name: null, assetClass: 'EQUITY', defaultBucket: 'LATER', priceCents: 65_00, priceAsOf: '2026-10-21' },
-  { symbol: 'VNQ', name: null, assetClass: 'REAL_ASSET', defaultBucket: 'LATER', priceCents: 90_00, priceAsOf: '2026-10-21' },
-  { symbol: 'GLD', name: null, assetClass: 'REAL_ASSET', defaultBucket: 'SOON', priceCents: 250_00, priceAsOf: '2026-10-21' },
+  { symbol: 'SGOV', name: null, assetClass: 'CASH', defaultBucket: 'NOW', priceCents: 100_00, priceMicros: 100_00_0000, priceAsOf: '2026-10-21' },
+  { symbol: 'BIL', name: null, assetClass: 'CASH', defaultBucket: 'NOW', priceCents: 91_50, priceMicros: 91_50_0000, priceAsOf: '2026-10-21' },
+  { symbol: 'SHY', name: null, assetClass: 'FIXED_INCOME', defaultBucket: 'SOON', priceCents: 82_00, priceMicros: 82_00_0000, priceAsOf: '2026-10-21' },
+  { symbol: 'BND', name: null, assetClass: 'FIXED_INCOME', defaultBucket: 'SOON', priceCents: 73_00, priceMicros: 73_00_0000, priceAsOf: '2026-10-21' },
+  { symbol: 'TIP', name: null, assetClass: 'FIXED_INCOME', defaultBucket: 'SOON', priceCents: 110_00, priceMicros: 110_00_0000, priceAsOf: '2026-10-21' },
+  { symbol: 'VTI', name: null, assetClass: 'EQUITY', defaultBucket: 'LATER', priceCents: 300_00, priceMicros: 300_00_0000, priceAsOf: '2026-10-21' },
+  { symbol: 'VOO', name: null, assetClass: 'EQUITY', defaultBucket: 'LATER', priceCents: 550_00, priceMicros: 550_00_0000, priceAsOf: '2026-10-21' },
+  { symbol: 'VXUS', name: null, assetClass: 'EQUITY', defaultBucket: 'LATER', priceCents: 65_00, priceMicros: 65_00_0000, priceAsOf: '2026-10-21' },
+  { symbol: 'VNQ', name: null, assetClass: 'REAL_ASSET', defaultBucket: 'LATER', priceCents: 90_00, priceMicros: 90_00_0000, priceAsOf: '2026-10-21' },
+  { symbol: 'GLD', name: null, assetClass: 'REAL_ASSET', defaultBucket: 'SOON', priceCents: 250_00, priceMicros: 250_00_0000, priceAsOf: '2026-10-21' },
 ];
 
 /** Worded from RIG's description of the three buckets. Editable under US-08. */

@@ -209,6 +209,9 @@ export const tickerSchema = z.object({
   // Optional so a caller that only changes the bucket cannot wipe the price
   // by leaving it out. null clears it.
   priceCents: cents.min(1, 'A price has to be above $0').nullable().optional(),
+  // The exact price. When it is a number it wins and priceCents is worked out
+  // from it; otherwise it follows priceCents.
+  priceMicros: z.int().min(1, 'A price has to be above $0').nullable().optional(),
   // Ignored: the server stamps it when the price changes.
   priceAsOf: z.string().nullable().optional(),
 });
@@ -243,7 +246,7 @@ export const importSchema = z
       .array(
         z.object({
           symbol: z.string().trim().toUpperCase().min(1).max(10),
-          priceCents: cents.min(1, 'A price has to be above $0'),
+          priceMicros: z.int().min(1, 'A price has to be above $0'),
         }),
       )
       .max(5000),
