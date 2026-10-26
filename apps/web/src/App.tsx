@@ -9,6 +9,8 @@ import type {
   BucketDefinition,
   ClientCase,
   ClientSummary,
+  ImportRequest,
+  ImportResult,
   ModelPortfolio,
   Ticker,
 } from './domain/types.js';
@@ -231,6 +233,18 @@ export function App() {
     return result;
   }, []);
 
+  /**
+   * Importing a spreadsheet: new tickers, prices, and models saved at once,
+   * then the screens refreshed from what the server has. Throws on failure so
+   * the import can show why, with nothing saved.
+   */
+  const runImport = useCallback(async (request: ImportRequest): Promise<ImportResult> => {
+    const result = await api.runImport(request);
+    setTickers(result.tickers);
+    setModels(result.models);
+    return result;
+  }, []);
+
   /** Throws on failure so the model editor can show the message next to the model. */
   const saveModel = useCallback(async (model: ModelPortfolio): Promise<ModelPortfolio> => {
     const result = await api.saveModel(model);
@@ -374,6 +388,7 @@ export function App() {
             onSave={saveModel}
             onDelete={deleteModel}
             onAddTicker={addTicker}
+            onImport={runImport}
           />
         ) : route.screen === 'tickers' ? (
           <BucketAssignments
@@ -406,6 +421,7 @@ export function App() {
             onChange={setDraft}
             onSaveAsModel={saveModel}
             onAddTicker={addTicker}
+            onImport={runImport}
             onEstimateLifeExpectancy={api.estimateLifeExpectancy}
             today={today}
           />

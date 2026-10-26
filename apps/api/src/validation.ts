@@ -16,6 +16,7 @@ import {
   LIFE_EXPECTANCY_SOURCES,
   LIFE_STAGES,
   LIFE_STAGES_BY_PHASE,
+  MODEL_NAME_MAX,
   MONEY_CYCLE_PHASES,
   TAX_BRACKETS,
   TAX_FUNNELS,
@@ -72,6 +73,9 @@ const weightedLine = z.object({
 const accountLine = z.object({
   tickerSymbol: z.string().trim().toUpperCase().min(1).max(10),
   amountCents: cents.min(0, 'An amount in a fund cannot be negative'),
+  // Millionths of a share, from an imported statement. Optional so an older
+  // client that does not know about it still saves.
+  heldSharesMicros: z.int().min(0, 'Shares held cannot be negative').nullable().default(null),
 });
 
 const account = z.object({
@@ -192,6 +196,14 @@ export const tickerSchema = z.object({
     .min(1)
     .max(10)
     .regex(/^[A-Z0-9.-]+$/, 'Letters, digits, dots, and dashes only'),
+  // Optional for the same reason as the price: leaving it out keeps it.
+  name: z
+    .string()
+    .trim()
+    .max(200)
+    .transform((name) => (name === '' ? null : name))
+    .nullable()
+    .optional(),
   assetClass: z.enum(ASSET_CLASSES),
   defaultBucket: bucket,
   // Optional so a caller that only changes the bucket cannot wipe the price
@@ -204,7 +216,9 @@ export const tickerSchema = z.object({
 export const modelPortfolioSchema = z.object({
   // Ignored on create; checked against the URL on update.
   id: z.string().optional(),
-  name: z.string().trim().min(1, 'A model needs a name').max(80),
+  // Vendor names run long: "Fidelity Target Allocation Index-Focused 100/0 Model
+  // Portfolio & American Funds Growth Model Portfolio" is 104 characters.
+  name: z.string().trim().min(1, 'A model needs a name').max(MODEL_NAME_MAX),
   taxFunnel: taxFunnel.nullable(),
   lines: z
     .array(weightedLine)
@@ -220,6 +234,31 @@ export const modelPortfolioSchema = z.object({
 });
 
 export type ModelPortfolioInput = z.infer<typeof modelPortfolioSchema>;
+
+/** Importing RIG's model spreadsheet or a custodian export: see ImportRequest. */
+export const importSchema = z
+  .object({
+    newTickers: z.array(tickerSchema).max(5000),
+    prices: z
+      .array(
+        z.object({
+          symbol: z.string().trim().toUpperCase().min(1).max(10),
+          priceCents: cents.min(1, 'A price has to be above $0'),
+        }),
+      )
+      .max(5000),
+    models: z.array(modelPortfolioSchema).max(500),
+  })
+  .refine(
+    (input) => new Set(input.newTickers.map((t) => t.symbol)).size === input.newTickers.length,
+    'A new ticker can be listed once',
+  )
+  .refine(
+    (input) => new Set(input.models.map((m) => m.name.toLowerCase())).size === input.models.length,
+    'Each model name can appear once in an import',
+  );
+
+export type ImportInput = z.infer<typeof importSchema>;
 
 export const bucketDefinitionSchema = z.object({
   bucket,

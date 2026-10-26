@@ -42,6 +42,8 @@ import type {
   AllocationTarget,
   ClientCase,
   GapEntry,
+  ImportRequest,
+  ImportResult,
   LifeExpectancyEstimate,
   LifeExpectancyRequest,
   ModelPortfolio,
@@ -63,6 +65,8 @@ interface Props {
   tickers: readonly Ticker[];
   /** RIG's fee schedule (US-19), for the fee cash held in each account. */
   feeTiers: readonly AdvisoryFeeTier[];
+  /** Saves the tickers and prices an account's holdings import needs. */
+  onImport: (request: ImportRequest) => Promise<ImportResult>;
   /** Saves an account's funds as a reusable model. */
   onSaveAsModel: (model: ModelPortfolio) => Promise<ModelPortfolio>;
   onAddTicker: (ticker: Ticker) => Promise<Ticker>;
@@ -89,6 +93,7 @@ export function ClientProfile({
   onChange,
   onSaveAsModel,
   onAddTicker,
+  onImport,
   onEstimateLifeExpectancy,
   today,
 }: Props) {
@@ -440,6 +445,17 @@ export function ClientProfile({
             tickers={tickers}
             onSaveAsModel={onSaveAsModel}
             onAddTicker={onAddTicker}
+            onImport={onImport}
+            // The fee follows the household's tier, which this balance can move.
+            feeFor={(balanceCents) =>
+              accountAdvisoryFees(
+                {
+                  ...clientCase,
+                  accounts: clientCase.accounts.map((a) => (a.id === account.id ? { ...a, balanceCents } : a)),
+                },
+                feeTiers,
+              ).find((f) => f.accountId === account.id)?.feeCents ?? 0
+            }
             onChange={(next) => patchAccounts(clientCase.accounts.map((a) => (a.id === account.id ? next : a)))}
             onRemove={() => patchAccounts(clientCase.accounts.filter((a) => a.id !== account.id))}
           />

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { ApiError } from '../api.js';
 import { Callout } from '../components/Callout.js';
+import { ImportModels } from '../components/ImportModels.js';
 import { newModel } from '../domain/factory.js';
 import { modelBucketMix, tickersBySymbol } from '../domain/breakdown.js';
 import { BUCKET_LABELS, TAX_FUNNEL_LABELS } from '../domain/lifeStage.js';
@@ -14,7 +15,7 @@ import {
   type DraftLine,
 } from '../components/WeightedLines.js';
 import { BUCKETS, TAX_FUNNELS } from '../domain/types.js';
-import type { ModelPortfolio, TaxFunnel, Ticker } from '../domain/types.js';
+import type { ImportRequest, ImportResult, ModelPortfolio, TaxFunnel, Ticker } from '../domain/types.js';
 
 interface Props {
   models: readonly ModelPortfolio[];
@@ -22,6 +23,8 @@ interface Props {
   onSave: (model: ModelPortfolio) => Promise<ModelPortfolio>;
   onDelete: (id: string) => Promise<void>;
   onAddTicker: (ticker: Ticker) => Promise<Ticker>;
+  /** Models and their new tickers from RIG's spreadsheet, saved at once. */
+  onImport: (request: ImportRequest) => Promise<ImportResult>;
 }
 
 /**
@@ -31,7 +34,7 @@ interface Props {
  * model (10/26), and each ticker's default bucket decides where its money
  * counts, so a model can span Now, Soon, and Later.
  */
-export function Models({ models, tickers, onSave, onDelete, onAddTicker }: Props) {
+export function Models({ models, tickers, onSave, onDelete, onAddTicker, onImport }: Props) {
   /** The unsaved new model, held in state so the editor is not reset on every render. */
   const [blank, setBlank] = useState<ModelPortfolio | null>(null);
 
@@ -45,10 +48,14 @@ export function Models({ models, tickers, onSave, onDelete, onAddTicker }: Props
         </p>
       </header>
 
-      <Callout tone="info" title="Placeholder models">
-        RIG has not sent its vendor models yet. These are built from the placeholder tickers so the
-        profile has something to pick. Edit or replace them freely.
-      </Callout>
+      {models.some((m) => m.name.startsWith('Placeholder ')) && (
+        <Callout tone="info" title="Placeholder models">
+          The models named &ldquo;Placeholder&rdquo; came with the app so the profile had something
+          to pick. Import RIG&rsquo;s vendor models below, then delete the placeholders.
+        </Callout>
+      )}
+
+      <ImportModels models={models} tickers={tickers} onImport={onImport} />
 
       <div className="button-row">
         <button type="button" className="primary" disabled={blank !== null} onClick={() => setBlank(newModel())}>

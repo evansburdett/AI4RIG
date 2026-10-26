@@ -309,6 +309,7 @@ The shapes on both ends (`ClientCase`, `Ticker`, ...) are defined once, in
 | `DELETE /api/tickers/:symbol` | Remove a ticker |
 | `GET /api/models` | Every model portfolio with its tickers and weights |
 | `POST /api/models` | New model (weights must add up to 100%) |
+| `POST /api/import` | New tickers, prices, and models from a spreadsheet, all or nothing. A model with an existing name is replaced, keeping its id |
 | `PUT /api/models/:id` | Edit a model |
 | `DELETE /api/models/:id` | Delete a model. Accounts using it keep the money, with no model |
 | `GET /api/bucket-definitions` | Now, Soon, Later |
@@ -327,13 +328,13 @@ see what a request and response look like.
 | `client_cases` | Case. Its number, life stage, cash figures, and the single-value Now and Soon inputs |
 | `people` | Client or spouse on a case: birth year (never a date), gender, life expectancy age and whether it was an AI estimate or the advisor's |
 | `accounts` | Account on a case: type, tax funnel, typed balance, last four digits only, and the model it was filled from |
-| `account_lines` | Fund in an account: the dollars in it, in display order. Its bucket is the ticker's default bucket |
+| `account_lines` | Fund in an account: the dollars in it, in display order, and the shares held when it came from an imported statement (millionths of a share). Its bucket is the ticker's default bucket |
 | `model_portfolios` | Model: a name, and optionally the tax funnel it is meant for |
 | `model_lines` | Ticker in a model, with its weight in basis points (100 = 1%) |
 | `planned_expenses` | Now "large upcoming expenses" and Soon "miscellaneous costs" lines |
 | `gap_entries` | Social Security bridge, healthcare gap, and forced withdrawal lines |
 | `proposal_positions` | Whole share count locked in for one ticker in one account, with the price it was worked out at (US-21) |
-| `tickers` | Symbol in the approved universe, with its default bucket and its price per share |
+| `tickers` | Symbol in the approved universe, with its name, default bucket, and price per share |
 | `bucket_definitions` | Bucket (always exactly three rows) |
 | `advisory_fee_tiers` | Row of RIG's fee schedule: a starting balance and a rate in basis points (US-19) |
 

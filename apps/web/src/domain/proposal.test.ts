@@ -103,3 +103,16 @@ describe('lockedMatchesPlan', () => {
     expect(lockedMatchesPlan(WORKBOOK_CASE, PLACEHOLDER_TICKERS)).toBe(false);
   });
 });
+
+describe('funds held from a statement', () => {
+  it('count the whole shares held, not what the dollars would buy at a rounded price', () => {
+    // 2,060 shares at $53.0092 is $109,198.95; at the cent-rounded $53.01
+    // those dollars would only buy 2,059.
+    const account = {
+      ...WORKBOOK_CASE.accounts[0]!,
+      lines: [{ tickerSymbol: 'VTI', amountCents: 109_198_95, heldSharesMicros: 2_060_000_000 }],
+    };
+    const [position] = proposedPositions(account, withPrice('VTI', 53_01));
+    expect(position).toMatchObject({ shares: 2060, costCents: 109_200_60, cashCents: 0 });
+  });
+});

@@ -126,7 +126,7 @@ describe('an account allocated by fund (10/26)', () => {
     const weights = linesAsWeights(joint.lines);
     expect(weights.reduce((t, l) => t + l.weightBps, 0)).toBe(10_000);
     expect(weights.find((l) => l.tickerSymbol === 'BND')?.weightBps).toBe(1683);
-    expect(linesAsWeights([{ tickerSymbol: 'VTI', amountCents: 0 }])).toEqual([]);
+    expect(linesAsWeights([{ tickerSymbol: 'VTI', amountCents: 0, heldSharesMicros: null }])).toEqual([]);
   });
 });
 
@@ -138,8 +138,8 @@ describe('followModels', () => {
   it('refills an account still on its model when the balance changes', () => {
     const [next] = followModels(before, [{ ...roth, balanceCents: 400_000_00 }], MODELS, fees(3_000_00), fees(4_000_00));
     expect(next!.lines).toEqual([
-      { tickerSymbol: 'VTI', amountCents: 237_600_00 },
-      { tickerSymbol: 'VXUS', amountCents: 158_400_00 },
+      { tickerSymbol: 'VTI', amountCents: 237_600_00, heldSharesMicros: null },
+      { tickerSymbol: 'VXUS', amountCents: 158_400_00, heldSharesMicros: null },
     ]);
   });
 
@@ -149,7 +149,7 @@ describe('followModels', () => {
   });
 
   it('leaves an adjusted account alone', () => {
-    const adjusted = { ...roth, lines: [{ tickerSymbol: 'VTI', amountCents: 297_000_00 }] };
+    const adjusted = { ...roth, lines: [{ tickerSymbol: 'VTI', amountCents: 297_000_00, heldSharesMicros: null }] };
     const [next] = followModels(
       { ...WORKBOOK_CASE, accounts: [adjusted] },
       [{ ...adjusted, balanceCents: 400_000_00 }],
@@ -161,7 +161,7 @@ describe('followModels', () => {
   });
 
   it('keeps the edit itself when the funds are what changed', () => {
-    const edited = { ...roth, lines: [{ tickerSymbol: 'VTI', amountCents: 1_00 }] };
+    const edited = { ...roth, lines: [{ tickerSymbol: 'VTI', amountCents: 1_00, heldSharesMicros: null }] };
     expect(followModels(before, [edited], MODELS, fees(3_000_00), fees(3_000_00))[0]).toBe(edited);
   });
 });

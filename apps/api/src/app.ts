@@ -6,6 +6,7 @@ import { DEFAULT_OPENAI_MODEL, type ApiConfig } from './config.js';
 import { constraintStatus, HttpError } from './errors.js';
 import { openAiEstimator, type Estimator } from './lifeExpectancy.js';
 import { createClientsRouter } from './routes/clients.js';
+import { createImportsRouter } from './routes/imports.js';
 import { createLifeExpectancyRouter } from './routes/lifeExpectancy.js';
 import { createModelsRouter } from './routes/models.js';
 import { createReferenceDataRouter } from './routes/referenceData.js';
@@ -101,6 +102,7 @@ export function createApp({
   app.use(createClientsRouter(db));
   app.use(createReferenceDataRouter(db));
   app.use(createModelsRouter(db));
+  app.use(createImportsRouter(db));
   app.use(createLifeExpectancyRouter(estimate));
   app.use(createSettingsRouter({ openAiKey, openAiModel }));
 

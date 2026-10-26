@@ -15,17 +15,28 @@ import {
   tickersBySymbol,
   weightBpsOf,
 } from '../domain/breakdown.js';
-import { ACCOUNT_TYPE_LABELS, BUCKET_LABELS, TAX_FUNNEL_LABELS } from '../domain/lifeStage.js';
+import { ACCOUNT_TYPE_LABELS, TAX_FUNNEL_LABELS } from '../domain/lifeStage.js';
 import { centsToInput, formatCents, parseCents } from '../domain/money.js';
 import { bpsToPercentInput, formatBps, parsePercentToBps } from '../domain/percent.js';
 import { proposedPositions, type ProposedPosition } from '../domain/proposal.js';
 import { isValidSymbol, normalizeSymbol } from '../domain/tickers.js';
 import { ACCOUNT_TYPES, BUCKETS, DEFAULT_TAX_FUNNEL, TAX_FUNNELS } from '../domain/types.js';
-import type { Account, AccountLine, BucketType, ModelPortfolio, Ticker } from '../domain/types.js';
+import type {
+  Account,
+  AccountLine,
+  BucketType,
+  ImportRequest,
+  ImportResult,
+  ModelPortfolio,
+  Ticker,
+} from '../domain/types.js';
 import type { AccountFee } from '../domain/worksheet.js';
 
 import { BucketBar } from './BucketBar.js';
+import { BucketTag } from './BucketTag.js';
 import { CellInput } from './CellInput.js';
+import { ImportHoldings } from './ImportHoldings.js';
+import { formatShares } from './shares.js';
 import { SelectField, TextField } from './Fields.js';
 import { MoneyInput } from './MoneyInput.js';
 import { NewTickerFields } from './NewTickerFields.js';
@@ -46,6 +57,10 @@ interface Props {
   onSaveAsModel: (model: ModelPortfolio) => Promise<ModelPortfolio>;
   /** Adds a symbol typed as a new fund to the universe (US-24). */
   onAddTicker: (ticker: Ticker) => Promise<Ticker>;
+  /** Saves the tickers and prices a holdings import needs. */
+  onImport: (request: ImportRequest) => Promise<ImportResult>;
+  /** This account's advisory fee if its balance were this, for a holdings import. */
+  feeFor: (balanceCents: number) => number;
 }
 
 /** Dollars typed in a fund: never negative. */
@@ -73,6 +88,8 @@ export function AccountCard({
   onRemove,
   onSaveAsModel,
   onAddTicker,
+  onImport,
+  feeFor,
 }: Props) {
   const root = useRef<HTMLDivElement>(null);
 
@@ -111,7 +128,11 @@ export function AccountCard({
   }
 
   function setLine(symbol: string, amountCents: number) {
-    patch({ lines: account.lines.map((l) => (l.tickerSymbol === symbol ? { ...l, amountCents } : l)) });
+    // A typed amount is a target to buy, no longer the shares a statement said
+    // were held.
+    patch({
+      lines: account.lines.map((l) => (l.tickerSymbol === symbol ? { ...l, amountCents, heldSharesMicros: null } : l)),
+    });
   }
 
   /** Funds of the advisor's own that a fill would replace: anything but the model as filled. */
@@ -281,6 +302,7 @@ export function AccountCard({
               line={line}
               investable={investable}
               bucket={bucketOf(line.tickerSymbol, tickerMap)}
+              name={tickerMap.get(line.tickerSymbol)?.name ?? null}
               position={positions.get(line.tickerSymbol)}
               onAmount={(cents) => setLine(line.tickerSymbol, cents)}
               onRemove={() => patch({ lines: account.lines.filter((l) => l.tickerSymbol !== line.tickerSymbol) })}
@@ -318,11 +340,19 @@ export function AccountCard({
         </p>
       )}
 
+      <ImportHoldings
+        account={account}
+        tickers={tickers}
+        feeFor={feeFor}
+        onImport={onImport}
+        onApply={onChange}
+      />
+
       <AddFund
         tickers={tickers}
         held={account.lines.map((l) => l.tickerSymbol)}
         onAddTicker={onAddTicker}
-        onAdd={(tickerSymbol) => patch({ lines: [...account.lines, { tickerSymbol, amountCents: 0 }] })}
+        onAdd={(tickerSymbol) => patch({ lines: [...account.lines, { tickerSymbol, amountCents: 0, heldSharesMicros: null }] })}
       />
 
       {/* Worth offering only for funds of the advisor's own, not a model as filled. */}
@@ -337,18 +367,11 @@ export function AccountCard({
   );
 }
 
-function BucketTag({ bucket }: { bucket: BucketType }) {
-  return (
-    <span className="bucket-tag">
-      <span className={`swatch bucket-${bucket.toLowerCase()}`} aria-hidden="true" /> {BUCKET_LABELS[bucket]}
-    </span>
-  );
-}
-
 function FundRow({
   line,
   investable,
   bucket,
+  name,
   position,
   onAmount,
   onRemove,
@@ -356,6 +379,7 @@ function FundRow({
   line: AccountLine;
   investable: number;
   bucket: BucketType;
+  name: string | null;
   position: ProposedPosition | undefined;
   onAmount: (cents: number) => void;
   onRemove: () => void;
@@ -363,8 +387,13 @@ function FundRow({
   const symbol = line.tickerSymbol;
   return (
     <tr>
-      <th scope="row">
+      <th scope="row" className="fund-symbol">
         <code>{symbol}</code>
+        {name !== null && (
+          <span className="fund-name" title={name}>
+            {name}
+          </span>
+        )}
       </th>
       <td>
         <BucketTag bucket={bucket} />
@@ -397,10 +426,22 @@ function FundRow({
       ) : (
         <>
           <td className="amount">{formatCents(position.priceCents)}</td>
-          <td className="amount">
-            <strong>{(position.shares ?? 0).toLocaleString('en-US')}</strong>
-          </td>
-          <td className="amount">{formatCents(position.cashCents ?? 0)}</td>
+          {line.heldSharesMicros !== null ? (
+            // From a statement: what the account holds, fractions and all.
+            <>
+              <td className="amount" title="Shares held, from the imported statement">
+                <strong>{formatShares(line.heldSharesMicros)}</strong> <span className="tag">held</span>
+              </td>
+              <td className="amount muted">—</td>
+            </>
+          ) : (
+            <>
+              <td className="amount">
+                <strong>{(position.shares ?? 0).toLocaleString('en-US')}</strong>
+              </td>
+              <td className="amount">{formatCents(position.cashCents ?? 0)}</td>
+            </>
+          )}
         </>
       )}
       <td className="row-actions">

@@ -40,7 +40,10 @@ export function BucketAssignments({
   const [savingSymbol, setSavingSymbol] = useState<string | null>(null);
 
   const query = filter.trim().toUpperCase();
-  const visible = query === '' ? tickers : tickers.filter((t) => t.symbol.includes(query));
+  const visible =
+    query === ''
+      ? tickers
+      : tickers.filter((t) => t.symbol.includes(query) || (t.name ?? '').toUpperCase().includes(query));
 
   async function updateTicker(ticker: Ticker, changes: Partial<Ticker>) {
     setSavingSymbol(ticker.symbol);
@@ -111,7 +114,7 @@ export function BucketAssignments({
         </div>
 
         <div className="field">
-          <label htmlFor="ticker-filter">Filter by symbol</label>
+          <label htmlFor="ticker-filter">Filter by symbol or name</label>
           <input
             id="ticker-filter"
             type="search"
@@ -136,8 +139,13 @@ export function BucketAssignments({
           <tbody>
             {visible.map((ticker) => (
               <tr key={ticker.symbol}>
-                <th scope="row">
+                <th scope="row" className="fund-symbol">
                   <code>{ticker.symbol}</code>
+                  {ticker.name !== null && (
+                    <span className="fund-name" title={ticker.name}>
+                      {ticker.name}
+                    </span>
+                  )}
                 </th>
                 <td>
                   <select

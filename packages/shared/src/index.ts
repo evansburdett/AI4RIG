@@ -147,6 +147,13 @@ export interface LifeExpectancyEstimate {
 export interface AccountLine {
   readonly tickerSymbol: string;
   readonly amountCents: Cents;
+  /**
+   * The shares the account holds, in millionths of a share, when the fund
+   * came from an imported statement (which can hold fractions). Null for a
+   * fund allocated by dollars or weight: those are bought in whole shares,
+   * worked out from the price. Changing a fund's dollars clears it.
+   */
+  readonly heldSharesMicros: number | null;
 }
 
 /**
@@ -204,12 +211,35 @@ export interface ModelLine {
  * quarterly, so these are data an administrator edits. A "custom model" is
  * just another one of these.
  */
+/** The longest model name the API takes. */
+export const MODEL_NAME_MAX = 200;
+
 export interface ModelPortfolio {
   readonly id: string;
   readonly name: string;
   /** The funnel this model is meant for, or null for any. Only used to sort the dropdown. */
   readonly taxFunnel: TaxFunnel | null;
   readonly lines: readonly ModelLine[];
+}
+
+/**
+ * Several reference changes saved at once, all or nothing: what importing
+ * RIG's model spreadsheet or a custodian export needs before the models or
+ * the account can refer to the tickers.
+ */
+export interface ImportRequest {
+  /** Added; one already in the universe is left as it is. */
+  readonly newTickers: readonly Ticker[];
+  /** Prices from a statement, stamped with today's date. */
+  readonly prices: readonly { readonly symbol: string; readonly priceCents: Cents }[];
+  /** Added, or replacing the lines of the model with the same name. Ids are ignored. */
+  readonly models: readonly ModelPortfolio[];
+}
+
+/** The whole universe and every model after an import, for the screens to show. */
+export interface ImportResult {
+  readonly tickers: readonly Ticker[];
+  readonly models: readonly ModelPortfolio[];
 }
 
 /**
@@ -227,6 +257,8 @@ export interface Holding {
 
 export interface Ticker {
   readonly symbol: string;
+  /** The fund's name, when known: "Fidelity 500 Index Fund" for FXAIX. */
+  readonly name: string | null;
   readonly assetClass: AssetClass;
   readonly defaultBucket: BucketType;
   /**

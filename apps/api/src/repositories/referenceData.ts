@@ -11,6 +11,7 @@ import { HttpError } from '../errors.js';
 
 interface TickerRow {
   symbol: string;
+  name: string | null;
   asset_class: Ticker['assetClass'];
   default_bucket: Ticker['defaultBucket'];
   price_cents: number | null;
@@ -26,6 +27,7 @@ interface DefinitionRow {
 
 const toTicker = (row: TickerRow): Ticker => ({
   symbol: row.symbol,
+  name: row.name,
   assetClass: row.asset_class,
   defaultBucket: row.default_bucket,
   priceCents: row.price_cents,
@@ -42,16 +44,16 @@ const toDefinition = (row: DefinitionRow): BucketDefinition => ({
 export function listTickers(db: Db): Ticker[] {
   return db
     .prepare<[], TickerRow>(
-      'SELECT symbol, asset_class, default_bucket, price_cents, price_as_of FROM tickers ORDER BY symbol',
+      'SELECT symbol, name, asset_class, default_bucket, price_cents, price_as_of FROM tickers ORDER BY symbol',
     )
     .all()
     .map(toTicker);
 }
 
-function getTicker(db: Db, symbol: string): Ticker | null {
+export function getTicker(db: Db, symbol: string): Ticker | null {
   const row = db
     .prepare<[string], TickerRow>(
-      'SELECT symbol, asset_class, default_bucket, price_cents, price_as_of FROM tickers WHERE symbol = ?',
+      'SELECT symbol, name, asset_class, default_bucket, price_cents, price_as_of FROM tickers WHERE symbol = ?',
     )
     .get(symbol);
   return row === undefined ? null : toTicker(row);
@@ -60,6 +62,8 @@ function getTicker(db: Db, symbol: string): Ticker | null {
 /** What a caller may send: the price is optional, and its date is the server's to set. */
 export interface TickerInput {
   readonly symbol: string;
+  /** Undefined leaves the stored name alone; null clears it. */
+  readonly name?: string | null | undefined;
   readonly assetClass: Ticker['assetClass'];
   readonly defaultBucket: Ticker['defaultBucket'];
   /** Undefined leaves the stored price alone; null clears it. */
@@ -76,6 +80,7 @@ export interface TickerInput {
  */
 export function upsertTicker(db: Db, ticker: TickerInput, today: Date = new Date()): Ticker {
   const existing = getTicker(db, ticker.symbol);
+  const name = ticker.name === undefined ? (existing?.name ?? null) : ticker.name;
   const priceCents = ticker.priceCents === undefined ? (existing?.priceCents ?? null) : ticker.priceCents;
   const priceAsOf =
     priceCents === null
@@ -85,15 +90,17 @@ export function upsertTicker(db: Db, ticker: TickerInput, today: Date = new Date
         : today.toISOString().slice(0, 10);
 
   db.prepare(
-    `INSERT INTO tickers (symbol, asset_class, default_bucket, price_cents, price_as_of)
-     VALUES (@symbol, @assetClass, @defaultBucket, @priceCents, @priceAsOf)
+    `INSERT INTO tickers (symbol, name, asset_class, default_bucket, price_cents, price_as_of)
+     VALUES (@symbol, @name, @assetClass, @defaultBucket, @priceCents, @priceAsOf)
      ON CONFLICT (symbol) DO UPDATE SET
+       name = excluded.name,
        asset_class = excluded.asset_class,
        default_bucket = excluded.default_bucket,
        price_cents = excluded.price_cents,
        price_as_of = excluded.price_as_of`,
   ).run({
     symbol: ticker.symbol,
+    name,
     assetClass: ticker.assetClass,
     defaultBucket: ticker.defaultBucket,
     priceCents,

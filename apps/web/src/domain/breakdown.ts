@@ -70,7 +70,9 @@ export function applyModel(account: Account, model: ModelPortfolio, feeCents: Ce
   return {
     ...account,
     modelId: model.id,
-    lines: shares.map((share): AccountLine => ({ tickerSymbol: share.key, amountCents: share.amountCents })),
+    lines: shares.map(
+      (share): AccountLine => ({ tickerSymbol: share.key, amountCents: share.amountCents, heldSharesMicros: null }),
+    ),
   };
 }
 

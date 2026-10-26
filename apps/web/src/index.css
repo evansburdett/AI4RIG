@@ -1021,3 +1021,86 @@ table caption {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+
+/*
+ * Importing from Excel (10/26): a preview to check before anything is saved.
+ * Long tables scroll inside their own box so the buttons stay in reach.
+ */
+.import-table {
+  display: block;
+  max-height: 28rem;
+  overflow: auto;
+  margin-top: var(--space-3);
+}
+
+.import-table caption {
+  position: sticky;
+  left: 0;
+}
+
+.import-table select {
+  font-size: var(--text-caption);
+}
+
+.import-name {
+  max-width: 22rem;
+}
+
+.import-note {
+  display: block;
+  font-size: var(--text-caption);
+}
+
+.import-row-blocked > * {
+  color: var(--text-muted);
+}
+
+.import-holdings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.import-holdings-open {
+  display: block;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-muted);
+}
+
+.import-holdings-open h4 {
+  margin: 0;
+}
+
+.import-options {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-3) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.import-options p {
+  margin: var(--space-1) 0 0;
+}
+
+.callout ul {
+  margin: var(--space-1) 0 0;
+  padding-left: 1.2rem;
+}
+
+/* A fund's name under its symbol, cut short with the full name on hover. */
+.fund-symbol .fund-name {
+  display: block;
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  font-size: var(--text-caption);
+  color: var(--text-muted);
+}
