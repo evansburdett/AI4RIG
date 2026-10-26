@@ -396,7 +396,7 @@ export function App() {
         ) : draft === null ? (
           <p className="empty">Loading…</p>
         ) : route.screen === 'breakdown' ? (
-          <AssetClassBreakdown clientCase={draft} tickers={tickers} models={models} feeTiers={feeTiers} />
+          <AssetClassBreakdown clientCase={draft} tickers={tickers} feeTiers={feeTiers} />
         ) : (
           <ClientProfile
             clientCase={draft}
@@ -422,12 +422,10 @@ export function App() {
 function withoutModel(clientCase: ClientCase, modelId: string): ClientCase {
   return {
     ...clientCase,
-    accounts: clientCase.accounts.map((account) => ({
-      ...account,
-      sleeves: account.sleeves.map((sleeve) =>
-        sleeve.modelId === modelId ? { ...sleeve, modelId: null } : sleeve,
-      ),
-    })),
+    // The funds stay; the accounts are just no longer tied to the model.
+    accounts: clientCase.accounts.map((account) =>
+      account.modelId === modelId ? { ...account, modelId: null } : account,
+    ),
   };
 }
 

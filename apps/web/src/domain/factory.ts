@@ -3,7 +3,7 @@
  * server (POST /api/clients), which assigns its number.
  */
 
-import { BUCKETS, DEFAULT_TAX_FUNNEL } from './types.js';
+import { DEFAULT_TAX_FUNNEL } from './types.js';
 import type { Account, GapEntry, ModelPortfolio, PlannedExpense } from './types.js';
 
 let counter = 0;
@@ -21,22 +21,15 @@ export function newAccount(): Account {
     taxFunnel: DEFAULT_TAX_FUNNEL.SINGLE,
     maskedNumber: '',
     balanceCents: 0,
+    modelId: null,
+    lines: [],
     proposalShares: [],
-    // A new bucket follows a model, like most of RIG's do; the advisor
-    // switches it to manual if this client needs something of their own.
-    sleeves: BUCKETS.map((bucket) => ({
-      bucket,
-      amountCents: 0,
-      mode: 'MODEL' as const,
-      modelId: null,
-      lines: [],
-    })),
   };
 }
 
 /** A model not yet saved. The server assigns the id; until then it is ''. */
 export function newModel(): ModelPortfolio {
-  return { id: '', name: '', bucket: 'LATER', taxFunnel: null, lines: [] };
+  return { id: '', name: '', taxFunnel: null, lines: [] };
 }
 
 export function newExpense(): PlannedExpense {

@@ -2,6 +2,8 @@ import { useEffect, useId, useState } from 'react';
 
 import { centsToInput, parseCents, type Cents } from '../domain/money.js';
 
+import { typedMoney } from './typedMoney.js';
+
 interface Props {
   label: string;
   valueCents: Cents;
@@ -41,7 +43,7 @@ export function MoneyInput({ label, valueCents, onChange, hint }: Props) {
           aria-invalid={invalid}
           onFocus={() => setFocused(true)}
           onChange={(event) => {
-            const next = event.target.value;
+            const next = typedMoney(event.target);
             setDraft(next);
             const cents = parseCents(next);
             if (cents !== null) onChange(cents);
@@ -53,7 +55,7 @@ export function MoneyInput({ label, valueCents, onChange, hint }: Props) {
           }}
         />
       </div>
-      {invalid && <p className="field-error">Enter an amount like 1234.56</p>}
+      {invalid && <p className="field-error">Enter an amount like 1,234.56</p>}
       {hint !== undefined && !invalid && <p className="field-hint">{hint}</p>}
     </div>
   );

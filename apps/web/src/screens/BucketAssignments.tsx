@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Callout } from '../components/Callout.js';
 import { About } from '../components/Help.js';
 import { NewTickerFields } from '../components/NewTickerFields.js';
+import { typedMoney } from '../components/typedMoney.js';
 import { ASSET_CLASS_LABELS, BUCKET_LABELS } from '../domain/lifeStage.js';
 import { formatDay } from '../domain/dates.js';
 import { centsToInput, parseCents } from '../domain/money.js';
@@ -244,7 +245,7 @@ function TickerPriceEditor({
           aria-invalid={invalid}
           placeholder="Not set"
           value={draft}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => setDraft(typedMoney(event.target))}
         />
       </div>
       <button type="button" disabled={!dirty || invalid || saving} onClick={() => void onSave(parsed)}>

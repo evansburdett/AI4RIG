@@ -1,12 +1,11 @@
 -- Two sample client cases. Client numbers and initials are invented. The
 -- figures on case 1042 come from RIG's Bucket Plan Deliverable workbook:
--- $3,000,000 investable, and the accounts are split so the buckets land
--- exactly on the plan: the worksheet's $190,000 Now plus $30,000 of advisory
--- fee cash held in each account's own Now (US-19: $3,000,000 in all is RIG's
--- 1.00% tier, so $12,000 + $15,000 + $3,000), $910,200 Soon (with RIG's 3%
--- inflation hedge), and $1,869,800 Later. Case 2317 is an
--- early accumulator whose split is deliberately off target, with $15,000 not
--- yet placed in any bucket and one slice with no model chosen.
+-- $3,000,000 investable, and the accounts' funds land the buckets exactly on
+-- the plan: the worksheet's $190,000 Now plus $30,000 of advisory fee cash
+-- held in each account (US-19: $3,000,000 in all is RIG's 1.00% tier, so
+-- $12,000 + $15,000 + $3,000), $910,200 Soon (with RIG's 3% inflation hedge),
+-- and $1,869,800 Later. Case 2317 is an early accumulator whose funds are
+-- deliberately off target, with $15,000 of one account not yet allocated.
 --
 -- These match apps/web/src/fixtures/clients.ts, which the front-end unit tests
 -- use. Keep the two in step if you change either.
@@ -52,40 +51,54 @@ INSERT OR REPLACE INTO person_health_concerns (person_id, concern) VALUES
     (9002, 'HEART'),
     (9002, 'OTHER');
 
-INSERT OR REPLACE INTO accounts (id, client_case_id, position, account_type, tax_funnel, masked_number, balance_cents) VALUES
-    (9001, 9001, 0, 'JOINT',    'TAXABLE',  '4417', 120000000),
-    (9002, 9001, 1, 'IRA',      'PRE_TAX',  '8830', 150000000),
-    (9003, 9001, 2, 'ROTH_IRA', 'TAX_FREE', '2291',  30000000),
-    (9004, 9002, 0, 'SINGLE',   'TAXABLE',  '1005',  28000000),
-    (9005, 9002, 1, 'ROTH_IRA', 'TAX_FREE', '7742',  24000000);
+INSERT OR REPLACE INTO accounts (id, client_case_id, position, account_type, tax_funnel, masked_number, balance_cents, model_id) VALUES
+    (9001, 9001, 0, 'JOINT',    'TAXABLE',  '4417', 120000000, NULL),
+    (9002, 9001, 1, 'IRA',      'PRE_TAX',  '8830', 150000000, NULL),
+    (9003, 9001, 2, 'ROTH_IRA', 'TAX_FREE', '2291',  30000000, 9004),
+    (9004, 9002, 0, 'SINGLE',   'TAXABLE',  '1005',  28000000, 9003),
+    (9005, 9002, 1, 'ROTH_IRA', 'TAX_FREE', '7742',  24000000, 9004);
 
-INSERT OR REPLACE INTO account_sleeves (account_id, bucket, amount_cents, model_id, mode) VALUES
-    -- 1042: Now 202,000 + 15,000 + 3,000 / Soon 400,000 + 510,200
-    --       Later 598,000 + 974,800 + 297,000
-    (9001, 'NOW',    20200000, 9001, 'MODEL'),
-    (9001, 'SOON',   40000000, 9002, 'MODEL'),
-    (9001, 'LATER',  59800000, 9003, 'MODEL'),
-    (9002, 'NOW',     1500000, 9001, 'MODEL'),
-    (9002, 'SOON',   51020000, 9002, 'MODEL'),
-    (9002, 'LATER',  97480000, 9003, 'MODEL'),
-    (9003, 'NOW',      300000, 9001, 'MODEL'),
-    (9003, 'SOON',          0, NULL, 'MODEL'),
-    (9003, 'LATER',  29700000, 9004, 'MODEL'),
-    -- 2317: $15,000 of the Single account is not in any bucket yet; its Later
-    -- money is picked by hand rather than from a model (US-23); and the Roth's
-    -- Soon money follows nothing at all.
-    (9004, 'NOW',     2500000, 9001, 'MODEL'),
-    (9004, 'SOON',          0, NULL, 'MODEL'),
-    (9004, 'LATER',  24000000, NULL, 'MANUAL'),
-    (9005, 'NOW',           0, NULL, 'MODEL'),
-    (9005, 'SOON',    6000000, NULL, 'MODEL'),
-    (9005, 'LATER',  18000000, 9004, 'MODEL');
-
--- The one manual bucket: symbols chosen for this client rather than a model.
--- 70/30 adds up to 100%, so it produces positions like any model would.
-INSERT OR REPLACE INTO sleeve_lines (account_id, bucket, position, ticker_symbol, weight_bps) VALUES
-    (9004, 'LATER', 0, 'VTI', 7000),
-    (9004, 'LATER', 1, 'VNQ', 3000);
+-- The money in each fund. Each account's advisory fee is held as cash on top
+-- of these (household tier: 1.00% for 1042, 1.50% for 2317), so a fully
+-- placed account's funds add up to its balance less its fee.
+--
+-- 1042, all placed: Now 190,000 in cash funds + 30,000 fee cash = 220,000;
+-- Soon 400,000 + 510,200 = 910,200; Later 598,000 + 974,800 + 297,000 =
+-- 1,869,800. The Roth is exactly the Roth growth model; the other two were
+-- picked fund by fund.
+INSERT OR REPLACE INTO account_lines (account_id, position, ticker_symbol, amount_cents) VALUES
+    -- Joint: 1,200,000 less 12,000 fee = 1,188,000
+    (9001, 0, 'SGOV', 11400000),
+    (9001, 1, 'BIL',   7600000),
+    (9001, 2, 'BND',  20000000),
+    (9001, 3, 'SHY',  12000000),
+    (9001, 4, 'TIP',   8000000),
+    (9001, 5, 'VTI',  29900000),
+    (9001, 6, 'VOO',  11960000),
+    (9001, 7, 'VXUS', 11960000),
+    (9001, 8, 'VNQ',   5980000),
+    -- IRA: 1,500,000 less 15,000 fee = 1,485,000
+    (9002, 0, 'BND',  25510000),
+    (9002, 1, 'SHY',  15306000),
+    (9002, 2, 'TIP',  10204000),
+    (9002, 3, 'VTI',  48740000),
+    (9002, 4, 'VOO',  19496000),
+    (9002, 5, 'VXUS', 19496000),
+    (9002, 6, 'VNQ',   9748000),
+    -- Roth: 300,000 less 3,000 fee = 297,000, Roth growth 60/40
+    (9003, 0, 'VTI',  17820000),
+    (9003, 1, 'VXUS', 11880000),
+    -- 2317 Single: 280,000 less 4,200 fee = 275,800; Balanced 60/40 on 260,800,
+    -- leaving 15,000 still to allocate.
+    (9004, 0, 'VTI',   9128000),
+    (9004, 1, 'VOO',   2608000),
+    (9004, 2, 'VXUS',  3912000),
+    (9004, 3, 'BND',   6520000),
+    (9004, 4, 'SHY',   2608000),
+    (9004, 5, 'TIP',   1304000),
+    -- 2317 Roth: 240,000 less 3,600 fee = 236,400, Roth growth 60/40
+    (9005, 0, 'VTI',  14184000),
+    (9005, 1, 'VXUS',  9456000);
 
 INSERT OR REPLACE INTO planned_expenses (id, client_case_id, kind, position, label, cost_cents) VALUES
     (9001, 9001, 'NOW_PLANNED',        0, 'Roof replacement', 4000000),

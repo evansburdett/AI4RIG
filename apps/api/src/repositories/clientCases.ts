@@ -2,7 +2,7 @@
  * Client cases in and out of SQLite.
  *
  * This is the only file that knows how a ClientCase is spread across tables
- * (client_cases, people, accounts, account_sleeves, sleeve_lines,
+ * (client_cases, people, accounts, account_lines,
  * proposal_positions, planned_expenses, gap_entries).
  * Routes call these functions and deal only in ClientCase objects.
  *
@@ -15,10 +15,8 @@
 
 import type { Db } from '@ai4rig/db';
 import {
-  BUCKETS,
   HEALTH_CONCERNS,
   type Account,
-  type BucketSleeve,
   type ClientCase,
   type ClientSummary,
   type GapEntry,
@@ -75,21 +73,13 @@ interface AccountRow {
   tax_funnel: Account['taxFunnel'];
   masked_number: string;
   balance_cents: number;
-}
-
-interface SleeveRow {
-  account_id: number;
-  bucket: BucketSleeve['bucket'];
-  amount_cents: number;
   model_id: number | null;
-  mode: BucketSleeve['mode'];
 }
 
-interface SleeveLineRow {
+interface LineRow {
   account_id: number;
-  bucket: BucketSleeve['bucket'];
   ticker_symbol: string;
-  weight_bps: number;
+  amount_cents: number;
 }
 
 interface ProposalRow {
@@ -175,20 +165,12 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
     }),
   );
 
-  const sleeveRows = db
-    .prepare<[number], SleeveRow>(
-      `SELECT s.account_id, s.bucket, s.amount_cents, s.model_id, s.mode
-       FROM account_sleeves s JOIN accounts a ON a.id = s.account_id
-       WHERE a.client_case_id = ?`,
-    )
-    .all(row.id);
-
-  const sleeveLineRows = db
-    .prepare<[number], SleeveLineRow>(
-      `SELECT l.account_id, l.bucket, l.ticker_symbol, l.weight_bps
-       FROM sleeve_lines l JOIN accounts a ON a.id = l.account_id
+  const lineRows = db
+    .prepare<[number], LineRow>(
+      `SELECT l.account_id, l.ticker_symbol, l.amount_cents
+       FROM account_lines l JOIN accounts a ON a.id = l.account_id
        WHERE a.client_case_id = ?
-       ORDER BY l.position, l.id`,
+       ORDER BY l.position, l.ticker_symbol`,
     )
     .all(row.id);
 
@@ -203,7 +185,7 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
 
   const accounts = db
     .prepare<[number], AccountRow>(
-      `SELECT id, account_type, tax_funnel, masked_number, balance_cents
+      `SELECT id, account_type, tax_funnel, masked_number, balance_cents, model_id
        FROM accounts WHERE client_case_id = ? ORDER BY position, id`,
     )
     .all(row.id)
@@ -214,19 +196,10 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
         taxFunnel: a.tax_funnel,
         maskedNumber: a.masked_number,
         balanceCents: a.balance_cents,
-        // Always Now, Soon, Later, even if a row is somehow missing.
-        sleeves: BUCKETS.map((bucket): BucketSleeve => {
-          const sleeve = sleeveRows.find((s) => s.account_id === a.id && s.bucket === bucket);
-          return {
-            bucket,
-            amountCents: sleeve?.amount_cents ?? 0,
-            mode: sleeve?.mode ?? 'MODEL',
-            modelId: sleeve?.model_id == null ? null : String(sleeve.model_id),
-            lines: sleeveLineRows
-              .filter((l) => l.account_id === a.id && l.bucket === bucket)
-              .map((l) => ({ tickerSymbol: l.ticker_symbol, weightBps: l.weight_bps })),
-          };
-        }),
+        modelId: a.model_id === null ? null : String(a.model_id),
+        lines: lineRows
+          .filter((l) => l.account_id === a.id)
+          .map((l) => ({ tickerSymbol: l.ticker_symbol, amountCents: l.amount_cents })),
         proposalShares: proposalRows
           .filter((p) => p.account_id === a.id)
           .map((p) => ({
@@ -337,11 +310,7 @@ export function createClientCase(db: Db, now: Date = new Date()): ClientCase {
     addPerson.run(caseId, 'CLIENT');
     addPerson.run(caseId, 'SPOUSE');
 
-    const account = db
-      .prepare("INSERT INTO accounts (client_case_id, position, account_type) VALUES (?, 0, 'SINGLE')")
-      .run(caseId);
-    const addSleeve = db.prepare('INSERT INTO account_sleeves (account_id, bucket) VALUES (?, ?)');
-    for (const bucket of BUCKETS) addSleeve.run(Number(account.lastInsertRowid), bucket);
+    db.prepare("INSERT INTO accounts (client_case_id, position, account_type) VALUES (?, 0, 'SINGLE')").run(caseId);
 
     return clientNumber;
   });
@@ -351,50 +320,30 @@ export function createClientCase(db: Db, now: Date = new Date()): ClientCase {
   return created;
 }
 
-/**
- * A sleeve can only follow a model that exists and is for the same bucket:
- * Now money in a Later model is almost certainly a mis-click.
- */
-function checkSleeveModels(db: Db, input: ClientCaseInput): void {
-  const modelBucket = db.prepare<[number], { bucket: string; name: string }>(
-    'SELECT bucket, name FROM model_portfolios WHERE id = ?',
-  );
+/** An account can only follow a model that still exists. */
+function checkAccountModels(db: Db, input: ClientCaseInput): void {
+  const model = db.prepare<[number], { id: number }>('SELECT id FROM model_portfolios WHERE id = ?');
   input.accounts.forEach((account, index) => {
-    for (const sleeve of account.sleeves) {
-      if (sleeve.modelId === null) continue;
-      const model = modelBucket.get(Number(sleeve.modelId));
-      if (model === undefined) {
-        throw new HttpError(400, `Account ${index + 1}: model ${sleeve.modelId} no longer exists`);
-      }
-      if (model.bucket !== sleeve.bucket) {
-        throw new HttpError(
-          400,
-          `Account ${index + 1}: "${model.name}" is a ${model.bucket} model, not ${sleeve.bucket}`,
-        );
-      }
+    if (account.modelId !== null && model.get(Number(account.modelId)) === undefined) {
+      throw new HttpError(400, `Account ${index + 1}: model ${account.modelId} no longer exists`);
     }
   });
 }
 
 /**
- * A manual bucket can only hold symbols in RIG's universe. The foreign key
- * would refuse an unknown one anyway, but as an opaque constraint failure;
- * catching it here makes it a 400 that names the symbol. This is the point
- * US-24 turns into an offer to add the ticker instead of an error.
+ * An account can only hold symbols in RIG's universe. The foreign key would
+ * refuse an unknown one anyway, but as an opaque constraint failure; catching
+ * it here makes it a 400 that names the symbol. The screen offers to add an
+ * unknown symbol (US-24) before it ever gets this far.
  */
-function checkSleeveTickers(db: Db, input: ClientCaseInput): void {
+function checkAccountTickers(db: Db, input: ClientCaseInput): void {
   const known = db.prepare<[string], { symbol: string }>(
     'SELECT symbol FROM tickers WHERE symbol = ?',
   );
   input.accounts.forEach((account, index) => {
-    for (const sleeve of account.sleeves) {
-      for (const line of sleeve.lines) {
-        if (known.get(line.tickerSymbol) === undefined) {
-          throw new HttpError(
-            400,
-            `Account ${index + 1}, ${sleeve.bucket}: ${line.tickerSymbol} is not in the ticker list`,
-          );
-        }
+    for (const line of account.lines) {
+      if (known.get(line.tickerSymbol) === undefined) {
+        throw new HttpError(400, `Account ${index + 1}: ${line.tickerSymbol} is not in the ticker list`);
       }
     }
     for (const share of account.proposalShares) {
@@ -424,8 +373,8 @@ export function saveClientCase(
     if (existing === undefined) return false;
     const caseId = existing.id;
 
-    checkSleeveModels(db, input);
-    checkSleeveTickers(db, input);
+    checkAccountModels(db, input);
+    checkAccountTickers(db, input);
 
     db.prepare(
       `UPDATE client_cases SET
@@ -464,7 +413,7 @@ export function saveClientCase(
       updatedAt: now.toISOString(),
     });
 
-    // Children: clear and rewrite. Sleeves go with their accounts (cascade).
+    // Children: clear and rewrite. Funds and locked shares go with their accounts (cascade).
     for (const table of ['people', 'accounts', 'planned_expenses', 'gap_entries']) {
       db.prepare(`DELETE FROM ${table} WHERE client_case_id = ?`).run(caseId);
     }
@@ -495,21 +444,16 @@ export function saveClientCase(
     }
 
     const addAccount = db.prepare(
-      `INSERT INTO accounts (client_case_id, position, account_type, tax_funnel, masked_number, balance_cents)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO accounts (client_case_id, position, account_type, tax_funnel, masked_number, balance_cents, model_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     );
-    const addSleeve = db.prepare(
-      `INSERT INTO account_sleeves (account_id, bucket, amount_cents, model_id, mode)
-       VALUES (?, ?, ?, ?, ?)`,
+    const addLine = db.prepare(
+      `INSERT INTO account_lines (account_id, position, ticker_symbol, amount_cents)
+       VALUES (?, ?, ?, ?)`,
     );
     // Locked shares go with their account (cascade), so they are rewritten here too.
     const addProposalShare = db.prepare(
       `INSERT INTO proposal_positions (account_id, bucket, ticker_symbol, shares, price_cents)
-       VALUES (?, ?, ?, ?, ?)`,
-    );
-    // Lines go with their sleeve (cascade), so there is nothing to clear first.
-    const addSleeveLine = db.prepare(
-      `INSERT INTO sleeve_lines (account_id, bucket, position, ticker_symbol, weight_bps)
        VALUES (?, ?, ?, ?, ?)`,
     );
     input.accounts.forEach((account, position) => {
@@ -520,22 +464,12 @@ export function saveClientCase(
         account.taxFunnel,
         account.maskedNumber,
         account.balanceCents,
+        account.modelId === null ? null : Number(account.modelId),
       );
       const accountId = Number(lastInsertRowid);
-      for (const sleeve of account.sleeves) {
-        addSleeve.run(
-          accountId,
-          sleeve.bucket,
-          sleeve.amountCents,
-          // Validation already refuses a model on a manual sleeve; this keeps
-          // the column null either way.
-          sleeve.mode === 'MODEL' && sleeve.modelId !== null ? Number(sleeve.modelId) : null,
-          sleeve.mode,
-        );
-        sleeve.lines.forEach((line, position) =>
-          addSleeveLine.run(accountId, sleeve.bucket, position, line.tickerSymbol, line.weightBps),
-        );
-      }
+      account.lines.forEach((line, position) =>
+        addLine.run(accountId, position, line.tickerSymbol, line.amountCents),
+      );
       for (const share of account.proposalShares) {
         addProposalShare.run(accountId, share.bucket, share.tickerSymbol, share.shares, share.priceCents);
       }
@@ -571,7 +505,7 @@ export function saveClientCase(
   return save() ? getClientCase(db, input.clientNumber) : null;
 }
 
-/** True if a case was deleted. Its people, accounts, sleeves, and lines go with it. */
+/** True if a case was deleted. Its people, accounts, and funds go with it. */
 export function deleteClientCase(db: Db, clientNumber: string): boolean {
   return db.prepare('DELETE FROM client_cases WHERE client_number = ?').run(clientNumber).changes > 0;
 }

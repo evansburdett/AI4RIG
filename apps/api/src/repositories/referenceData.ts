@@ -106,9 +106,9 @@ export function upsertTicker(db: Db, ticker: TickerInput, today: Date = new Date
 }
 
 /**
- * Refused (409) while any model, any client's hand-picked bucket, or any
- * locked-in proposal still uses the ticker, naming them. Without the second check the foreign key on
- * sleeve_lines would refuse the delete anyway, but as an unexplained 500.
+ * Refused (409) while any model, any client's account, or any locked-in
+ * proposal still uses the ticker, naming them. Without the second check the foreign key on
+ * account_lines would refuse the delete anyway, but as an unexplained 500.
  */
 export function deleteTicker(db: Db, symbol: string): boolean {
   const models = db
@@ -124,7 +124,7 @@ export function deleteTicker(db: Db, symbol: string): boolean {
 
   const cases = db
     .prepare<[string], { client_number: string }>(
-      `SELECT DISTINCT c.client_number FROM sleeve_lines l
+      `SELECT DISTINCT c.client_number FROM account_lines l
        JOIN accounts a ON a.id = l.account_id
        JOIN client_cases c ON c.id = a.client_case_id
        WHERE l.ticker_symbol = ? ORDER BY c.client_number`,
@@ -135,7 +135,7 @@ export function deleteTicker(db: Db, symbol: string): boolean {
     const noun = cases.length === 1 ? 'case' : 'cases';
     throw new HttpError(
       409,
-      `${symbol} is picked by hand in client ${noun} ${cases.join(', ')}. Take it out of those first.`,
+      `${symbol} is held in client ${noun} ${cases.join(', ')}. Take it out of those accounts first.`,
     );
   }
 

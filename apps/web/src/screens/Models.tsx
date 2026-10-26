@@ -3,17 +3,18 @@ import { useEffect, useState } from 'react';
 import { ApiError } from '../api.js';
 import { Callout } from '../components/Callout.js';
 import { newModel } from '../domain/factory.js';
+import { modelBucketMix, tickersBySymbol } from '../domain/breakdown.js';
 import { BUCKET_LABELS, TAX_FUNNEL_LABELS } from '../domain/lifeStage.js';
 import { formatBps } from '../domain/percent.js';
 import {
   WeightedLines,
   draftProblem,
   toDraftLines,
-  toSleeveLines,
+  toModelLines,
   type DraftLine,
 } from '../components/WeightedLines.js';
 import { BUCKETS, TAX_FUNNELS } from '../domain/types.js';
-import type { BucketType, ModelPortfolio, TaxFunnel, Ticker } from '../domain/types.js';
+import type { ModelPortfolio, TaxFunnel, Ticker } from '../domain/types.js';
 
 interface Props {
   models: readonly ModelPortfolio[];
@@ -24,10 +25,11 @@ interface Props {
 }
 
 /**
- * US-14 model portfolios. A model is a set of tickers and weights for money in
- * one bucket. RIG's vendors change theirs quarterly, so they live here as data;
- * a custom model is just another one. On the profile, the advisor picks a model
- * for each account's Now, Soon, and Later money.
+ * US-14 model portfolios. A model is a set of tickers and weights. RIG's
+ * vendors change theirs quarterly, so they live here as data; a custom model
+ * is just another one. On the profile, the advisor fills each account from a
+ * model (10/26), and each ticker's default bucket decides where its money
+ * counts, so a model can span Now, Soon, and Later.
  */
 export function Models({ models, tickers, onSave, onDelete, onAddTicker }: Props) {
   /** The unsaved new model, held in state so the editor is not reset on every render. */
@@ -39,7 +41,7 @@ export function Models({ models, tickers, onSave, onDelete, onAddTicker }: Props
         <h2>Model portfolios</h2>
         <p className="muted">
           Administrator screen. {models.length} model{models.length === 1 ? '' : 's'}. Each one is
-          a set of tickers and weights for one bucket.
+          a set of tickers and weights that fills an account.
         </p>
       </header>
 
@@ -68,30 +70,21 @@ export function Models({ models, tickers, onSave, onDelete, onAddTicker }: Props
         />
       )}
 
-      {BUCKETS.map((bucket) => {
-        const inBucket = models.filter((m) => m.bucket === bucket);
-        return (
-          <section className="card" key={bucket}>
-            <h3>
-              <span className={`swatch bucket-${bucket.toLowerCase()}`} aria-hidden="true" />{' '}
-              {BUCKET_LABELS[bucket]} models
-            </h3>
-            {inBucket.length === 0 && <p className="empty">None yet.</p>}
-            {inBucket.map((model) => (
-              <ModelEditor
-                key={model.id}
-                model={model}
-                tickers={tickers}
-                onAddTicker={onAddTicker}
-                onSave={async (next) => {
-                  await onSave(next);
-                }}
-                onDelete={() => onDelete(model.id)}
-              />
-            ))}
-          </section>
-        );
-      })}
+      <section className="card">
+        {models.length === 0 && <p className="empty">None yet.</p>}
+        {models.map((model) => (
+          <ModelEditor
+            key={model.id}
+            model={model}
+            tickers={tickers}
+            onAddTicker={onAddTicker}
+            onSave={async (next) => {
+              await onSave(next);
+            }}
+            onDelete={() => onDelete(model.id)}
+          />
+        ))}
+      </section>
     </div>
   );
 }
@@ -113,7 +106,6 @@ function ModelEditor({
 }) {
   const [open, setOpen] = useState(startOpen);
   const [name, setName] = useState(model.name);
-  const [bucket, setBucket] = useState<BucketType>(model.bucket);
   const [taxFunnel, setTaxFunnel] = useState<TaxFunnel | null>(model.taxFunnel);
   const [lines, setLines] = useState<DraftLine[]>(() => toDraftLines(model.lines));
   const [error, setError] = useState<string | null>(null);
@@ -122,21 +114,18 @@ function ModelEditor({
   // A save elsewhere (or the server's normalised copy) resets the editor.
   useEffect(() => {
     setName(model.name);
-    setBucket(model.bucket);
     setTaxFunnel(model.taxFunnel);
     setLines(toDraftLines(model.lines));
   }, [model]);
 
   const isNew = model.id === '';
 
-  // A reusable model must add up to exactly 100%; a manual bucket need not,
-  // which is the only difference between the two callers of WeightedLines.
   const problem =
     name.trim() === ''
       ? 'Give the model a name.'
       : lines.length === 0
         ? 'Add at least one ticker.'
-        : draftProblem(lines, { requireFull: true });
+        : draftProblem(lines);
 
   async function save() {
     setBusy(true);
@@ -145,9 +134,8 @@ function ModelEditor({
       await onSave({
         id: model.id,
         name: name.trim(),
-        bucket,
         taxFunnel,
-        lines: toSleeveLines(lines),
+        lines: toModelLines(lines),
       });
       if (!isNew) setOpen(false);
     } catch (caught: unknown) {
@@ -171,6 +159,7 @@ function ModelEditor({
   }
 
   if (!open) {
+    const mix = modelBucketMix(model, tickersBySymbol(tickers));
     return (
       <div className="model model-closed">
         <div className="model-summary">
@@ -178,6 +167,11 @@ function ModelEditor({
           {model.taxFunnel !== null && <span className="tag">{TAX_FUNNEL_LABELS[model.taxFunnel]}</span>}
           <span className="muted">
             {model.lines.map((l) => `${l.tickerSymbol} ${formatBps(l.weightBps)}`).join(' · ')}
+          </span>
+          <span className="muted">
+            {BUCKETS.filter((b) => mix[b] > 0)
+              .map((b) => `${BUCKET_LABELS[b]} ${formatBps(mix[b])}`)
+              .join(' · ')}
           </span>
         </div>
         <button type="button" onClick={() => setOpen(true)}>
@@ -201,20 +195,6 @@ function ModelEditor({
           />
         </div>
         <div className="field">
-          <label htmlFor={`model-bucket-${model.id}`}>Bucket</label>
-          <select
-            id={`model-bucket-${model.id}`}
-            value={bucket}
-            onChange={(event) => setBucket(event.target.value as BucketType)}
-          >
-            {BUCKETS.map((b) => (
-              <option key={b} value={b}>
-                {BUCKET_LABELS[b]}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="field">
           <label htmlFor={`model-funnel-${model.id}`}>For tax funnel</label>
           <select
             id={`model-funnel-${model.id}`}
@@ -236,7 +216,6 @@ function ModelEditor({
       <WeightedLines
         lines={lines}
         tickers={tickers}
-        bucket={bucket}
         onChange={setLines}
         onAddTicker={onAddTicker}
       />

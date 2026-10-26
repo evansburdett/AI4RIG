@@ -326,27 +326,29 @@ see what a request and response look like.
 |---|---|
 | `client_cases` | Case. Its number, life stage, cash figures, and the single-value Now and Soon inputs |
 | `people` | Client or spouse on a case: birth year (never a date), gender, life expectancy age and whether it was an AI estimate or the advisor's |
-| `accounts` | Account on a case: type, tax funnel, typed balance, last four digits only |
-| `account_sleeves` | Account and bucket: how much of the balance is in Now, Soon, or Later, and which model it follows. Always three per account |
-| `model_portfolios` | Model: a name, a bucket, and optionally the tax funnel it is meant for |
+| `accounts` | Account on a case: type, tax funnel, typed balance, last four digits only, and the model it was filled from |
+| `account_lines` | Fund in an account: the dollars in it, in display order. Its bucket is the ticker's default bucket |
+| `model_portfolios` | Model: a name, and optionally the tax funnel it is meant for |
 | `model_lines` | Ticker in a model, with its weight in basis points (100 = 1%) |
 | `planned_expenses` | Now "large upcoming expenses" and Soon "miscellaneous costs" lines |
 | `gap_entries` | Social Security bridge, healthcare gap, and forced withdrawal lines |
-| `proposal_positions` | Whole share count locked in for one ticker in one bucket of one account, with the price it was worked out at (US-21) |
+| `proposal_positions` | Whole share count locked in for one ticker in one account, with the price it was worked out at (US-21) |
 | `tickers` | Symbol in the approved universe, with its default bucket and its price per share |
 | `bucket_definitions` | Bucket (always exactly three rows) |
 | `advisory_fee_tiers` | Row of RIG's fee schedule: a starting balance and a rate in basis points (US-19) |
 
 The app builds a proposed portfolio; it does not track what a client holds
-today. RIG's flow is: answer the questionnaire, type each account's balance,
-split the plan's totals across the accounts, pick a model (or symbols) for
-each, and let the app work out the symbols, dollars, and whole shares. Those
-positions are computed from the plan every time
+today. RIG's flow (10/26) is: answer the questionnaire, type each account's
+balance, and the app holds a year of that account's advisory fee as cash in
+Now. The rest is the amount to invest: the advisor fills it from a model,
+then adjusts any fund by dollars or by weight, or adds funds. Each fund counts
+toward its ticker's default bucket, and the household's Now / Soon / Later
+totals are compared with the plan's. The dollars per fund are stored; the
+fee cash, buckets, and whole shares are worked out from them every time
 (`apps/web/src/domain/breakdown.ts` and `proposal.ts`, using `splitByWeights`
-and `wholeShares` from `packages/engine`). The only thing stored is the share
-counts the advisor locks in, so the same shares can be valued at today's
-prices when the client comes back. Balances are always typed, never derived
-from shares.
+and `wholeShares` from `packages/engine`). The share counts the advisor locks
+in are also stored, so the same shares can be valued at today's prices when
+the client comes back. Balances are always typed, never derived from shares.
 
 Saving a case rewrites its child rows, so account ids change on every save.
 Nothing should store one.

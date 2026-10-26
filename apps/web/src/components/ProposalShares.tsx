@@ -12,11 +12,10 @@ import {
   unlockProposal,
   valueLockedShares,
 } from '../domain/proposal.js';
-import type { ClientCase, ModelPortfolio, Ticker } from '../domain/types.js';
+import type { ClientCase, Ticker } from '../domain/types.js';
 
 interface Props {
   clientCase: ClientCase;
-  models: readonly ModelPortfolio[];
   tickers: readonly Ticker[];
   onChange: (next: ClientCase) => void;
 }
@@ -26,11 +25,11 @@ interface Props {
  * comes back, see the same shares at today's prices. Locking changes the
  * working copy like any other edit; Save case keeps it.
  */
-export function ProposalShares({ clientCase, models, tickers, onChange }: Props) {
-  const missing = missingPrices(clientCase, models, tickers);
-  const anyHoldings = clientCase.accounts.some((a) => proposedPositions(a, models, tickers).length > 0);
+export function ProposalShares({ clientCase, tickers, onChange }: Props) {
+  const missing = missingPrices(clientCase, tickers);
+  const anyHoldings = clientCase.accounts.some((a) => proposedPositions(a, tickers).length > 0);
   const locked = clientCase.proposalLockedAt !== null;
-  const matches = lockedMatchesPlan(clientCase, models, tickers);
+  const matches = lockedMatchesPlan(clientCase, tickers);
   const valuations = valueLockedShares(clientCase, tickers);
   const lockedTotal = totalOf(valuations.map((v) => v.lockedValueCents));
   const currentTotal = totalOf(valuations.map((v) => v.currentValueCents));
@@ -51,7 +50,7 @@ export function ProposalShares({ clientCase, models, tickers, onChange }: Props)
             type="button"
             className="primary"
             disabled={missing.length > 0 || !anyHoldings || (locked && matches)}
-            onClick={() => onChange(lockProposal(clientCase, models, tickers, new Date()))}
+            onClick={() => onChange(lockProposal(clientCase, tickers, new Date()))}
           >
             {locked ? 'Lock in again' : 'Lock in proposal'}
           </button>
