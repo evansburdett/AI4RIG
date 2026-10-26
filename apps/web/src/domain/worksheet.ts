@@ -43,6 +43,14 @@ export interface BucketWorksheet {
  * and each account still holds its own fee cash in its Now bucket. 'ACCOUNT'
  * is kept for comparison and tests.
  */
+/**
+ * The inflation cushion on the Soon bucket's income gap: this much of each
+ * year's gap, for every year the gap covers. RIG set 3% on Oct 26, in place of
+ * the workbook's 7.5% of five years' gap (cell E28), so the cushion now grows
+ * with the years of gap the advisor enters.
+ */
+export const INFLATION_HEDGE_RATE = 0.03;
+
 export const FEE_TIER_BASIS: 'ACCOUNT' | 'HOUSEHOLD' = 'HOUSEHOLD';
 
 /** One account's annual advisory fee, set aside as cash in its Now bucket. */
@@ -113,12 +121,15 @@ export function computeSoon(inputs: SoonInputs): BucketWorksheet {
       label: `Income gap (${inputs.incomeGapYears} years)`,
       amountCents: multiplyCents(inputs.annualIncomeGapCents, inputs.incomeGapYears),
       cell: 'E23',
-      note: 'Workbook labels this "5 yr income gap" but multiplies by 10. Confirm with RIG.',
     },
     {
-      label: 'Inflation hedge (5 years of the gap x 7.5%)',
-      amountCents: multiplyCents(multiplyCents(inputs.annualIncomeGapCents, 5), 0.075),
+      label: `Inflation hedge (${inputs.incomeGapYears} years of the gap x ${INFLATION_HEDGE_RATE * 100}%)`,
+      amountCents: multiplyCents(
+        multiplyCents(inputs.annualIncomeGapCents, inputs.incomeGapYears),
+        INFLATION_HEDGE_RATE,
+      ),
       cell: 'E28',
+      note: 'Changed at RIG’s request on Oct 26: 3% of the gap for each year covered. The workbook uses 7.5% of five years’ gap.',
     },
     {
       label: 'Social Security bridge (delayed optimization)',

@@ -1,7 +1,7 @@
 {
   "name": "@ai4rig/desktop",
   "productName": "AI4RIG",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "Electron shell: runs the API and the built front end as one desktop app (ADR 0003, ADR 0007).",

@@ -33,8 +33,8 @@ function sleeves(now: SleeveSpec, soon: SleeveSpec, later: SleeveSpec): Account[
 /**
  * Buckets land exactly on the plan: the workbook's $190,000 Now plus $30,000 of
  * advisory fee cash (US-19: $3,000,000 in all is the 1.00% tier, so $12,000 +
- * $15,000 + $3,000, each held in its own account's Now), the workbook's
- * $914,700 Soon, and $1,865,300 Later.
+ * $15,000 + $3,000, each held in its own account's Now), $910,200 Soon (the
+ * workbook's inputs with RIG's 3% inflation hedge), and $1,869,800 Later.
  */
 const WORKBOOK_CASE: ClientCase = {
   clientNumber: '1042',
@@ -81,7 +81,7 @@ const WORKBOOK_CASE: ClientCase = {
       maskedNumber: '8830',
       balanceCents: 1_500_000_00,
       proposalShares: [],
-      sleeves: sleeves([15_000, '9001'], [514_700, '9002'], [970_300, '9003']),
+      sleeves: sleeves([15_000, '9001'], [510_200, '9002'], [974_800, '9003']),
     },
     {
       id: '9003',

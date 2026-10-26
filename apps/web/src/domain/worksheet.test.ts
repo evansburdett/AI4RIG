@@ -67,14 +67,15 @@ describe('Soon bucket', () => {
     const soon = computeSoon(WORKBOOK_SOON);
     expect(soon.lines.map((l) => l.amountCents)).toEqual([
       600_000_00, // E23  income gap x 10
-      22_500_00, // E28  inflation hedge
+      18_000_00, // E28  inflation hedge: 60,000 x 10 years x 3% (RIG, Oct 26)
       142_200_00, // E33  SS bridge: 38,400 x 3 + 18,000 x 1.5
       0, // E38  healthcare
       50_000_00, // E43  miscellaneous
       0, // E48  forced withdrawals
       100_000_00, // E51  conservative reserve
     ]);
-    expect(soon.totalCents).toBe(914_700_00);
+    // The workbook's E52 is 914,700 with its 7.5%-of-five-years hedge (22,500).
+    expect(soon.totalCents).toBe(910_200_00);
   });
 
   it('grosses forced withdrawals up by 1.15', () => {
@@ -85,9 +86,16 @@ describe('Soon bucket', () => {
     expect(soon.lines[5]?.amountCents).toBe(230_000_00);
   });
 
-  it('flags the two places the workbook contradicts itself', () => {
+  it('grows the inflation hedge with the years of gap covered', () => {
+    const fiveYears = computeSoon({ ...WORKBOOK_SOON, incomeGapYears: 5 });
+    const tenYears = computeSoon({ ...WORKBOOK_SOON, incomeGapYears: 10 });
+    expect(fiveYears.lines[1]?.amountCents).toBe(9_000_00); // 60,000 x 5 x 3%
+    expect(tenYears.lines[1]?.amountCents).toBe(18_000_00);
+  });
+
+  it('flags where the workbook contradicts itself, and RIG\'s change to it', () => {
     const noted = computeSoon(WORKBOOK_SOON).lines.filter((l) => l.note !== undefined);
-    expect(noted.map((l) => l.cell)).toEqual(['E23', 'E48']);
+    expect(noted.map((l) => l.cell)).toEqual(['E28', 'E48']);
   });
 });
 
