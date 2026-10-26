@@ -5,6 +5,8 @@ import { parseCents } from '../domain/money.js';
 import { ASSET_CLASSES, BUCKETS } from '../domain/types.js';
 import type { AssetClass, BucketType, Ticker } from '../domain/types.js';
 
+import { typedMoney } from './typedMoney.js';
+
 interface Props {
   /** Already normalised and valid; the caller decides when to show this. */
   symbol: string;
@@ -86,7 +88,7 @@ export function NewTickerFields({ symbol, suggestedBucket, onAdd, onAdded }: Pro
           aria-invalid={priceInvalid}
           placeholder="Price (optional)"
           value={priceText}
-          onChange={(event) => setPriceText(event.target.value)}
+          onChange={(event) => setPriceText(typedMoney(event.target))}
         />
       </span>
       <button type="button" disabled={assetClass === '' || priceInvalid || busy} onClick={() => void add()}>

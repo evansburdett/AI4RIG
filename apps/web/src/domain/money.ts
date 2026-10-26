@@ -34,13 +34,27 @@ export function formatCentsWhole(cents: Cents): string {
   return CURRENCY_WHOLE.format(Math.round(cents / 100));
 }
 
-/** "1234.56" — the value for a text input. */
+/** "1,234.56" — the value for a text input. parseCents reads it back. */
 export function centsToInput(cents: Cents): string {
   assertCents(cents, 'cents');
   const absolute = Math.abs(cents);
   const dollars = Math.trunc(absolute / 100);
   const remainder = String(absolute % 100).padStart(2, '0');
-  return `${cents < 0 ? '-' : ''}${dollars}.${remainder}`;
+  return groupThousands(`${cents < 0 ? '-' : ''}${dollars}.${remainder}`);
+}
+
+/**
+ * Commas between thousands in an amount being typed: "1234567.8" becomes
+ * "1,234,567.8". Only the commas change; the decimals stay as typed, so the
+ * field never rewrites what the advisor is in the middle of. Text that is not
+ * an amount comes back unchanged for the field to flag.
+ */
+export function groupThousands(text: string): string {
+  const match = /^(-?)([\d,]*)(\.\d*)?$/.exec(text.replace(/[\s$]/g, ''));
+  if (!match) return text;
+  const [, sign, whole = '', fraction = ''] = match;
+  const digits = whole.replace(/,/g, '');
+  return `${sign}${digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}${fraction}`;
 }
 
 /** Null when the text cannot be read, so a typo never becomes 0 silently. */

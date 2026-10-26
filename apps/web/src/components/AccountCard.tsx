@@ -385,6 +385,7 @@ function FundRow({
           parse={parseDollars}
           onChange={onAmount}
           prefix="$"
+          money
         />
       </td>
       {position === undefined || position.priceCents === null ? (

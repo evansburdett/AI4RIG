@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { Callout } from '../components/Callout.js';
+import { typedMoney } from '../components/typedMoney.js';
 import { centsToInput, formatCents, parseCents } from '../domain/money.js';
 import { bpsToPercentInput, parsePercentToBps } from '../domain/percent.js';
 import type { AdvisoryFeeTier } from '../domain/types.js';
@@ -118,7 +119,7 @@ export function FeeTiers({ tiers, onSave }: Props) {
                         aria-label={`Tier ${index + 1} starting balance`}
                         value={row.minText}
                         aria-invalid={parseCents(row.minText) === null}
-                        onChange={(event) => patch(row.key, { minText: event.target.value })}
+                        onChange={(event) => patch(row.key, { minText: typedMoney(event.target) })}
                       />
                     </div>
                   </td>

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   centsToInput,
+  groupThousands,
   formatCents,
   multiplyCents,
   parseCents,
@@ -45,6 +46,32 @@ describe('centsToInput', () => {
   it('keeps the leading zero on the pennies', () => {
     expect(centsToInput(1007)).toBe('10.07');
     expect(centsToInput(1000)).toBe('10.00');
+  });
+
+  it('puts commas between thousands', () => {
+    expect(centsToInput(1_200_000_00)).toBe('1,200,000.00');
+    expect(centsToInput(-4_000_00)).toBe('-4,000.00');
+    expect(centsToInput(999_99)).toBe('999.99');
+  });
+});
+
+describe('groupThousands', () => {
+  it('adds commas as an amount is typed, leaving the decimals as they are', () => {
+    expect(groupThousands('1234')).toBe('1,234');
+    expect(groupThousands('1234567.')).toBe('1,234,567.');
+    expect(groupThousands('12345.6')).toBe('12,345.6');
+    expect(groupThousands('-1000')).toBe('-1,000');
+  });
+
+  it('moves commas that are in the wrong place, and drops a typed dollar sign', () => {
+    expect(groupThousands('1,23456')).toBe('123,456');
+    expect(groupThousands('$ 5000')).toBe('5,000');
+  });
+
+  it('leaves anything that is not an amount alone', () => {
+    expect(groupThousands('')).toBe('');
+    expect(groupThousands('12a')).toBe('12a');
+    expect(groupThousands('1.2.3')).toBe('1.2.3');
   });
 });
 

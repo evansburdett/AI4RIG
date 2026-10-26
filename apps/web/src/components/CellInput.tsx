@@ -1,5 +1,7 @@
 import { useState } from 'react';
 
+import { typedMoney } from './typedMoney.js';
+
 interface Props {
   /** Read by screen readers; a table cell has no visible label. */
   label: string;
@@ -10,6 +12,8 @@ interface Props {
   onChange: (value: number) => void;
   prefix?: string;
   suffix?: string;
+  /** A dollar amount: commas are added as it is typed. */
+  money?: boolean;
 }
 
 /**
@@ -19,7 +23,7 @@ interface Props {
  * dollars and weight of one fund both be editable: typing in one recomputes
  * the other, and neither fights the cursor.
  */
-export function CellInput({ label, text, parse, onChange, prefix, suffix }: Props) {
+export function CellInput({ label, text, parse, onChange, prefix, suffix, money = false }: Props) {
   const [draft, setDraft] = useState<string | null>(null);
   const shown = draft ?? text;
   const invalid = draft !== null && draft.trim() !== '' && parse(draft) === null;
@@ -35,7 +39,7 @@ export function CellInput({ label, text, parse, onChange, prefix, suffix }: Prop
         aria-invalid={invalid}
         onFocus={() => setDraft(text)}
         onChange={(event) => {
-          const next = event.target.value;
+          const next = money ? typedMoney(event.target) : event.target.value;
           setDraft(next);
           const value = next.trim() === '' ? 0 : parse(next);
           if (value !== null) onChange(value);
