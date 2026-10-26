@@ -94,9 +94,9 @@ describe('Soon bucket', () => {
 describe('advisory fees (US-19)', () => {
   const workbookCase = SAMPLE_CASES[0]!;
 
-  it('charges each account the rate for its own balance', () => {
+  it('can charge each account the rate for its own balance', () => {
     expect(
-      accountAdvisoryFees(workbookCase, RIG_FEE_TIERS).map((f) => [f.balanceCents, f.rateBps, f.feeCents]),
+      accountAdvisoryFees(workbookCase, RIG_FEE_TIERS, 'ACCOUNT').map((f) => [f.balanceCents, f.rateBps, f.feeCents]),
     ).toEqual([
       [1_200_000_00, 125, 15_000_00], // the Sept 23 example
       [1_500_000_00, 125, 18_750_00],
@@ -104,10 +104,10 @@ describe('advisory fees (US-19)', () => {
     ]);
   });
 
-  it('can take the rate from the household total instead, if RIG says so', () => {
+  it('takes the rate from the household total, as RIG confirmed on Oct 22', () => {
     // $3,000,000 in all is the 1.00% tier, charged on each account's balance.
     expect(
-      accountAdvisoryFees(workbookCase, RIG_FEE_TIERS, 'HOUSEHOLD').map((f) => [f.rateBps, f.feeCents]),
+      accountAdvisoryFees(workbookCase, RIG_FEE_TIERS).map((f) => [f.rateBps, f.feeCents]),
     ).toEqual([
       [100, 12_000_00],
       [100, 15_000_00],

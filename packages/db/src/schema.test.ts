@@ -190,7 +190,7 @@ describe('the repo migrations', () => {
         "SELECT amount_cents, model_id FROM account_sleeves WHERE account_id = 9001 AND bucket = 'NOW'",
       )
       .get();
-    expect(nowSleeve).toEqual({ amount_cents: 20_500_000, model_id: null });
+    expect(nowSleeve).toEqual({ amount_cents: 20_200_000, model_id: null });
   });
 
   it('delete a case together with everything under it', () => {
@@ -234,9 +234,9 @@ describe('the repo seed data', () => {
       )
       .all();
     expect(totals).toEqual([
-      // $1,856,300 Later; $190,000 Now plus $39,000 fee cash; $914,700 Soon.
-      { bucket: 'LATER', total: 185_630_000 },
-      { bucket: 'NOW', total: 22_900_000 },
+      // $1,865,300 Later; $190,000 Now plus $30,000 fee cash; $914,700 Soon.
+      { bucket: 'LATER', total: 186_530_000 },
+      { bucket: 'NOW', total: 22_000_000 },
       { bucket: 'SOON', total: 91_470_000 },
     ]);
   });

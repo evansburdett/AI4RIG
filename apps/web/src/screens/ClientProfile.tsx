@@ -27,7 +27,7 @@ import {
   stageForPhase,
 } from '../domain/lifeStage.js';
 import { formatDateTime } from '../domain/dates.js';
-import { formatCents, formatCentsWhole, formatPercent } from '../domain/money.js';
+import { formatCents, formatCentsWhole } from '../domain/money.js';
 import { formatBps } from '../domain/percent.js';
 import {
   GENDERS,
@@ -93,6 +93,8 @@ export function ClientProfile({
   const totals = useMemo(() => computePlanTotals(clientCase, feeTiers), [clientCase, feeTiers]);
   const target = useMemo(() => targetAllocation(clientCase, totals), [clientCase, totals]);
   const planYears = householdPlanYears(clientCase.people, today);
+  // Every account pays the household's tier rate; shown exactly, not averaged.
+  const feeRateBps = totals.advisoryFees.find((f) => f.rateBps > 0)?.rateBps;
   const leftToPlace = useMemo(() => {
     const placed = (bucket: 'NOW' | 'SOON' | 'LATER') =>
       clientCase.accounts.reduce(
@@ -257,10 +259,8 @@ export function ClientProfile({
             label="Advisory fee, per year"
             value={formatCents(totals.advisoryFeeCents)}
             hint={
-              totals.investableAssetsCents > 0
-                ? `${formatPercent(
-                    Math.round((totals.advisoryFeeCents / totals.investableAssetsCents) * 1000) / 10,
-                  )} of balances, held as cash in Now`
+              feeRateBps !== undefined
+                ? `${formatBps(feeRateBps)} tier on the household total, held as cash in Now`
                 : 'Worked out once balances are entered'
             }
           />

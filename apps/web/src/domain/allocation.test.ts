@@ -26,17 +26,17 @@ describe('targetAllocation', () => {
     const totals = computePlanTotals(WORKBOOK_CASE, RIG_FEE_TIERS);
     const target = targetAllocation(WORKBOOK_CASE, totals);
 
-    // The workbook's $190,000 Now plus $39,000 of fee cash, $914,700 Soon, and
-    // the rest of $3,000,000 in typed account balances in Later.
+    // The workbook's $190,000 Now plus $30,000 of fee cash ($3,000,000 is the
+    // 1.00% household tier), $914,700 Soon, and the rest in Later.
     expect(totals.investableAssetsCents).toBe(3_000_000_00);
-    expect(totals.advisoryFeeCents).toBe(39_000_00);
-    expect(target.nowCents).toBe(229_000_00);
+    expect(totals.advisoryFeeCents).toBe(30_000_00);
+    expect(target.nowCents).toBe(220_000_00);
     expect(target.soonCents).toBe(914_700_00);
-    expect(target.laterCents).toBe(1_856_300_00);
+    expect(target.laterCents).toBe(1_865_300_00);
 
-    expect(target.nowPct).toBe(7.6);
+    expect(target.nowPct).toBe(7.3);
     expect(target.soonPct).toBe(30.5);
-    expect(target.laterPct).toBe(61.9);
+    expect(target.laterPct).toBe(62.2);
   });
 
   it('gives an accumulator a small Soon bucket without weighting anything', () => {
@@ -73,8 +73,8 @@ describe('holdings from models', () => {
     const joint = WORKBOOK_CASE.accounts[0]!;
     const now = accountHoldings(joint, MODELS).filter((h) => h.bucket === 'NOW');
     expect(now.map((h) => [h.tickerSymbol, h.marketValueCents])).toEqual([
-      ['SGOV', 123_000_00],
-      ['BIL', 82_000_00],
+      ['SGOV', 121_200_00],
+      ['BIL', 80_800_00],
     ]);
   });
 
@@ -117,15 +117,16 @@ describe('computeBreakdown', () => {
     const target = targetAllocation(ACCUMULATOR_CASE, computePlanTotals(ACCUMULATOR_CASE, RIG_FEE_TIERS));
     const drift = Object.fromEntries(computeDrift(target, breakdownOf(ACCUMULATOR_CASE)).map((d) => [d.bucket, d]));
 
-    // Worksheet: Now $30,000 (bank reserve) plus $9,580 of fee cash ($280,000
-    // at 1.75% and $240,000 at 1.95%); Soon $75,000 (conservative reserve).
-    expect(drift.NOW?.deltaCents).toBe(-14_580_00);
+    // Worksheet: Now $30,000 (bank reserve) plus $7,800 of fee cash ($520,000
+    // in all is the 1.50% tier: $4,200 + $3,600); Soon $75,000 (conservative
+    // reserve).
+    expect(drift.NOW?.deltaCents).toBe(-12_800_00);
     expect(drift.SOON?.deltaCents).toBe(-15_000_00);
   });
 
   it('classifies modeled money by asset class', () => {
     const now = breakdownOf().byBucket.find((b) => b.bucket === 'NOW');
-    expect(now?.slices).toEqual([{ assetClass: 'CASH', valueCents: 229_000_00, pct: 100 }]);
+    expect(now?.slices).toEqual([{ assetClass: 'CASH', valueCents: 220_000_00, pct: 100 }]);
   });
 });
 
@@ -133,9 +134,9 @@ describe('bucketsByAccount', () => {
   it('splits each account into Now, Soon, and Later', () => {
     const joint = bucketsByAccount(WORKBOOK_CASE)[0]!;
     expect(joint).toMatchObject({
-      nowCents: 205_000_00,
+      nowCents: 202_000_00,
       soonCents: 400_000_00,
-      laterCents: 595_000_00,
+      laterCents: 598_000_00,
       unallocatedCents: 0,
       balanceCents: 1_200_000_00,
     });
@@ -173,9 +174,9 @@ describe('fillFromPlan (US-22)', () => {
 describe('holdingsInBucket', () => {
   it('says how many whole shares each position is at the ticker price (US-21)', () => {
     const now = holdingsInBucket(WORKBOOK_CASE, PLACEHOLDER_TICKERS, PLACEHOLDER_MODELS, 'NOW');
-    // Joint: $123,000 of SGOV at $100.00, $82,000 of BIL at $91.50.
-    expect(now.find((h) => h.key === '9001:NOW:SGOV')?.shares).toBe(1230);
-    expect(now.find((h) => h.key === '9001:NOW:BIL')?.shares).toBe(896);
+    // Joint: $121,200 of SGOV at $100.00, $80,800 of BIL at $91.50.
+    expect(now.find((h) => h.key === '9001:NOW:SGOV')?.shares).toBe(1212);
+    expect(now.find((h) => h.key === '9001:NOW:BIL')?.shares).toBe(883);
 
     const unpriced = PLACEHOLDER_TICKERS.map((t) => (t.symbol === 'BIL' ? { ...t, priceCents: null } : t));
     expect(

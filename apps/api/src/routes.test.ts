@@ -90,9 +90,9 @@ describe('client cases', () => {
       ['ROTH_IRA', 'TAX_FREE', 300_000_00],
     ]);
     expect(body.accounts[0]?.sleeves).toEqual([
-      { bucket: 'NOW', amountCents: 205_000_00, mode: 'MODEL', modelId: '9001', lines: [] },
+      { bucket: 'NOW', amountCents: 202_000_00, mode: 'MODEL', modelId: '9001', lines: [] },
       { bucket: 'SOON', amountCents: 400_000_00, mode: 'MODEL', modelId: '9002', lines: [] },
-      { bucket: 'LATER', amountCents: 595_000_00, mode: 'MODEL', modelId: '9003', lines: [] },
+      { bucket: 'LATER', amountCents: 598_000_00, mode: 'MODEL', modelId: '9003', lines: [] },
     ]);
     expect(body.accounts[2]?.sleeves[1]).toEqual({
       bucket: 'SOON',
@@ -462,7 +462,7 @@ describe('models', () => {
     const { body } = await call<ClientCase>('GET', '/api/clients/1042');
     expect(body.accounts[0]?.sleeves[0]).toEqual({
       bucket: 'NOW',
-      amountCents: 205_000_00,
+      amountCents: 202_000_00,
       mode: 'MODEL',
       modelId: null,
       lines: [],
