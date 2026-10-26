@@ -121,7 +121,6 @@ export function computeSoon(inputs: SoonInputs): BucketWorksheet {
       label: `Income gap (${inputs.incomeGapYears} years)`,
       amountCents: multiplyCents(inputs.annualIncomeGapCents, inputs.incomeGapYears),
       cell: 'E23',
-      note: 'Workbook labels this "5 yr income gap" but multiplies by 10. Confirm with RIG.',
     },
     {
       label: `Inflation hedge (${inputs.incomeGapYears} years of the gap x ${INFLATION_HEDGE_RATE * 100}%)`,

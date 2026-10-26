@@ -93,9 +93,9 @@ describe('Soon bucket', () => {
     expect(tenYears.lines[1]?.amountCents).toBe(18_000_00);
   });
 
-  it('flags the two places the workbook contradicts itself, and RIG\'s change to it', () => {
+  it('flags where the workbook contradicts itself, and RIG\'s change to it', () => {
     const noted = computeSoon(WORKBOOK_SOON).lines.filter((l) => l.note !== undefined);
-    expect(noted.map((l) => l.cell)).toEqual(['E23', 'E28', 'E48']);
+    expect(noted.map((l) => l.cell)).toEqual(['E28', 'E48']);
   });
 });
 
