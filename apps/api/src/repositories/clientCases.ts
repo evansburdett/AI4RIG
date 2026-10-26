@@ -80,6 +80,7 @@ interface LineRow {
   account_id: number;
   ticker_symbol: string;
   amount_cents: number;
+  shares_micros: number | null;
 }
 
 interface ProposalRow {
@@ -167,7 +168,7 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
 
   const lineRows = db
     .prepare<[number], LineRow>(
-      `SELECT l.account_id, l.ticker_symbol, l.amount_cents
+      `SELECT l.account_id, l.ticker_symbol, l.amount_cents, l.shares_micros
        FROM account_lines l JOIN accounts a ON a.id = l.account_id
        WHERE a.client_case_id = ?
        ORDER BY l.position, l.ticker_symbol`,
@@ -199,7 +200,11 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
         modelId: a.model_id === null ? null : String(a.model_id),
         lines: lineRows
           .filter((l) => l.account_id === a.id)
-          .map((l) => ({ tickerSymbol: l.ticker_symbol, amountCents: l.amount_cents })),
+          .map((l) => ({
+            tickerSymbol: l.ticker_symbol,
+            amountCents: l.amount_cents,
+            heldSharesMicros: l.shares_micros,
+          })),
         proposalShares: proposalRows
           .filter((p) => p.account_id === a.id)
           .map((p) => ({
@@ -448,8 +453,8 @@ export function saveClientCase(
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     );
     const addLine = db.prepare(
-      `INSERT INTO account_lines (account_id, position, ticker_symbol, amount_cents)
-       VALUES (?, ?, ?, ?)`,
+      `INSERT INTO account_lines (account_id, position, ticker_symbol, amount_cents, shares_micros)
+       VALUES (?, ?, ?, ?, ?)`,
     );
     // Locked shares go with their account (cascade), so they are rewritten here too.
     const addProposalShare = db.prepare(
@@ -468,7 +473,7 @@ export function saveClientCase(
       );
       const accountId = Number(lastInsertRowid);
       account.lines.forEach((line, position) =>
-        addLine.run(accountId, position, line.tickerSymbol, line.amountCents),
+        addLine.run(accountId, position, line.tickerSymbol, line.amountCents, line.heldSharesMicros),
       );
       for (const share of account.proposalShares) {
         addProposalShare.run(accountId, share.bucket, share.tickerSymbol, share.shares, share.priceCents);

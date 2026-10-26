@@ -14,7 +14,14 @@ import {
   TextField,
 } from '../components/Fields.js';
 import { MoneyInput } from '../components/MoneyInput.js';
-import { bucketsByAccount, feesByAccount, followModels, modelsById, type FeesByAccount } from '../domain/breakdown.js';
+import {
+  bucketsByAccount,
+  feesByAccount,
+  followModels,
+  modelsById,
+  varianceAdvice,
+  type FeesByAccount,
+} from '../domain/breakdown.js';
 import { newAccount, newExpense, newGapEntry } from '../domain/factory.js';
 import {
   ACCOUNT_TYPE_LABELS,
@@ -42,6 +49,8 @@ import type {
   AllocationTarget,
   ClientCase,
   GapEntry,
+  ImportRequest,
+  ImportResult,
   LifeExpectancyEstimate,
   LifeExpectancyRequest,
   ModelPortfolio,
@@ -63,6 +72,8 @@ interface Props {
   tickers: readonly Ticker[];
   /** RIG's fee schedule (US-19), for the fee cash held in each account. */
   feeTiers: readonly AdvisoryFeeTier[];
+  /** Saves the tickers and prices an account's holdings import needs. */
+  onImport: (request: ImportRequest) => Promise<ImportResult>;
   /** Saves an account's funds as a reusable model. */
   onSaveAsModel: (model: ModelPortfolio) => Promise<ModelPortfolio>;
   onAddTicker: (ticker: Ticker) => Promise<Ticker>;
@@ -89,6 +100,7 @@ export function ClientProfile({
   onChange,
   onSaveAsModel,
   onAddTicker,
+  onImport,
   onEstimateLifeExpectancy,
   today,
 }: Props) {
@@ -371,7 +383,7 @@ export function ClientProfile({
 
       <section className="card">
         <h3>Plan totals</h3>
-        <p className="muted">What the client needs in each bucket.</p>
+        <p className="muted">What the client needs in Now and Soon. Later is the rest, invested for growth.</p>
 
         <BucketBar
           totalCents={totals.investableAssetsCents}
@@ -440,6 +452,17 @@ export function ClientProfile({
             tickers={tickers}
             onSaveAsModel={onSaveAsModel}
             onAddTicker={onAddTicker}
+            onImport={onImport}
+            // The fee follows the household's tier, which this balance can move.
+            feeFor={(balanceCents) =>
+              accountAdvisoryFees(
+                {
+                  ...clientCase,
+                  accounts: clientCase.accounts.map((a) => (a.id === account.id ? { ...a, balanceCents } : a)),
+                },
+                feeTiers,
+              ).find((f) => f.accountId === account.id)?.feeCents ?? 0
+            }
             onChange={(next) => patchAccounts(clientCase.accounts.map((a) => (a.id === account.id ? next : a)))}
             onRemove={() => patchAccounts(clientCase.accounts.filter((a) => a.id !== account.id))}
           />
@@ -511,12 +534,14 @@ function HouseholdBuckets({
     { label: 'Later', actual: sum((r) => r.laterCents), target: target.laterCents },
   ];
   const unallocated = sum((r) => r.unallocatedCents);
+  const advice = varianceAdvice(lines[0]!.actual - lines[0]!.target, lines[1]!.actual - lines[1]!.target, unallocated);
 
   return (
     <section className="card">
       <h3>All accounts against the plan</h3>
       <p className="muted">
-        The fee cash and funds in every account added up by bucket, against what the plan needs.
+        The fee cash and funds in every account added up by bucket, against what the plan needs in
+        Now and Soon.
       </p>
 
       <BucketBar
@@ -547,6 +572,17 @@ function HouseholdBuckets({
         <tbody>
           {lines.map((line) => {
             const variance = line.actual - line.target;
+            // Later has no target of its own: it is whatever Now and Soon leave.
+            if (line.label === 'Later') {
+              return (
+                <tr key={line.label}>
+                  <th scope="row">{line.label}</th>
+                  <td className="amount muted">the rest</td>
+                  <td className="amount">{formatCentsWhole(line.actual)}</td>
+                  <td className="amount muted">—</td>
+                </tr>
+              );
+            }
             return (
               <tr key={line.label}>
                 <th scope="row">{line.label}</th>
@@ -577,6 +613,13 @@ function HouseholdBuckets({
           </tfoot>
         )}
       </table>
+      {advice.length > 0 && (
+        <ul className="variance-advice">
+          {advice.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }

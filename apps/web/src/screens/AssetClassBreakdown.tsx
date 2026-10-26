@@ -9,6 +9,7 @@ import {
   computeDrift,
   feesByAccount,
   holdingsInBucket,
+  varianceAdvice,
 } from '../domain/breakdown.js';
 import {
   ACCOUNT_TYPE_LABELS,
@@ -40,6 +41,8 @@ export function AssetClassBreakdown({ clientCase, tickers, feeTiers }: Props) {
   const breakdown = useMemo(() => computeBreakdown(clientCase, tickers, fees), [clientCase, tickers, fees]);
   const target = useMemo(() => targetAllocation(clientCase, totals), [clientCase, totals]);
   const drift = useMemo(() => computeDrift(target, breakdown), [target, breakdown]);
+  const delta = (bucket: 'NOW' | 'SOON') => drift.find((d) => d.bucket === bucket)?.deltaCents ?? 0;
+  const advice = varianceAdvice(delta('NOW'), delta('SOON'), breakdown.unallocatedCents);
   const perAccount = useMemo(() => bucketsByAccount(clientCase, tickers, fees), [clientCase, tickers, fees]);
 
   return (
@@ -72,7 +75,7 @@ export function AssetClassBreakdown({ clientCase, tickers, feeTiers }: Props) {
 
       <section className="card">
         <h3>Target against actual</h3>
-        <p className="muted">What the plan needs in each bucket, against what the accounts hold.</p>
+        <p className="muted">What the plan needs in Now and Soon, against what the accounts hold. Later is the rest.</p>
 
         <BucketBar
           totalCents={breakdown.totalCents}
@@ -101,7 +104,19 @@ export function AssetClassBreakdown({ clientCase, tickers, feeTiers }: Props) {
             </tr>
           </thead>
           <tbody>
-            {drift.map((row) => (
+            {drift.map((row) => row.bucket === 'LATER' ? (
+              // Later has no target of its own: it is whatever Now and Soon leave.
+              <tr key={row.bucket}>
+                <th scope="row">
+                  <span className="swatch bucket-later" aria-hidden="true" /> {BUCKET_LABELS[row.bucket]}
+                </th>
+                <td className="amount muted">the rest</td>
+                <td className="amount muted">—</td>
+                <td className="amount">{formatCentsWhole(row.actualCents)}</td>
+                <td className="amount">{formatPercent(row.actualPct)}</td>
+                <td className="amount muted">—</td>
+              </tr>
+            ) : (
               <tr key={row.bucket}>
                 <th scope="row">
                   <span
@@ -126,9 +141,18 @@ export function AssetClassBreakdown({ clientCase, tickers, feeTiers }: Props) {
           </tbody>
         </table>
 
+        {advice.length > 0 && (
+          <ul className="variance-advice">
+            {advice.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        )}
+
         <About>
           <p>
-            Target is what the questionnaire says this client needs in each bucket. Actual is each
+            Target is what the questionnaire says this client needs in Now and Soon; Later is the
+            rest of the money, so it has no target of its own. Actual is each
             account&rsquo;s fee cash, in Now, plus every fund in the bucket its ticker maps to,
             across all the accounts. Target percentages come from
             this client&rsquo;s own answers, per RIG&rsquo;s answer that they are &ldquo;calculated
@@ -221,7 +245,7 @@ export function AssetClassBreakdown({ clientCase, tickers, feeTiers }: Props) {
             <p className="metric-line">
               <span className="metric">{formatCents(composition.valueCents)}</span>
               <span className="muted">{formatPercent(composition.pctOfPortfolio)} of the portfolio</span>
-              {bucketDrift !== undefined && bucketDrift.deltaCents !== 0 && (
+              {bucketDrift !== undefined && bucketDrift.bucket !== 'LATER' && bucketDrift.deltaCents !== 0 && (
                 <span className="text-warn">
                   {formatCentsWhole(Math.abs(bucketDrift.deltaCents))}{' '}
                   {bucketDrift.deltaCents > 0 ? 'over' : 'under'} target

@@ -50,7 +50,12 @@ export function proposedPositions(
           cashCents: null,
         };
       }
-      const bought = wholeShares(line.amountCents, priceCents);
+      // Held from a statement: the whole shares the account already has, not
+      // what its dollars would buy at a price rounded to the cent.
+      const bought =
+        line.heldSharesMicros === null
+          ? wholeShares(line.amountCents, priceCents)
+          : heldWholeShares(line.amountCents, line.heldSharesMicros, priceCents);
       return {
         bucket,
         tickerSymbol: line.tickerSymbol,
@@ -61,6 +66,12 @@ export function proposedPositions(
         cashCents: bought.cashCents,
       };
     });
+}
+
+function heldWholeShares(amountCents: Cents, heldSharesMicros: number, priceCents: Cents) {
+  const shares = Math.floor(heldSharesMicros / 1_000_000);
+  const costCents = sharesValueCents(shares, priceCents);
+  return { shares, costCents, cashCents: Math.max(amountCents - costCents, 0) };
 }
 
 /** Tickers in the plan with no price yet. Locking waits for these. */

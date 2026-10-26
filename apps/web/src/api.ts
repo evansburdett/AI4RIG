@@ -13,6 +13,8 @@ import type {
   BucketDefinition,
   ClientCase,
   ClientSummary,
+  ImportRequest,
+  ImportResult,
   LifeExpectancyEstimate,
   LifeExpectancyRequest,
   ModelPortfolio,
@@ -150,6 +152,9 @@ export const api = {
   deleteModel: async (id: string): Promise<void> => {
     await send<void>(`/api/models/${encodeURIComponent(id)}`, 'DELETE');
   },
+
+  /** Tickers, prices, and models from a spreadsheet, saved all at once. */
+  runImport: (request: ImportRequest) => send<ImportResult>('/api/import', 'POST', request),
 
   listBucketDefinitions: () => get<BucketDefinition[]>('/api/bucket-definitions'),
 

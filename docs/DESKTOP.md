@@ -94,8 +94,11 @@ After that it opens normally.
 1. Go to **Settings** and paste the OpenAI API key (we set this up with Ari in
    person). It is encrypted with the computer's own keychain and never shown
    again.
-2. The ticker list and models are placeholders until RIG sends theirs. They
-   can be edited on the **Tickers** and **Models** screens.
+2. RIG's 26 vendor models and their funds come with the app (0.1.4 on). Each
+   fund's bucket is a best guess; it can be changed on the **Tickers**
+   screen, and a newer model spreadsheet imported on the **Models** screen.
+   An install from before 0.1.4 also still has the "Placeholder" models,
+   which can be deleted.
 3. Cases use client numbers only: no names, no account numbers (ADR 0006).
 
 ### Before installing on a managed laptop
@@ -197,8 +200,8 @@ apps/desktop/
 | `npm run desktop:smoke` | Start the packaged app from `release/`, check it works, quit it. |
 
 On start, the app opens the database in the data folder, runs any new
-migrations, loads the placeholder tickers and models **only** into a brand-new
-database, and serves the API and the front end from one address on a free
+migrations (which include RIG's models), loads the placeholder tickers and
+models only into a database that still has none, and serves the API and the front end from one address on a free
 port on 127.0.0.1. The window is the ordinary web app: no Node or Electron
 access. Development (`npm run dev`) is unchanged.
 

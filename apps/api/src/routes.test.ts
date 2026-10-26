@@ -3,7 +3,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { openDatabase, runMigrations, runSeeds, type Db } from '@ai4rig/db';
-import type { AdvisoryFeeTier, BucketDefinition, ClientCase, ClientSummary, ModelPortfolio, Ticker } from '@ai4rig/shared';
+import type {
+  AdvisoryFeeTier,
+  BucketDefinition,
+  ClientCase,
+  ClientSummary,
+  ImportResult,
+  ModelPortfolio,
+  Ticker,
+} from '@ai4rig/shared';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { createApp } from './app.js';
@@ -92,15 +100,15 @@ describe('client cases', () => {
     // The Joint account's funds, picked by hand, in display order.
     expect(body.accounts[0]?.modelId).toBeNull();
     expect(body.accounts[0]?.lines.slice(0, 3)).toEqual([
-      { tickerSymbol: 'SGOV', amountCents: 114_000_00 },
-      { tickerSymbol: 'BIL', amountCents: 76_000_00 },
-      { tickerSymbol: 'BND', amountCents: 200_000_00 },
+      { tickerSymbol: 'SGOV', amountCents: 114_000_00, heldSharesMicros: null },
+      { tickerSymbol: 'BIL', amountCents: 76_000_00, heldSharesMicros: null },
+      { tickerSymbol: 'BND', amountCents: 200_000_00, heldSharesMicros: null },
     ]);
     expect(body.accounts[2]).toMatchObject({
       modelId: '9004',
       lines: [
-        { tickerSymbol: 'VTI', amountCents: 178_200_00 },
-        { tickerSymbol: 'VXUS', amountCents: 118_800_00 },
+        { tickerSymbol: 'VTI', amountCents: 178_200_00, heldSharesMicros: null },
+        { tickerSymbol: 'VXUS', amountCents: 118_800_00, heldSharesMicros: null },
       ],
     });
     expect(body.nowInputs.plannedExpenses).toEqual([
@@ -149,8 +157,8 @@ describe('client cases', () => {
           proposalShares: [],
           modelId: '9002',
           lines: [
-            { tickerSymbol: 'TIP', amountCents: 12_345_67 },
-            { tickerSymbol: 'BND', amountCents: 37_154_33 },
+            { tickerSymbol: 'TIP', amountCents: 12_345_67, heldSharesMicros: null },
+            { tickerSymbol: 'BND', amountCents: 37_154_33, heldSharesMicros: null },
           ],
         },
       ],
@@ -177,8 +185,8 @@ describe('client cases', () => {
     expect(reread.accounts[2]).toMatchObject({
       modelId: '9002',
       lines: [
-        { tickerSymbol: 'TIP', amountCents: 12_345_67 },
-        { tickerSymbol: 'BND', amountCents: 37_154_33 },
+        { tickerSymbol: 'TIP', amountCents: 12_345_67, heldSharesMicros: null },
+        { tickerSymbol: 'BND', amountCents: 37_154_33, heldSharesMicros: null },
       ],
     });
     // Local ids are replaced by database ids.
@@ -272,8 +280,10 @@ describe('client cases', () => {
 describe('tickers', () => {
   it('lists the universe alphabetically', async () => {
     const { body } = await call<Ticker[]>('GET', '/api/tickers');
-    expect(body).toHaveLength(10);
-    expect(body[0]).toMatchObject({ symbol: 'BIL', assetClass: 'CASH', defaultBucket: 'NOW' });
+    // 10 placeholders plus the 132 funds in RIG's models (migration 0012).
+    expect(body).toHaveLength(142);
+    expect(body.map((t) => t.symbol)).toEqual([...body.map((t) => t.symbol)].sort());
+    expect(body.find((t) => t.symbol === 'BIL')).toMatchObject({ assetClass: 'CASH', defaultBucket: 'NOW' });
   });
 
   it('stamps a changed price with the day, and keeps it when only the bucket changes', async () => {
@@ -325,7 +335,7 @@ describe('tickers', () => {
 
     const { body } = await call<Ticker[]>('GET', '/api/tickers');
     expect(body.find((t) => t.symbol === 'GLD')).toMatchObject({ assetClass: 'ALTERNATIVE' });
-    expect(body).toHaveLength(11);
+    expect(body).toHaveLength(143);
   });
 
   it('rejects an unknown asset class', async () => {
@@ -355,7 +365,7 @@ describe('tickers', () => {
       ...original,
       accounts: original.accounts.map((a, i) =>
         i === 0
-          ? { ...a, lines: [...a.lines, { tickerSymbol: 'SCHD', amountCents: 15_000_00 }] }
+          ? { ...a, lines: [...a.lines, { tickerSymbol: 'SCHD', amountCents: 15_000_00, heldSharesMicros: null }] }
           : a,
       ),
     };
@@ -379,9 +389,13 @@ describe('models', () => {
 
   it('lists models by name', async () => {
     const { body } = await call<ModelPortfolio[]>('GET', '/api/models');
-    expect(body.map((m) => m.id)).toEqual(['9003', '9001', '9002', '9004']);
-    expect(body[1]).not.toHaveProperty('bucket');
-    expect(body[1]?.lines).toEqual([
+    // RIG's 26 (migration 0012) and the 4 placeholders, by name.
+    expect(body).toHaveLength(30);
+    const names = body.map((m) => m.name.toLowerCase());
+    expect(names).toEqual([...names].sort());
+    const cash = body.find((m) => m.id === '9001');
+    expect(cash).not.toHaveProperty('bucket');
+    expect(cash?.lines).toEqual([
       { tickerSymbol: 'SGOV', weightBps: 6000 },
       { tickerSymbol: 'BIL', weightBps: 4000 },
     ]);
@@ -726,7 +740,7 @@ describe('funds in an account (10/26)', () => {
     return body;
   }
 
-  const withLines = (c: ClientCase, lines: { tickerSymbol: string; amountCents: number }[]) => ({
+  const withLines = (c: ClientCase, lines: ClientCase['accounts'][number]['lines']) => ({
     ...c,
     accounts: c.accounts.map((a, i) => (i === 0 ? { ...a, lines } : a)),
   });
@@ -740,8 +754,8 @@ describe('funds in an account (10/26)', () => {
   it('saves funds that do not add up to the balance yet, and a fund with nothing in it', async () => {
     const original = await accumulator();
     const lines = [
-      { tickerSymbol: 'VOO', amountCents: 25_000_00 },
-      { tickerSymbol: 'VTI', amountCents: 0 },
+      { tickerSymbol: 'VOO', amountCents: 25_000_00, heldSharesMicros: null },
+      { tickerSymbol: 'VTI', amountCents: 0, heldSharesMicros: null },
     ];
     const saved = await call<ClientCase>('PUT', '/api/clients/2317', withLines(original, lines));
     expect(saved.status).toBe(200);
@@ -752,15 +766,15 @@ describe('funds in an account (10/26)', () => {
 
   it('refuses a negative amount, and a fund twice', async () => {
     const original = await accumulator();
-    const negative = await call('PUT', '/api/clients/2317', withLines(original, [{ tickerSymbol: 'VTI', amountCents: -1 }]));
+    const negative = await call('PUT', '/api/clients/2317', withLines(original, [{ tickerSymbol: 'VTI', amountCents: -1, heldSharesMicros: null }]));
     expect(negative.status).toBe(400);
 
     const twice = await call<{ issues: { message: string }[] }>(
       'PUT',
       '/api/clients/2317',
       withLines(original, [
-        { tickerSymbol: 'VTI', amountCents: 1_00 },
-        { tickerSymbol: 'vti', amountCents: 2_00 },
+        { tickerSymbol: 'VTI', amountCents: 1_00, heldSharesMicros: null },
+        { tickerSymbol: 'vti', amountCents: 2_00, heldSharesMicros: null },
       ]),
     );
     expect(twice.status).toBe(400);
@@ -772,7 +786,7 @@ describe('funds in an account (10/26)', () => {
     const { status, body } = await call<{ error: string }>(
       'PUT',
       '/api/clients/2317',
-      withLines(original, [{ tickerSymbol: 'NOTREAL', amountCents: 1_00 }]),
+      withLines(original, [{ tickerSymbol: 'NOTREAL', amountCents: 1_00, heldSharesMicros: null }]),
     );
     expect(status).toBe(400);
     expect(body.error).toMatch(/NOTREAL is not in the ticker list/);
@@ -780,7 +794,7 @@ describe('funds in an account (10/26)', () => {
 
   it('replaces the funds rather than adding to them', async () => {
     const original = await accumulator();
-    await call('PUT', '/api/clients/2317', withLines(original, [{ tickerSymbol: 'VTI', amountCents: 1_00 }]));
+    await call('PUT', '/api/clients/2317', withLines(original, [{ tickerSymbol: 'VTI', amountCents: 1_00, heldSharesMicros: null }]));
     const rows = db
       .prepare<[], { n: number }>(
         `SELECT COUNT(*) AS n FROM account_lines l
@@ -790,5 +804,99 @@ describe('funds in an account (10/26)', () => {
       )
       .get();
     expect(rows?.n).toBe(3); // the one fund, plus the Roth's two
+  });
+});
+
+describe('importing from spreadsheets (10/26)', () => {
+  const ticker = (symbol: string, name: string | null = null) => ({
+    symbol,
+    name,
+    assetClass: 'EQUITY' as const,
+    defaultBucket: 'LATER' as const,
+    priceCents: null,
+    priceAsOf: null,
+  });
+
+  it('adds new tickers with their names, prices others, and adds or replaces models by name', async () => {
+    const { status, body } = await call<ImportResult>('POST', '/api/import', {
+      newTickers: [ticker('FXAIX', 'Fidelity 500 Index Fund'), ticker('VTI', 'Ignored: VTI is already here')],
+      prices: [{ symbol: 'FXAIX', priceMicros: 230_123_400 }],
+      models: [
+        { id: '', name: 'Index 100', taxFunnel: null, lines: [{ tickerSymbol: 'FXAIX', weightBps: 10_000 }] },
+        // Same name as 9004, different case: its lines are replaced and its id kept.
+        { id: '', name: 'placeholder roth growth', taxFunnel: 'TAX_FREE', lines: [{ tickerSymbol: 'FXAIX', weightBps: 10_000 }] },
+      ],
+    });
+
+    expect(status).toBe(200);
+    expect(body.tickers.find((t) => t.symbol === 'FXAIX')).toMatchObject({
+      name: 'Fidelity 500 Index Fund',
+      priceCents: 230_12,
+      priceMicros: 230_123_400,
+      priceAsOf: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+    });
+    // An existing ticker keeps RIG's own classification and name.
+    expect(body.tickers.find((t) => t.symbol === 'VTI')).toMatchObject({ name: null, priceCents: 300_00 });
+    expect(body.models.find((m) => m.name === 'Index 100')?.lines).toEqual([{ tickerSymbol: 'FXAIX', weightBps: 10_000 }]);
+    expect(body.models.find((m) => m.id === '9004')).toMatchObject({
+      name: 'placeholder roth growth',
+      lines: [{ tickerSymbol: 'FXAIX', weightBps: 10_000 }],
+    });
+  });
+
+  it('saves nothing when any part fails', async () => {
+    const { status, body } = await call<{ error: string }>('POST', '/api/import', {
+      newTickers: [ticker('ZZTEST')],
+      prices: [{ symbol: 'NOPE', priceMicros: 1_000_000 }],
+      models: [],
+    });
+    expect(status).toBe(400);
+    expect(body.error).toMatch(/NOPE is not in the ticker list/);
+    const { body: tickers } = await call<Ticker[]>('GET', '/api/tickers');
+    expect(tickers.map((t) => t.symbol)).not.toContain('ZZTEST');
+  });
+
+  it('refuses a model whose weights do not add up, with the import unsaved', async () => {
+    const { status } = await call('POST', '/api/import', {
+      newTickers: [ticker('ZZTEST')],
+      prices: [],
+      models: [{ id: '', name: 'Bad', taxFunnel: null, lines: [{ tickerSymbol: 'ZZTEST', weightBps: 9_000 }] }],
+    });
+    expect(status).toBe(400);
+    const { body: tickers } = await call<Ticker[]>('GET', '/api/tickers');
+    expect(tickers.map((t) => t.symbol)).not.toContain('ZZTEST');
+  });
+
+  it('keeps the shares an account holds from a statement, fractions and all', async () => {
+    const { body: original } = await call<ClientCase>('GET', '/api/clients/2317');
+    const lines = [
+      { tickerSymbol: 'VTI', amountCents: 1_234_56, heldSharesMicros: 4_115_200 },
+      { tickerSymbol: 'SGOV', amountCents: 500_00, heldSharesMicros: null },
+    ];
+    const saved = await call<ClientCase>('PUT', '/api/clients/2317', {
+      ...original,
+      accounts: original.accounts.map((a, i) => (i === 0 ? { ...a, lines } : a)),
+    });
+    expect(saved.status).toBe(200);
+    expect(saved.body.accounts[0]?.lines).toEqual(lines);
+  });
+
+  it('keeps an exact price, and lets a typed price in cents replace it', async () => {
+    const exact = await call<Ticker>('PUT', '/api/tickers/VTI', { ...ticker('VTI'), priceCents: 53_01, priceMicros: 53_009_200 });
+    expect(exact.body).toMatchObject({ priceCents: 53_01, priceMicros: 53_009_200 });
+
+    // The whole ticker back with only the cents changed: the cents win.
+    const typed = await call<Ticker>('PUT', '/api/tickers/VTI', { ...exact.body, priceCents: 54_00 });
+    expect(typed.body).toMatchObject({ priceCents: 54_00, priceMicros: 54_000_000 });
+  });
+
+  it('keeps a ticker name across an edit that leaves it out', async () => {
+    await call('PUT', '/api/tickers/VTI', { ...ticker('VTI', 'Vanguard Total Stock Market ETF') });
+    const { body } = await call<Ticker>('PUT', '/api/tickers/VTI', {
+      symbol: 'VTI',
+      assetClass: 'EQUITY',
+      defaultBucket: 'SOON',
+    });
+    expect(body).toMatchObject({ name: 'Vanguard Total Stock Market ETF', defaultBucket: 'SOON' });
   });
 });

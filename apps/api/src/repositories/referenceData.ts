@@ -11,9 +11,11 @@ import { HttpError } from '../errors.js';
 
 interface TickerRow {
   symbol: string;
+  name: string | null;
   asset_class: Ticker['assetClass'];
   default_bucket: Ticker['defaultBucket'];
   price_cents: number | null;
+  price_micros: number | null;
   price_as_of: string | null;
 }
 
@@ -26,9 +28,11 @@ interface DefinitionRow {
 
 const toTicker = (row: TickerRow): Ticker => ({
   symbol: row.symbol,
+  name: row.name,
   assetClass: row.asset_class,
   defaultBucket: row.default_bucket,
   priceCents: row.price_cents,
+  priceMicros: row.price_micros,
   priceAsOf: row.price_as_of,
 });
 
@@ -42,16 +46,16 @@ const toDefinition = (row: DefinitionRow): BucketDefinition => ({
 export function listTickers(db: Db): Ticker[] {
   return db
     .prepare<[], TickerRow>(
-      'SELECT symbol, asset_class, default_bucket, price_cents, price_as_of FROM tickers ORDER BY symbol',
+      'SELECT symbol, name, asset_class, default_bucket, price_cents, price_micros, price_as_of FROM tickers ORDER BY symbol',
     )
     .all()
     .map(toTicker);
 }
 
-function getTicker(db: Db, symbol: string): Ticker | null {
+export function getTicker(db: Db, symbol: string): Ticker | null {
   const row = db
     .prepare<[string], TickerRow>(
-      'SELECT symbol, asset_class, default_bucket, price_cents, price_as_of FROM tickers WHERE symbol = ?',
+      'SELECT symbol, name, asset_class, default_bucket, price_cents, price_micros, price_as_of FROM tickers WHERE symbol = ?',
     )
     .get(symbol);
   return row === undefined ? null : toTicker(row);
@@ -60,10 +64,14 @@ function getTicker(db: Db, symbol: string): Ticker | null {
 /** What a caller may send: the price is optional, and its date is the server's to set. */
 export interface TickerInput {
   readonly symbol: string;
+  /** Undefined leaves the stored name alone; null clears it. */
+  readonly name?: string | null | undefined;
   readonly assetClass: Ticker['assetClass'];
   readonly defaultBucket: Ticker['defaultBucket'];
   /** Undefined leaves the stored price alone; null clears it. */
   readonly priceCents?: number | null | undefined;
+  /** The exact price. A number here wins over priceCents. */
+  readonly priceMicros?: number | null | undefined;
 }
 
 /**
@@ -76,33 +84,56 @@ export interface TickerInput {
  */
 export function upsertTicker(db: Db, ticker: TickerInput, today: Date = new Date()): Ticker {
   const existing = getTicker(db, ticker.symbol);
-  const priceCents = ticker.priceCents === undefined ? (existing?.priceCents ?? null) : ticker.priceCents;
-  const priceAsOf =
-    priceCents === null
+  const name = ticker.name === undefined ? (existing?.name ?? null) : ticker.name;
+  // The exact price is used when it agrees with priceCents (or priceCents
+  // is left out). When they disagree, priceCents is the one a person just
+  // typed, as when the whole ticker comes back with only the cents changed;
+  // null clears both. Neither keeps what is stored.
+  const exact = typeof ticker.priceMicros === 'number' ? ticker.priceMicros : null;
+  const priceMicros =
+    ticker.priceCents === null
       ? null
-      : priceCents === existing?.priceCents
+      : exact !== null && (ticker.priceCents === undefined || ticker.priceCents === centsOf(exact))
+        ? exact
+        : ticker.priceCents === undefined
+          ? (existing?.priceMicros ?? null)
+          : ticker.priceCents * 10_000;
+  const priceCents = priceMicros === null ? null : centsOf(priceMicros);
+  const priceAsOf =
+    priceMicros === null
+      ? null
+      : priceMicros === existing?.priceMicros
         ? existing.priceAsOf
         : today.toISOString().slice(0, 10);
 
   db.prepare(
-    `INSERT INTO tickers (symbol, asset_class, default_bucket, price_cents, price_as_of)
-     VALUES (@symbol, @assetClass, @defaultBucket, @priceCents, @priceAsOf)
+    `INSERT INTO tickers (symbol, name, asset_class, default_bucket, price_cents, price_micros, price_as_of)
+     VALUES (@symbol, @name, @assetClass, @defaultBucket, @priceCents, @priceMicros, @priceAsOf)
      ON CONFLICT (symbol) DO UPDATE SET
+       name = excluded.name,
        asset_class = excluded.asset_class,
        default_bucket = excluded.default_bucket,
        price_cents = excluded.price_cents,
+       price_micros = excluded.price_micros,
        price_as_of = excluded.price_as_of`,
   ).run({
     symbol: ticker.symbol,
+    name,
     assetClass: ticker.assetClass,
     defaultBucket: ticker.defaultBucket,
     priceCents,
+    priceMicros,
     priceAsOf,
   });
 
   const saved = getTicker(db, ticker.symbol);
   if (saved === null) throw new Error(`Saved ${ticker.symbol} and then could not read it back`);
   return saved;
+}
+
+/** An exact price to the cent: never below 1, since a price of $0 is refused. */
+function centsOf(priceMicros: number): number {
+  return Math.max(Math.round(priceMicros / 10_000), 1);
 }
 
 /**

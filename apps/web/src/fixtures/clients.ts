@@ -11,7 +11,7 @@ import type { AccountLine, ClientCase } from '../domain/types.js';
 
 /** Funds as `[symbol, dollars]`, in display order. */
 function funds(...entries: [string, number][]): AccountLine[] {
-  return entries.map(([tickerSymbol, dollars]) => ({ tickerSymbol, amountCents: dollars * 100 }));
+  return entries.map(([tickerSymbol, dollars]) => ({ tickerSymbol, amountCents: dollars * 100, heldSharesMicros: null }));
 }
 
 /**

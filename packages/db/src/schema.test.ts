@@ -1,4 +1,4 @@
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -203,6 +203,38 @@ describe('the repo migrations', () => {
     expect(db.pragma('foreign_key_check')).toEqual([]);
   });
 
+  it('ship RIG\'s model portfolios, each adding up to 100%, without touching ones already there', () => {
+    // A database from before 0012 that already has one of RIG's models (an
+    // advisor imported the file) and has reclassified one of its funds.
+    const through0011 = join(workspace, 'through-0011');
+    mkdirSync(through0011);
+    for (const name of readdirSync(migrationsDir()).filter((n) => /^00(0\d|1[01])_.*\.sql$/.test(n))) {
+      copyFileSync(join(migrationsDir(), name), join(through0011, name));
+    }
+    runMigrations(db, through0011);
+    db.exec(`
+      INSERT INTO tickers (symbol, asset_class, default_bucket) VALUES ('FXAIX', 'EQUITY', 'SOON');
+      INSERT INTO model_portfolios (id, name, updated_at) VALUES (1, 'faith based model', 'x');
+      INSERT INTO model_lines (model_id, position, ticker_symbol, weight_bps) VALUES (1, 0, 'FXAIX', 10000);
+    `);
+
+    runMigrations(db);
+
+    const models = db
+      .prepare<[], { name: string; total: number; lines: number }>(
+        `SELECT m.name, SUM(l.weight_bps) AS total, COUNT(*) AS lines
+         FROM model_portfolios m JOIN model_lines l ON l.model_id = m.id GROUP BY m.id`,
+      )
+      .all();
+    expect(models).toHaveLength(26);
+    expect(models.every((m) => m.total === 10_000)).toBe(true);
+    // The advisor's own copy and classification are kept.
+    expect(models.find((m) => m.name.toLowerCase() === 'faith based model')).toMatchObject({ name: 'faith based model', lines: 1 });
+    expect(db.prepare("SELECT default_bucket AS b FROM tickers WHERE symbol = 'FXAIX'").get()).toEqual({ b: 'SOON' });
+    expect(db.prepare("SELECT price_micros AS p FROM tickers WHERE symbol = 'CASH'").get()).toEqual({ p: 1_000_000 });
+    expect(db.pragma('foreign_key_check')).toEqual([]);
+  });
+
   it('ship the three bucket definitions as part of the schema', () => {
     runMigrations(db);
 
@@ -278,7 +310,8 @@ describe('the repo seed data', () => {
       db.prepare<[], { count: number }>(`SELECT COUNT(*) AS count FROM ${table}`).get()?.count;
     expect(count('client_cases')).toBe(2);
     expect(count('account_lines')).toBe(26);
-    expect(count('model_portfolios')).toBe(4);
+    // RIG's 26 from migration 0012, plus the 4 placeholders.
+    expect(count('model_portfolios')).toBe(30);
   });
 
   it('puts case 1042 exactly on the plan once each account holds its fee as cash', () => {

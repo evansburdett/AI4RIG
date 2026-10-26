@@ -34,6 +34,11 @@ export function formatCentsWhole(cents: Cents): string {
   return CURRENCY_WHOLE.format(Math.round(cents / 100));
 }
 
+/** A share price from millionths of a dollar: "$53.0092", "$1.00". At least two decimals, up to four. */
+export function formatPrice(micros: number): string {
+  return `$${(micros / 1_000_000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
+}
+
 /** "1,234.56" — the value for a text input. parseCents reads it back. */
 export function centsToInput(cents: Cents): string {
   assertCents(cents, 'cents');

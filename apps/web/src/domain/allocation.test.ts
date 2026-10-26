@@ -4,12 +4,17 @@ import {
   accountHoldings,
   amountForWeight,
   applyModel,
+  atCurrentPrices,
   bucketsByAccount,
+  caseAtCurrentPrices,
+  cashForFeeCents,
   computeBreakdown,
   computeDrift,
   feesByAccount,
   followModels,
+  heldValueCents,
   holdingsInBucket,
+  investableCents,
   leftToAllocateCents,
   linesAsWeights,
   matchesModel,
@@ -17,6 +22,7 @@ import {
   modelChoices,
   modelsById,
   tickersBySymbol,
+  varianceAdvice,
   weightBpsOf,
 } from './breakdown.js';
 import { SAMPLE_CASES } from '../fixtures/clients.js';
@@ -126,7 +132,7 @@ describe('an account allocated by fund (10/26)', () => {
     const weights = linesAsWeights(joint.lines);
     expect(weights.reduce((t, l) => t + l.weightBps, 0)).toBe(10_000);
     expect(weights.find((l) => l.tickerSymbol === 'BND')?.weightBps).toBe(1683);
-    expect(linesAsWeights([{ tickerSymbol: 'VTI', amountCents: 0 }])).toEqual([]);
+    expect(linesAsWeights([{ tickerSymbol: 'VTI', amountCents: 0, heldSharesMicros: null }])).toEqual([]);
   });
 });
 
@@ -138,8 +144,8 @@ describe('followModels', () => {
   it('refills an account still on its model when the balance changes', () => {
     const [next] = followModels(before, [{ ...roth, balanceCents: 400_000_00 }], MODELS, fees(3_000_00), fees(4_000_00));
     expect(next!.lines).toEqual([
-      { tickerSymbol: 'VTI', amountCents: 237_600_00 },
-      { tickerSymbol: 'VXUS', amountCents: 158_400_00 },
+      { tickerSymbol: 'VTI', amountCents: 237_600_00, heldSharesMicros: null },
+      { tickerSymbol: 'VXUS', amountCents: 158_400_00, heldSharesMicros: null },
     ]);
   });
 
@@ -149,7 +155,7 @@ describe('followModels', () => {
   });
 
   it('leaves an adjusted account alone', () => {
-    const adjusted = { ...roth, lines: [{ tickerSymbol: 'VTI', amountCents: 297_000_00 }] };
+    const adjusted = { ...roth, lines: [{ tickerSymbol: 'VTI', amountCents: 297_000_00, heldSharesMicros: null }] };
     const [next] = followModels(
       { ...WORKBOOK_CASE, accounts: [adjusted] },
       [{ ...adjusted, balanceCents: 400_000_00 }],
@@ -161,7 +167,7 @@ describe('followModels', () => {
   });
 
   it('keeps the edit itself when the funds are what changed', () => {
-    const edited = { ...roth, lines: [{ tickerSymbol: 'VTI', amountCents: 1_00 }] };
+    const edited = { ...roth, lines: [{ tickerSymbol: 'VTI', amountCents: 1_00, heldSharesMicros: null }] };
     expect(followModels(before, [edited], MODELS, fees(3_000_00), fees(3_000_00))[0]).toBe(edited);
   });
 });
@@ -247,5 +253,76 @@ describe('models', () => {
 
   it('shows how a model splits across the buckets', () => {
     expect(modelBucketMix(BALANCED, TICKERS)).toEqual({ NOW: 0, SOON: 4000, LATER: 6000 });
+  });
+});
+
+describe('a statement account (shares held, valued at today\'s price)', () => {
+  const statement = {
+    ...ACCUMULATOR_CASE.accounts[0]!,
+    modelId: null,
+    balanceCents: 0,
+    lines: [
+      { tickerSymbol: 'SGOV', amountCents: 9_000_00, heldSharesMicros: 90_000_000 },
+      { tickerSymbol: 'VTI', amountCents: 50_000_00, heldSharesMicros: 166_500_000 },
+      // Added by dollars after the import: a purchase, not a holding.
+      { tickerSymbol: 'BND', amountCents: 1_000_00, heldSharesMicros: null },
+    ],
+  };
+
+  it('is worth its shares at today\'s prices, and its balance follows', () => {
+    // SGOV 90 × $100 = $9,000; VTI 166.5 × $300 = $49,950; BND $1,000.
+    const valued = atCurrentPrices(statement, TICKERS);
+    expect(valued.lines.map((l) => l.amountCents)).toEqual([9_000_00, 49_950_00, 1_000_00]);
+    expect(valued.balanceCents).toBe(59_950_00);
+
+    const later = tickersBySymbol(
+      PLACEHOLDER_TICKERS.map((t) => (t.symbol === 'VTI' ? { ...t, priceCents: 320_00, priceMicros: 320_000_000 } : t)),
+    );
+    expect(atCurrentPrices(valued, later).balanceCents).toBe(9_000_00 + 53_280_00 + 1_000_00);
+  });
+
+  it('keeps a fund\'s last value when its ticker has no price', () => {
+    const noPrice = tickersBySymbol(PLACEHOLDER_TICKERS.map((t) => (t.symbol === 'VTI' ? { ...t, priceCents: null, priceMicros: null } : t)));
+    expect(atCurrentPrices(statement, noPrice).lines[1]?.amountCents).toBe(50_000_00);
+  });
+
+  it('values shares at the exact price, so they match the statement', () => {
+    // 2,060 × $53.0092 = $109,198.952: the statement's $109,198.95, where the
+    // cent-rounded $53.01 would give $109,200.60.
+    expect(heldValueCents(2_060_000_000, 53_009_200)).toBe(109_198_95);
+    // Large enough that a double would lose it: 93,572.35 shares at $1.
+    expect(heldValueCents(93_572_350_000, 1_000_000)).toBe(93_572_35);
+  });
+
+  it('leaves an account allocated by dollars alone, as the same object', () => {
+    const joint = WORKBOOK_CASE.accounts[0]!;
+    expect(atCurrentPrices(joint, TICKERS)).toBe(joint);
+    expect(caseAtCurrentPrices(WORKBOOK_CASE, PLACEHOLDER_TICKERS)).toBe(WORKBOOK_CASE);
+  });
+
+  it('pays the fee from its cash funds instead of setting it aside on top', () => {
+    const valued = atCurrentPrices(statement, TICKERS);
+    expect(investableCents(valued, 900_00)).toBe(valued.balanceCents);
+    expect(leftToAllocateCents(valued, 900_00)).toBe(0);
+    expect(cashForFeeCents(valued, TICKERS)).toBe(9_000_00);
+    // No separate fee cash: SGOV already is the cash.
+    expect(accountHoldings(valued, TICKERS, 900_00).map((h) => h.tickerSymbol)).toEqual(['SGOV', 'VTI', 'BND']);
+  });
+});
+
+describe('varianceAdvice', () => {
+  it('says money in Now or Soon beyond the need could be in Later, never that Later is short', () => {
+    expect(varianceAdvice(137_602_00, 177_300_00)).toEqual([
+      'Now and Soon hold $314,902 more than the plan needs. That money could be in Later funds, for growth.',
+    ]);
+  });
+
+  it('says when Now or Soon is short of the need', () => {
+    expect(varianceAdvice(-5_000_00, 2_000_00)).toEqual([
+      'Soon holds $2,000 more than the plan needs. That money could be in Later funds, for growth.',
+      "Now is $5,000 short of the next year's needs. Put more in cash funds.",
+    ]);
+    expect(varianceAdvice(-5_000_00, 0, 5_000_00)[0]).toBe('$5,000 is not in a fund yet. Pick a model or add funds to the accounts.');
+    expect(varianceAdvice(0, 0)).toEqual([]);
   });
 });
