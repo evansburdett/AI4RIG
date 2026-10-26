@@ -89,17 +89,19 @@ describe('client cases', () => {
       ['IRA', 'PRE_TAX', 1_500_000_00],
       ['ROTH_IRA', 'TAX_FREE', 300_000_00],
     ]);
-    expect(body.accounts[0]?.sleeves).toEqual([
-      { bucket: 'NOW', amountCents: 202_000_00, mode: 'MODEL', modelId: '9001', lines: [] },
-      { bucket: 'SOON', amountCents: 400_000_00, mode: 'MODEL', modelId: '9002', lines: [] },
-      { bucket: 'LATER', amountCents: 598_000_00, mode: 'MODEL', modelId: '9003', lines: [] },
+    // The Joint account's funds, picked by hand, in display order.
+    expect(body.accounts[0]?.modelId).toBeNull();
+    expect(body.accounts[0]?.lines.slice(0, 3)).toEqual([
+      { tickerSymbol: 'SGOV', amountCents: 114_000_00 },
+      { tickerSymbol: 'BIL', amountCents: 76_000_00 },
+      { tickerSymbol: 'BND', amountCents: 200_000_00 },
     ]);
-    expect(body.accounts[2]?.sleeves[1]).toEqual({
-      bucket: 'SOON',
-      amountCents: 0,
-      mode: 'MODEL',
-      modelId: null,
-      lines: [],
+    expect(body.accounts[2]).toMatchObject({
+      modelId: '9004',
+      lines: [
+        { tickerSymbol: 'VTI', amountCents: 178_200_00 },
+        { tickerSymbol: 'VXUS', amountCents: 118_800_00 },
+      ],
     });
     expect(body.nowInputs.plannedExpenses).toEqual([
       { id: expect.any(String), label: 'Roof replacement', costCents: 4_000_000 },
@@ -121,7 +123,7 @@ describe('client cases', () => {
     expect(body.people.map((p) => p.role)).toEqual(['CLIENT', 'SPOUSE']);
     expect(body.taxBracketPct).toBeNull();
     expect(body.accounts).toHaveLength(1);
-    expect(body.accounts[0]?.sleeves.map((sl) => sl.bucket)).toEqual(['NOW', 'SOON', 'LATER']);
+    expect(body.accounts[0]).toMatchObject({ modelId: null, lines: [] });
 
     const list = await call<ClientSummary[]>('GET', '/api/clients');
     expect(list.body.map((c) => c.clientNumber)).toContain('2318');
@@ -145,10 +147,10 @@ describe('client cases', () => {
           maskedNumber: '0042',
           balanceCents: 50_000_00,
           proposalShares: [],
-          sleeves: [
-            { bucket: 'NOW', amountCents: 0, mode: 'MODEL', modelId: null, lines: [] },
-            { bucket: 'SOON', amountCents: 12_345_67, mode: 'MODEL', modelId: '9002', lines: [] },
-            { bucket: 'LATER', amountCents: 37_654_33, mode: 'MODEL', modelId: null, lines: [] },
+          modelId: '9002',
+          lines: [
+            { tickerSymbol: 'TIP', amountCents: 12_345_67 },
+            { tickerSymbol: 'BND', amountCents: 37_154_33 },
           ],
         },
       ],
@@ -171,12 +173,13 @@ describe('client cases', () => {
     expect(reread.taxBracketPct).toBe(24);
     expect(reread.accounts).toHaveLength(3);
     expect(reread.accounts[2]).toMatchObject({ accountType: 'OTHER', taxFunnel: 'PRE_TAX', balanceCents: 50_000_00 });
-    expect(reread.accounts[2]?.sleeves[1]).toEqual({
-      bucket: 'SOON',
-      amountCents: 12_345_67,
-      mode: 'MODEL',
+    // Funds come back in the order given, not alphabetically.
+    expect(reread.accounts[2]).toMatchObject({
       modelId: '9002',
-      lines: [],
+      lines: [
+        { tickerSymbol: 'TIP', amountCents: 12_345_67 },
+        { tickerSymbol: 'BND', amountCents: 37_154_33 },
+      ],
     });
     // Local ids are replaced by database ids.
     expect(reread.accounts[2]?.id).not.toBe('acct-local-1');
@@ -197,40 +200,19 @@ describe('client cases', () => {
     expect(body.accounts).toEqual([]);
     expect(body.nowInputs.plannedExpenses).toEqual([]);
     const orphans = db
-      .prepare<[], { n: number }>('SELECT COUNT(*) AS n FROM account_sleeves WHERE account_id IN (9001, 9002, 9003)')
+      .prepare<[], { n: number }>('SELECT COUNT(*) AS n FROM account_lines WHERE account_id IN (9001, 9002, 9003)')
       .get();
     expect(orphans?.n).toBe(0);
   });
 
-  it('refuses a model from the wrong bucket, and one that does not exist', async () => {
+  it('refuses a model that does not exist', async () => {
     const { body: original } = await call<ClientCase>('GET', '/api/clients/1042');
-    const withSleeve = (modelId: string) => ({
+    const { status, body } = await call<{ error: string }>('PUT', '/api/clients/1042', {
       ...original,
-      accounts: original.accounts.map((a, i) =>
-        i === 0
-          ? { ...a, sleeves: a.sleeves.map((sl) => (sl.bucket === 'NOW' ? { ...sl, modelId } : sl)) }
-          : a,
-      ),
-    });
-
-    const wrongBucket = await call<{ error: string }>('PUT', '/api/clients/1042', withSleeve('9003'));
-    expect(wrongBucket.status).toBe(400);
-    expect(wrongBucket.body.error).toMatch(/LATER model, not NOW/);
-
-    const missing = await call('PUT', '/api/clients/1042', withSleeve('12345'));
-    expect(missing.status).toBe(400);
-  });
-
-  it('refuses sleeves that are not exactly Now, Soon, Later', async () => {
-    const { body: original } = await call<ClientCase>('GET', '/api/clients/1042');
-    const [first, ...rest] = original.accounts;
-    if (first === undefined) throw new Error('seed case has accounts');
-
-    const { status } = await call('PUT', '/api/clients/1042', {
-      ...original,
-      accounts: [{ ...first, sleeves: first.sleeves.slice(0, 2) }, ...rest],
+      accounts: original.accounts.map((a, i) => (i === 0 ? { ...a, modelId: '12345' } : a)),
     });
     expect(status).toBe(400);
+    expect(body.error).toMatch(/model 12345 no longer exists/);
   });
 
   it('rejects float money with a 400 and leaves the case alone', async () => {
@@ -272,8 +254,8 @@ describe('client cases', () => {
 
     expect((await call('GET', '/api/clients/1042')).status).toBe(404);
     expect((await call('DELETE', '/api/clients/1042')).status).toBe(404);
-    const sleeves = db.prepare<[], { n: number }>('SELECT COUNT(*) AS n FROM account_sleeves').get();
-    expect(sleeves?.n).toBe(6); // only 2317's two accounts remain
+    const lines = db.prepare<[], { n: number }>('SELECT COUNT(*) AS n FROM account_lines').get();
+    expect(lines?.n).toBe(8); // only 2317's two accounts' funds remain
   });
 
   it('answers malformed JSON with a JSON 400', async () => {
@@ -363,22 +345,17 @@ describe('tickers', () => {
   it('refuses to delete a ticker a model still uses, and says which', async () => {
     const { status, body } = await call<{ error: string }>('DELETE', '/api/tickers/SGOV');
     expect(status).toBe(409);
-    expect(body.error).toMatch(/Placeholder Now: Cash/);
+    expect(body.error).toMatch(/Placeholder Cash reserve/);
   });
 
-  it('refuses to delete a ticker a client case picks by hand, and says which', async () => {
+  it('refuses to delete a ticker a client case holds, and says which', async () => {
     await call('PUT', '/api/tickers/SCHD', { symbol: 'SCHD', assetClass: 'EQUITY', defaultBucket: 'LATER' });
     const { body: original } = await call<ClientCase>('GET', '/api/clients/2317');
     const edited = {
       ...original,
       accounts: original.accounts.map((a, i) =>
         i === 0
-          ? {
-              ...a,
-              sleeves: a.sleeves.map((s) =>
-                s.bucket === 'LATER' ? { ...s, lines: [{ tickerSymbol: 'SCHD', weightBps: 10_000 }] } : s,
-              ),
-            }
+          ? { ...a, lines: [...a.lines, { tickerSymbol: 'SCHD', amountCents: 15_000_00 }] }
           : a,
       ),
     };
@@ -393,7 +370,6 @@ describe('tickers', () => {
 describe('models', () => {
   const draft = {
     name: 'Custom income',
-    bucket: 'SOON',
     taxFunnel: null,
     lines: [
       { tickerSymbol: 'bnd', weightBps: 7500 },
@@ -401,10 +377,11 @@ describe('models', () => {
     ],
   };
 
-  it('lists models grouped by bucket', async () => {
+  it('lists models by name', async () => {
     const { body } = await call<ModelPortfolio[]>('GET', '/api/models');
-    expect(body.map((m) => m.bucket)).toEqual(['NOW', 'SOON', 'LATER', 'LATER']);
-    expect(body[0]?.lines).toEqual([
+    expect(body.map((m) => m.id)).toEqual(['9003', '9001', '9002', '9004']);
+    expect(body[1]).not.toHaveProperty('bucket');
+    expect(body[1]?.lines).toEqual([
       { tickerSymbol: 'SGOV', weightBps: 6000 },
       { tickerSymbol: 'BIL', weightBps: 4000 },
     ]);
@@ -446,27 +423,15 @@ describe('models', () => {
   });
 
   it('refuses a duplicate name', async () => {
-    const { status } = await call('POST', '/api/models', { ...draft, name: 'placeholder now: cash' });
+    const { status } = await call('POST', '/api/models', { ...draft, name: 'placeholder cash reserve' });
     expect(status).toBe(409);
   });
 
-  it('refuses to move a model in use to another bucket', async () => {
-    const { body: models } = await call<ModelPortfolio[]>('GET', '/api/models');
-    const cash = models.find((m) => m.id === '9001');
-    const { status } = await call('PUT', '/api/models/9001', { ...cash, bucket: 'SOON' });
-    expect(status).toBe(409);
-  });
-
-  it('leaves money in place with no model when its model is deleted', async () => {
-    await call('DELETE', '/api/models/9001');
+  it('leaves the funds in place with no model when their model is deleted', async () => {
+    const { body: before } = await call<ClientCase>('GET', '/api/clients/1042');
+    expect((await call('DELETE', '/api/models/9004')).status).toBe(204);
     const { body } = await call<ClientCase>('GET', '/api/clients/1042');
-    expect(body.accounts[0]?.sleeves[0]).toEqual({
-      bucket: 'NOW',
-      amountCents: 202_000_00,
-      mode: 'MODEL',
-      modelId: null,
-      lines: [],
-    });
+    expect(body.accounts[2]).toMatchObject({ modelId: null, lines: before.accounts[2]?.lines });
   });
 });
 
@@ -754,134 +719,76 @@ describe('health concerns (US-27)', () => {
   });
 });
 
-describe('model or manual buckets (US-23)', () => {
-  /** Case 2317's Single account: Later is picked by hand in the seed. */
+describe('funds in an account (10/26)', () => {
+  /** Case 2317's Single account: Balanced 60/40 on all but $15,000. */
   async function accumulator() {
     const { body } = await call<ClientCase>('GET', '/api/clients/2317');
     return body;
   }
 
-  const withLater = (c: ClientCase, changes: Partial<ClientCase['accounts'][number]['sleeves'][number]>) => ({
+  const withLines = (c: ClientCase, lines: { tickerSymbol: string; amountCents: number }[]) => ({
     ...c,
-    accounts: c.accounts.map((a, i) =>
-      i === 0
-        ? { ...a, sleeves: a.sleeves.map((s) => (s.bucket === 'LATER' ? { ...s, ...changes } : s)) }
-        : a,
-    ),
+    accounts: c.accounts.map((a, i) => (i === 0 ? { ...a, lines } : a)),
   });
 
-  it('reads back a manual bucket with its own lines', async () => {
+  it('reads back the model an account was filled from, and its funds', async () => {
     const body = await accumulator();
-    const later = body.accounts[0]?.sleeves.find((s) => s.bucket === 'LATER');
-
-    expect(later).toEqual({
-      bucket: 'LATER',
-      amountCents: 240_000_00,
-      mode: 'MANUAL',
-      modelId: null,
-      lines: [
-        { tickerSymbol: 'VTI', weightBps: 7000 },
-        { tickerSymbol: 'VNQ', weightBps: 3000 },
-      ],
-    });
+    expect(body.accounts[0]?.modelId).toBe('9003');
+    expect(body.accounts[0]?.lines.reduce((t, l) => t + l.amountCents, 0)).toBe(260_800_00);
   });
 
-  it('keeps a bucket following a model free of lines of its own', async () => {
-    const body = await accumulator();
-    const now = body.accounts[0]?.sleeves.find((s) => s.bucket === 'NOW');
-    expect(now).toMatchObject({ mode: 'MODEL', modelId: '9001', lines: [] });
-  });
-
-  it('saves an edited manual bucket, in the order given', async () => {
+  it('saves funds that do not add up to the balance yet, and a fund with nothing in it', async () => {
     const original = await accumulator();
-    const edited = withLater(original, {
-      lines: [
-        { tickerSymbol: 'VOO', weightBps: 2500 },
-        { tickerSymbol: 'VTI', weightBps: 7500 },
-      ],
-    });
-
-    const saved = await call<ClientCase>('PUT', '/api/clients/2317', edited);
+    const lines = [
+      { tickerSymbol: 'VOO', amountCents: 25_000_00 },
+      { tickerSymbol: 'VTI', amountCents: 0 },
+    ];
+    const saved = await call<ClientCase>('PUT', '/api/clients/2317', withLines(original, lines));
     expect(saved.status).toBe(200);
 
     const { body: reread } = await call<ClientCase>('GET', '/api/clients/2317');
-    expect(reread.accounts[0]?.sleeves.find((s) => s.bucket === 'LATER')?.lines).toEqual([
-      { tickerSymbol: 'VOO', weightBps: 2500 },
-      { tickerSymbol: 'VTI', weightBps: 7500 },
-    ]);
+    expect(reread.accounts[0]?.lines).toEqual(lines);
   });
 
-  it('accepts a manual bucket that does not add up yet', async () => {
+  it('refuses a negative amount, and a fund twice', async () => {
     const original = await accumulator();
-    const half = withLater(original, { lines: [{ tickerSymbol: 'VTI', weightBps: 4000 }] });
+    const negative = await call('PUT', '/api/clients/2317', withLines(original, [{ tickerSymbol: 'VTI', amountCents: -1 }]));
+    expect(negative.status).toBe(400);
 
-    const { status, body } = await call<ClientCase>('PUT', '/api/clients/2317', half);
-    expect(status).toBe(200);
-    expect(body.accounts[0]?.sleeves.find((s) => s.bucket === 'LATER')?.lines).toHaveLength(1);
-  });
-
-  it('refuses weights over 100%', async () => {
-    const original = await accumulator();
-    const over = withLater(original, {
-      lines: [
-        { tickerSymbol: 'VTI', weightBps: 7000 },
-        { tickerSymbol: 'VNQ', weightBps: 4000 },
-      ],
-    });
-
-    const { status } = await call('PUT', '/api/clients/2317', over);
-    expect(status).toBe(400);
-  });
-
-  it('refuses a model and hand-picked lines at the same time', async () => {
-    const original = await accumulator();
-    const both = withLater(original, { modelId: '9003' });
-
-    const { status, body } = await call<{ issues: { path: string }[] }>(
+    const twice = await call<{ issues: { message: string }[] }>(
       'PUT',
       '/api/clients/2317',
-      both,
+      withLines(original, [
+        { tickerSymbol: 'VTI', amountCents: 1_00 },
+        { tickerSymbol: 'vti', amountCents: 2_00 },
+      ]),
     );
-    expect(status).toBe(400);
-    expect(body.issues.some((i) => i.path.endsWith('modelId'))).toBe(true);
-  });
-
-  it('refuses lines on a bucket that follows a model', async () => {
-    const original = await accumulator();
-    const modelWithLines = withLater(original, {
-      mode: 'MODEL',
-      modelId: '9003',
-      lines: [{ tickerSymbol: 'VTI', weightBps: 10_000 }],
-    });
-
-    const { status, body } = await call<{ issues: { path: string }[] }>(
-      'PUT',
-      '/api/clients/2317',
-      modelWithLines,
-    );
-    expect(status).toBe(400);
-    expect(body.issues.some((i) => i.path.endsWith('lines'))).toBe(true);
+    expect(twice.status).toBe(400);
+    expect(twice.body.issues.map((i) => i.message)).toContain('A fund can appear in an account only once');
   });
 
   it('names the symbol when it is not in the ticker list', async () => {
     const original = await accumulator();
-    const unknown = withLater(original, { lines: [{ tickerSymbol: 'NOTREAL', weightBps: 10_000 }] });
-
-    const { status, body } = await call<{ error: string }>('PUT', '/api/clients/2317', unknown);
+    const { status, body } = await call<{ error: string }>(
+      'PUT',
+      '/api/clients/2317',
+      withLines(original, [{ tickerSymbol: 'NOTREAL', amountCents: 1_00 }]),
+    );
     expect(status).toBe(400);
     expect(body.error).toMatch(/NOTREAL is not in the ticker list/);
   });
 
-  it('drops the hand-picked lines when a bucket goes back to a model', async () => {
+  it('replaces the funds rather than adding to them', async () => {
     const original = await accumulator();
-    const backToModel = withLater(original, { mode: 'MODEL', modelId: '9003', lines: [] });
-
-    const { status } = await call('PUT', '/api/clients/2317', backToModel);
-    expect(status).toBe(200);
-
+    await call('PUT', '/api/clients/2317', withLines(original, [{ tickerSymbol: 'VTI', amountCents: 1_00 }]));
     const rows = db
-      .prepare<[], { n: number }>("SELECT COUNT(*) AS n FROM sleeve_lines WHERE bucket = 'LATER'")
+      .prepare<[], { n: number }>(
+        `SELECT COUNT(*) AS n FROM account_lines l
+         JOIN accounts a ON a.id = l.account_id
+         JOIN client_cases c ON c.id = a.client_case_id
+         WHERE c.client_number = '2317'`,
+      )
       .get();
-    expect(rows?.n).toBe(0);
+    expect(rows?.n).toBe(3); // the one fund, plus the Roth's two
   });
 });

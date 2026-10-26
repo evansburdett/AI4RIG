@@ -3,31 +3,15 @@
  * are invented; the figures on case 1042 come from RIG's workbook.
  *
  * The running app does not use these; it reads the same two cases from the
- * database, loaded by packages/db/seed/0002_sample_cases.sql. Keep the two in
+ * database, loaded by packages/db/seed/0003_sample_cases.sql. Keep the two in
  * step if you change either.
  */
 
-import type {
-  Account,
-  BucketSleeve,
-  BucketType,
-  ClientCase,
-  SleeveLine,
-} from '../domain/types.js';
+import type { AccountLine, ClientCase } from '../domain/types.js';
 
-/**
- * Three sleeves in bucket order. Each is `[amountDollars, modelId]` to follow a
- * model, or `[amountDollars, lines]` for a bucket picked by hand (US-23).
- */
-type SleeveSpec = [number, string | null] | [number, SleeveLine[]];
-
-function sleeves(now: SleeveSpec, soon: SleeveSpec, later: SleeveSpec): Account['sleeves'] {
-  const one = (bucket: BucketType, [dollars, follows]: SleeveSpec): BucketSleeve =>
-    Array.isArray(follows)
-      ? { bucket, amountCents: dollars * 100, mode: 'MANUAL', modelId: null, lines: follows }
-      : { bucket, amountCents: dollars * 100, mode: 'MODEL', modelId: follows, lines: [] };
-
-  return [one('NOW', now), one('SOON', soon), one('LATER', later)];
+/** Funds as `[symbol, dollars]`, in display order. */
+function funds(...entries: [string, number][]): AccountLine[] {
+  return entries.map(([tickerSymbol, dollars]) => ({ tickerSymbol, amountCents: dollars * 100 }));
 }
 
 /**
@@ -72,7 +56,19 @@ const WORKBOOK_CASE: ClientCase = {
       maskedNumber: '4417',
       balanceCents: 1_200_000_00,
       proposalShares: [],
-      sleeves: sleeves([202_000, '9001'], [400_000, '9002'], [598_000, '9003']),
+      // 1,200,000 less 12,000 fee: picked fund by fund.
+      modelId: null,
+      lines: funds(
+        ['SGOV', 114_000],
+        ['BIL', 76_000],
+        ['BND', 200_000],
+        ['SHY', 120_000],
+        ['TIP', 80_000],
+        ['VTI', 299_000],
+        ['VOO', 119_600],
+        ['VXUS', 119_600],
+        ['VNQ', 59_800],
+      ),
     },
     {
       id: '9002',
@@ -81,7 +77,17 @@ const WORKBOOK_CASE: ClientCase = {
       maskedNumber: '8830',
       balanceCents: 1_500_000_00,
       proposalShares: [],
-      sleeves: sleeves([15_000, '9001'], [510_200, '9002'], [974_800, '9003']),
+      // 1,500,000 less 15,000 fee.
+      modelId: null,
+      lines: funds(
+        ['BND', 255_100],
+        ['SHY', 153_060],
+        ['TIP', 102_040],
+        ['VTI', 487_400],
+        ['VOO', 194_960],
+        ['VXUS', 194_960],
+        ['VNQ', 97_480],
+      ),
     },
     {
       id: '9003',
@@ -90,7 +96,9 @@ const WORKBOOK_CASE: ClientCase = {
       maskedNumber: '2291',
       balanceCents: 300_000_00,
       proposalShares: [],
-      sleeves: sleeves([3_000, '9001'], [0, null], [297_000, '9004']),
+      // 300,000 less 3,000 fee, exactly the Roth growth model.
+      modelId: '9004',
+      lines: funds(['VTI', 178_200], ['VXUS', 118_800]),
     },
   ],
   cashOnHandCents: 85_000_00,
@@ -119,7 +127,7 @@ const WORKBOOK_CASE: ClientCase = {
 
 /**
  * An early accumulator, deliberately off target: $15,000 of the Single
- * account is in no bucket, and the Roth's Soon money has no model.
+ * account is still to allocate.
  */
 const ACCUMULATOR_CASE: ClientCase = {
   clientNumber: '2317',
@@ -147,14 +155,17 @@ const ACCUMULATOR_CASE: ClientCase = {
       maskedNumber: '1005',
       balanceCents: 280_000_00,
       proposalShares: [],
-      // Later is picked by hand here, the one manual bucket in the samples.
-      sleeves: sleeves([25_000, '9001'], [0, null], [
-        240_000,
-        [
-          { tickerSymbol: 'VTI', weightBps: 7000 },
-          { tickerSymbol: 'VNQ', weightBps: 3000 },
-        ],
-      ]),
+      // 280,000 less 4,200 fee = 275,800; Balanced 60/40 on 260,800, so
+      // 15,000 is still to allocate.
+      modelId: '9003',
+      lines: funds(
+        ['VTI', 91_280],
+        ['VOO', 26_080],
+        ['VXUS', 39_120],
+        ['BND', 65_200],
+        ['SHY', 26_080],
+        ['TIP', 13_040],
+      ),
     },
     {
       id: '9005',
@@ -163,7 +174,9 @@ const ACCUMULATOR_CASE: ClientCase = {
       maskedNumber: '7742',
       balanceCents: 240_000_00,
       proposalShares: [],
-      sleeves: sleeves([0, null], [60_000, null], [180_000, '9004']),
+      // 240,000 less 3,600 fee, Roth growth.
+      modelId: '9004',
+      lines: funds(['VTI', 141_840], ['VXUS', 94_560]),
     },
   ],
   cashOnHandCents: 40_000_00,

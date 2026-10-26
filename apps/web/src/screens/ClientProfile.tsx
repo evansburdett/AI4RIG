@@ -14,7 +14,7 @@ import {
   TextField,
 } from '../components/Fields.js';
 import { MoneyInput } from '../components/MoneyInput.js';
-import { bucketsByAccount } from '../domain/breakdown.js';
+import { bucketsByAccount, feesByAccount, followModels, modelsById, type FeesByAccount } from '../domain/breakdown.js';
 import { newAccount, newExpense, newGapEntry } from '../domain/factory.js';
 import {
   ACCOUNT_TYPE_LABELS,
@@ -37,6 +37,7 @@ import {
   TAX_BRACKETS,
 } from '../domain/types.js';
 import type {
+  Account,
   AdvisoryFeeTier,
   AllocationTarget,
   ClientCase,
@@ -48,6 +49,7 @@ import type {
   Ticker,
 } from '../domain/types.js';
 import {
+  accountAdvisoryFees,
   computePlanTotals,
   targetAllocation,
   type AccountFee,
@@ -57,11 +59,11 @@ import {
 interface Props {
   clientCase: ClientCase;
   models: readonly ModelPortfolio[];
-  /** For the symbol picker on a manual bucket (US-23). */
+  /** For the funds in each account and the symbols the advisor types. */
   tickers: readonly Ticker[];
-  /** RIG's fee schedule (US-19), for the fee cash in each account's Now. */
+  /** RIG's fee schedule (US-19), for the fee cash held in each account. */
   feeTiers: readonly AdvisoryFeeTier[];
-  /** Turns a manual bucket into a reusable model. */
+  /** Saves an account's funds as a reusable model. */
   onSaveAsModel: (model: ModelPortfolio) => Promise<ModelPortfolio>;
   onAddTicker: (ticker: Ticker) => Promise<Ticker>;
   /** US-28: an AI suggestion for one person's life expectancy. */
@@ -95,22 +97,21 @@ export function ClientProfile({
   const planYears = householdPlanYears(clientCase.people, today);
   // Every account pays the household's tier rate; shown exactly, not averaged.
   const feeRateBps = totals.advisoryFees.find((f) => f.rateBps > 0)?.rateBps;
-  const leftToPlace = useMemo(() => {
-    const placed = (bucket: 'NOW' | 'SOON' | 'LATER') =>
-      clientCase.accounts.reduce(
-        (sum, a) => sum + (a.sleeves.find((s) => s.bucket === bucket)?.amountCents ?? 0),
-        0,
-      );
-    return {
-      NOW: target.nowCents - placed('NOW'),
-      SOON: target.soonCents - placed('SOON'),
-      LATER: target.laterCents - placed('LATER'),
-    };
-  }, [clientCase.accounts, target]);
+  const fees = useMemo(() => feesByAccount(totals.advisoryFees), [totals.advisoryFees]);
   const { nowInputs, soonInputs } = clientCase;
 
   function patch(changes: Partial<ClientCase>) {
     onChange({ ...clientCase, ...changes });
+  }
+
+  /**
+   * Account edits go through here so an account still filled exactly from its
+   * model is refilled when its amount to invest moves, whether from its own
+   * balance or from a fee tier another balance tipped.
+   */
+  function patchAccounts(accounts: readonly Account[]) {
+    const nextFees = feesByAccount(accountAdvisoryFees({ ...clientCase, accounts: [...accounts] }, feeTiers));
+    patch({ accounts: followModels(clientCase, accounts, modelsById(models), fees, nextFees) });
   }
 
   return (
@@ -405,16 +406,18 @@ export function ClientProfile({
           <h3>Place the plan in accounts</h3>
           <button
             type="button"
-            onClick={() => patch({ accounts: [...clientCase.accounts, newAccount()] })}
+            onClick={() => patchAccounts([...clientCase.accounts, newAccount()])}
           >
             Add account
           </button>
         </div>
         <p className="muted">
-          Enter each balance, split it across the buckets, then pick a model or symbols.
+          Enter each balance. A year of its advisory fee is held as cash; pick a model for the
+          rest, then adjust any fund by dollars or weight. Each fund counts toward its ticker&rsquo;s
+          bucket.
         </p>
 
-        <BucketTotals clientCase={clientCase} target={target} />
+        <BucketTotals clientCase={clientCase} tickers={tickers} fees={fees} target={target} />
 
         {clientCase.accounts.length === 0 && (
           <p className="empty">No accounts yet. Add one to start.</p>
@@ -425,15 +428,12 @@ export function ClientProfile({
             key={account.id}
             account={account}
             fee={totals.advisoryFees.find((f) => f.accountId === account.id)}
-            leftToPlace={leftToPlace}
             models={models}
             tickers={tickers}
             onSaveAsModel={onSaveAsModel}
             onAddTicker={onAddTicker}
-            onChange={(next) =>
-              patch({ accounts: clientCase.accounts.map((a) => (a.id === account.id ? next : a)) })
-            }
-            onRemove={() => patch({ accounts: clientCase.accounts.filter((a) => a.id !== account.id) })}
+            onChange={(next) => patchAccounts(clientCase.accounts.map((a) => (a.id === account.id ? next : a)))}
+            onRemove={() => patchAccounts(clientCase.accounts.filter((a) => a.id !== account.id))}
           />
         ))}
 
@@ -461,7 +461,7 @@ export function ClientProfile({
         <AdvisoryFeeTable clientCase={clientCase} fees={totals.advisoryFees} total={totals.advisoryFeeCents} />
       </section>
 
-      <ProposalShares clientCase={clientCase} models={models} tickers={tickers} onChange={onChange} />
+      <ProposalShares clientCase={clientCase} tickers={tickers} onChange={onChange} />
     </div>
   );
 }
@@ -478,20 +478,31 @@ const TAX_BRACKET_LABELS: Record<string, string> = Object.fromEntries(
 );
 
 /**
- * US-22: the plan's totals as the thing to place. For each bucket, what the
- * questionnaire says the client needs, how much of it the accounts already
- * hold, and what is still left to place. The same comparison as the Breakdown
- * screen, kept here so the advisor sees it while splitting the accounts.
+ * US-22: the plan's totals against the accounts. RIG sets targets for the
+ * household, not per account (10/26): what the questionnaire says each bucket
+ * needs, what the accounts' fee cash and funds add up to there, and the
+ * difference, which is what the advisor adjusts toward.
  */
-function BucketTotals({ clientCase, target }: { clientCase: ClientCase; target: AllocationTarget }) {
+function BucketTotals({
+  clientCase,
+  tickers,
+  fees,
+  target,
+}: {
+  clientCase: ClientCase;
+  tickers: readonly Ticker[];
+  fees: FeesByAccount;
+  target: AllocationTarget;
+}) {
   if (clientCase.accounts.length === 0) return null;
-  const rows = bucketsByAccount(clientCase);
+  const rows = bucketsByAccount(clientCase, tickers, fees);
   const sum = (pick: (r: (typeof rows)[number]) => number) => rows.reduce((t, r) => t + pick(r), 0);
   const lines = [
-    { label: 'Now', placed: sum((r) => r.nowCents), target: target.nowCents },
-    { label: 'Soon', placed: sum((r) => r.soonCents), target: target.soonCents },
-    { label: 'Later', placed: sum((r) => r.laterCents), target: target.laterCents },
+    { label: 'Now', actual: sum((r) => r.nowCents), target: target.nowCents },
+    { label: 'Soon', actual: sum((r) => r.soonCents), target: target.soonCents },
+    { label: 'Later', actual: sum((r) => r.laterCents), target: target.laterCents },
   ];
+  const unallocated = sum((r) => r.unallocatedCents);
 
   return (
     <table className="bucket-totals">
@@ -499,37 +510,48 @@ function BucketTotals({ clientCase, target }: { clientCase: ClientCase; target: 
         <tr>
           <th scope="col">Bucket</th>
           <th scope="col" className="amount">
-            Plan needs
+            Target
           </th>
           <th scope="col" className="amount">
-            Placed in accounts
+            In accounts
           </th>
           <th scope="col" className="amount">
-            Left to place
+            Variance
           </th>
         </tr>
       </thead>
       <tbody>
         {lines.map((line) => {
-          const left = line.target - line.placed;
+          const variance = line.actual - line.target;
           return (
             <tr key={line.label}>
               <th scope="row">{line.label}</th>
               <td className="amount">{formatCentsWhole(line.target)}</td>
-              <td className="amount">{formatCentsWhole(line.placed)}</td>
+              <td className="amount">{formatCentsWhole(line.actual)}</td>
               <td className="amount">
-                {left === 0 ? (
-                  <span className="muted">all placed</span>
-                ) : left > 0 ? (
-                  formatCentsWhole(left)
+                {variance === 0 ? (
+                  <span className="muted">on target</span>
                 ) : (
-                  <span className="text-warn">{formatCentsWhole(-left)} over</span>
+                  <span className="text-warn">
+                    {variance > 0 ? '+' : '−'}
+                    {formatCentsWhole(Math.abs(variance))} {variance > 0 ? 'over' : 'under'}
+                  </span>
                 )}
               </td>
             </tr>
           );
         })}
       </tbody>
+      {unallocated !== 0 && (
+        <tfoot>
+          <tr>
+            <th scope="row">{unallocated > 0 ? 'Not in a fund' : 'Funds over the amount to invest'}</th>
+            <td />
+            <td className="amount text-warn">{formatCentsWhole(Math.abs(unallocated))}</td>
+            <td />
+          </tr>
+        </tfoot>
+      )}
     </table>
   );
 }

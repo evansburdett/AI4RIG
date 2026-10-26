@@ -42,7 +42,7 @@ describe('the repo migrations', () => {
     runMigrations(db);
 
     expect(tableNames()).toEqual([
-      'account_sleeves',
+      'account_lines',
       'accounts',
       'advisory_fee_tiers',
       'bucket_definitions',
@@ -55,7 +55,6 @@ describe('the repo migrations', () => {
       'planned_expenses',
       'proposal_positions',
       'schema_migrations',
-      'sleeve_lines',
       'tickers',
     ]);
   });
@@ -148,6 +147,62 @@ describe('the repo migrations', () => {
     expect(db.pragma('foreign_key_check')).toEqual([]);
   });
 
+  it('carry every bucket into dollars per fund when allocating moves to the account (0010)', () => {
+    // A database as it stood before 0010: one account with Now on a model,
+    // Later picked by hand, and Soon on nothing.
+    const through0009 = join(workspace, 'through-0009');
+    mkdirSync(through0009);
+    for (const name of [
+      '0001_original_test.sql',
+      '0002_client_case_schema.sql',
+      '0003_multiple_health_concerns.sql',
+      '0004_manual_sleeve_lines.sql',
+      '0005_gender_life_expectancy.sql',
+      '0006_ticker_prices_and_positions.sql',
+      '0007_life_expectancy_from_estimate.sql',
+      '0008_advisory_fee_tiers.sql',
+      '0009_proposal_shares.sql',
+    ]) {
+      copyFileSync(join(migrationsDir(), name), join(through0009, name));
+    }
+    runMigrations(db, through0009);
+
+    db.exec(`
+      INSERT INTO client_cases (id, client_number, created_at, updated_at) VALUES (1, '1', 'x', 'x');
+      INSERT INTO tickers (symbol, asset_class, default_bucket) VALUES
+        ('CSH', 'CASH', 'NOW'), ('BIL', 'CASH', 'NOW'), ('EQ', 'EQUITY', 'LATER');
+      INSERT INTO model_portfolios (id, name, bucket, updated_at) VALUES (1, 'Cash', 'NOW', 'x');
+      INSERT INTO model_lines (model_id, position, ticker_symbol, weight_bps) VALUES
+        (1, 0, 'CSH', 6000), (1, 1, 'BIL', 4000);
+      INSERT INTO accounts (id, client_case_id, account_type, balance_cents) VALUES (1, 1, 'IRA', 100000);
+      INSERT INTO account_sleeves (account_id, bucket, amount_cents, mode, model_id) VALUES
+        (1, 'NOW', 10001, 'MODEL', 1),
+        (1, 'SOON', 5000, 'MODEL', NULL),
+        (1, 'LATER', 80000, 'MANUAL', NULL);
+      INSERT INTO sleeve_lines (account_id, bucket, position, ticker_symbol, weight_bps) VALUES
+        (1, 'LATER', 0, 'EQ', 7500), (1, 'LATER', 1, 'CSH', 2500);
+    `);
+
+    runMigrations(db);
+
+    // CSH gets 60% of Now plus 25% of Later. Rounding down loses a cent, and
+    // Soon's $50 followed nothing, so both show as left to allocate.
+    expect(
+      db
+        .prepare<[], { ticker_symbol: string; amount_cents: number }>(
+          'SELECT ticker_symbol, amount_cents FROM account_lines WHERE account_id = 1 ORDER BY position',
+        )
+        .all(),
+    ).toEqual([
+      { ticker_symbol: 'BIL', amount_cents: 4000 },
+      { ticker_symbol: 'CSH', amount_cents: 6000 + 20000 },
+      { ticker_symbol: 'EQ', amount_cents: 60000 },
+    ]);
+    expect(tableNames()).not.toContain('account_sleeves');
+    expect(tableNames()).not.toContain('sleeve_lines');
+    expect(db.pragma('foreign_key_check')).toEqual([]);
+  });
+
   it('ship the three bucket definitions as part of the schema', () => {
     runMigrations(db);
 
@@ -159,16 +214,21 @@ describe('the repo migrations', () => {
     expect(buckets).toEqual(['NOW', 'SOON', 'LATER']);
   });
 
-  it('reject money in a bucket that does not exist', () => {
+  it('reject a negative amount in a fund, and the same fund twice in an account', () => {
     runMigrations(db);
     db.exec(`
       INSERT INTO client_cases (id, client_number, created_at, updated_at) VALUES (1, '1', 'x', 'x');
       INSERT INTO accounts (id, client_case_id, account_type) VALUES (1, 1, 'IRA');
+      INSERT INTO tickers (symbol, asset_class, default_bucket) VALUES ('EQ', 'EQUITY', 'LATER');
     `);
 
     expect(() =>
-      db.exec("INSERT INTO account_sleeves (account_id, bucket, amount_cents) VALUES (1, 'SOMEDAY', 100)"),
+      db.exec("INSERT INTO account_lines (account_id, ticker_symbol, amount_cents) VALUES (1, 'EQ', -1)"),
     ).toThrow(/CHECK constraint/);
+    db.exec("INSERT INTO account_lines (account_id, ticker_symbol, amount_cents) VALUES (1, 'EQ', 100)");
+    expect(() =>
+      db.exec("INSERT INTO account_lines (account_id, ticker_symbol, amount_cents) VALUES (1, 'EQ', 100)"),
+    ).toThrow(/UNIQUE constraint/);
   });
 
   it('refuse to delete a ticker that a model uses', () => {
@@ -179,18 +239,17 @@ describe('the repo migrations', () => {
     expect(() => db.exec("DELETE FROM tickers WHERE symbol = 'GLD'")).not.toThrow();
   });
 
-  it('leave the money in place, with no model, when a model is deleted', () => {
+  it('leave the funds in place, with no model, when a model is deleted', () => {
     runMigrations(db);
     runSeeds(db);
 
-    db.exec('DELETE FROM model_portfolios WHERE id = 9001');
+    db.exec('DELETE FROM model_portfolios WHERE id = 9004');
 
-    const nowSleeve = db
-      .prepare<[], { amount_cents: number; model_id: number | null }>(
-        "SELECT amount_cents, model_id FROM account_sleeves WHERE account_id = 9001 AND bucket = 'NOW'",
-      )
-      .get();
-    expect(nowSleeve).toEqual({ amount_cents: 20_200_000, model_id: null });
+    expect(db.prepare<[], { model_id: number | null }>('SELECT model_id FROM accounts WHERE id = 9003').get()).toEqual({
+      model_id: null,
+    });
+    const funds = db.prepare<[], { n: number }>('SELECT COUNT(*) AS n FROM account_lines WHERE account_id = 9003').get();
+    expect(funds?.n).toBe(2);
   });
 
   it('delete a case together with everything under it', () => {
@@ -201,7 +260,7 @@ describe('the repo migrations', () => {
 
     const orphans = db
       .prepare<[], { count: number }>(
-        'SELECT COUNT(*) AS count FROM account_sleeves s JOIN accounts a ON a.id = s.account_id WHERE a.client_case_id = 9001',
+        'SELECT COUNT(*) AS count FROM account_lines l JOIN accounts a ON a.id = l.account_id WHERE a.client_case_id = 9001',
       )
       .get();
     expect(orphans?.count).toBe(0);
@@ -218,25 +277,28 @@ describe('the repo seed data', () => {
     const count = (table: string) =>
       db.prepare<[], { count: number }>(`SELECT COUNT(*) AS count FROM ${table}`).get()?.count;
     expect(count('client_cases')).toBe(2);
-    expect(count('account_sleeves')).toBe(15);
+    expect(count('account_lines')).toBe(26);
     expect(count('model_portfolios')).toBe(4);
   });
 
-  it('puts case 1042 exactly on the plan: workbook totals plus fee cash in Now', () => {
+  it('puts case 1042 exactly on the plan once each account holds its fee as cash', () => {
     runMigrations(db);
     runSeeds(db);
 
     const totals = db
       .prepare<[], { bucket: string; total: number }>(
-        `SELECT s.bucket, SUM(s.amount_cents) AS total
-         FROM account_sleeves s JOIN accounts a ON a.id = s.account_id
-         WHERE a.client_case_id = 9001 GROUP BY s.bucket ORDER BY s.bucket`,
+        `SELECT t.default_bucket AS bucket, SUM(l.amount_cents) AS total
+         FROM account_lines l
+         JOIN accounts a ON a.id = l.account_id
+         JOIN tickers t ON t.symbol = l.ticker_symbol
+         WHERE a.client_case_id = 9001 GROUP BY t.default_bucket ORDER BY t.default_bucket`,
       )
       .all();
     expect(totals).toEqual([
-      // $1,869,800 Later; $190,000 Now plus $30,000 fee cash; $910,200 Soon.
+      // $1,869,800 Later; $190,000 Now, to which the $30,000 of fee cash
+      // (1.00% of $3,000,000) is added; $910,200 Soon.
       { bucket: 'LATER', total: 186_980_000 },
-      { bucket: 'NOW', total: 22_000_000 },
+      { bucket: 'NOW', total: 19_000_000 },
       { bucket: 'SOON', total: 91_020_000 },
     ]);
   });

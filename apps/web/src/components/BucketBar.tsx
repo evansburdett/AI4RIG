@@ -10,16 +10,20 @@ export interface BucketSegment {
 interface Props {
   segments: readonly BucketSegment[];
   totalCents: Cents;
+  /** Money in no bucket yet, such as an account's cash not put in a fund. Drawn as a grey gap. */
+  unallocatedCents?: Cents;
 }
 
 /** A negative segment is labelled rather than drawn, so it cannot look like zero. */
-export function BucketBar({ segments, totalCents }: Props) {
+export function BucketBar({ segments, totalCents, unallocatedCents = 0 }: Props) {
   const drawable = segments.filter((s) => s.valueCents > 0);
-  const drawableTotal = drawable.reduce((sum, s) => sum + s.valueCents, 0);
+  const gap = Math.max(unallocatedCents, 0);
+  const drawableTotal = drawable.reduce((sum, s) => sum + s.valueCents, 0) + gap;
 
-  const description = segments
-    .map((s) => `${BUCKET_LABELS[s.bucket]} ${formatCentsWhole(s.valueCents)}`)
-    .join('. ');
+  const description = [
+    ...segments.map((s) => `${BUCKET_LABELS[s.bucket]} ${formatCentsWhole(s.valueCents)}`),
+    ...(gap > 0 ? [`Not in a fund ${formatCentsWhole(gap)}`] : []),
+  ].join('. ');
 
   return (
     <div>
@@ -31,6 +35,12 @@ export function BucketBar({ segments, totalCents }: Props) {
             style={{ flexGrow: segment.valueCents / Math.max(drawableTotal, 1) }}
           />
         ))}
+        {gap > 0 && (
+          <div
+            className="bucket-bar-segment bucket-unallocated"
+            style={{ flexGrow: gap / Math.max(drawableTotal, 1) }}
+          />
+        )}
       </div>
 
       <ul className="bucket-legend">
@@ -46,6 +56,14 @@ export function BucketBar({ segments, totalCents }: Props) {
             </span>
           </li>
         ))}
+        {gap > 0 && (
+          <li>
+            <span className="swatch bucket-unallocated" aria-hidden="true" />
+            <span>Not in a fund</span>
+            <span className="bucket-legend-value">{formatCentsWhole(gap)}</span>
+            <span className="muted">{formatPercent(percentOf(gap, totalCents))}</span>
+          </li>
+        )}
       </ul>
     </div>
   );

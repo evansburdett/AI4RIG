@@ -17,7 +17,6 @@ import {
   LIFE_STAGES,
   LIFE_STAGES_BY_PHASE,
   MONEY_CYCLE_PHASES,
-  SLEEVE_MODES,
   TAX_BRACKETS,
   TAX_FUNNELS,
 } from '@ai4rig/shared';
@@ -63,39 +62,17 @@ const taxFunnel = z.enum(TAX_FUNNELS);
 /** Database ids travel as strings of digits. */
 const rowId = z.string().regex(/^\d+$/, 'Must be the id of an existing row');
 
-/** A ticker and a weight, in a model or in a manual bucket. */
+/** A ticker and a weight, in a model. */
 const weightedLine = z.object({
   tickerSymbol: z.string().trim().toUpperCase().min(1).max(10),
   weightBps: z.int().min(1, 'Each weight must be above 0%').max(10_000),
 });
 
-const sleeve = z
-  .object({
-    bucket,
-    amountCents: cents.min(0, 'A bucket amount cannot be negative'),
-    mode: z.enum(SLEEVE_MODES),
-    modelId: rowId.nullable(),
-    lines: z
-      .array(weightedLine)
-      .refine(
-        (lines) => new Set(lines.map((l) => l.tickerSymbol)).size === lines.length,
-        'A ticker can appear in a bucket only once',
-      )
-      // Deliberately not "exactly 100%": a half-finished bucket has to be
-      // savable. Over 100% is a mistake rather than unfinished work.
-      .refine(
-        (lines) => lines.reduce((sum, l) => sum + l.weightBps, 0) <= 10_000,
-        'Weights in a bucket cannot add up to more than 100%',
-      ),
-  })
-  .refine((s) => s.mode === 'MODEL' || s.modelId === null, {
-    error: 'A manual bucket does not follow a model',
-    path: ['modelId'],
-  })
-  .refine((s) => s.mode === 'MANUAL' || s.lines.length === 0, {
-    error: 'A bucket following a model has no lines of its own',
-    path: ['lines'],
-  });
+/** The money in one fund in an account. */
+const accountLine = z.object({
+  tickerSymbol: z.string().trim().toUpperCase().min(1).max(10),
+  amountCents: cents.min(0, 'An amount in a fund cannot be negative'),
+});
 
 const account = z.object({
   id: z.string(),
@@ -117,12 +94,14 @@ const account = z.object({
       (shares) => new Set(shares.map((s) => `${s.bucket}:${s.tickerSymbol}`)).size === shares.length,
       'A ticker can be locked in once per bucket of an account',
     ),
-  sleeves: z
-    .array(sleeve)
-    .length(3)
+  modelId: rowId.nullable(),
+  // Deliberately not checked against the balance: a half-finished account
+  // has to be savable, and the screen shows what is left to allocate.
+  lines: z
+    .array(accountLine)
     .refine(
-      (sleeves) => sleeves.map((s) => s.bucket).join() === BUCKETS.join(),
-      'Sleeves must be exactly Now, Soon, Later, in that order',
+      (lines) => new Set(lines.map((l) => l.tickerSymbol)).size === lines.length,
+      'A fund can appear in an account only once',
     ),
 });
 
@@ -226,7 +205,6 @@ export const modelPortfolioSchema = z.object({
   // Ignored on create; checked against the URL on update.
   id: z.string().optional(),
   name: z.string().trim().min(1, 'A model needs a name').max(80),
-  bucket,
   taxFunnel: taxFunnel.nullable(),
   lines: z
     .array(weightedLine)

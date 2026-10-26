@@ -59,8 +59,7 @@ export const DEFAULT_BUCKET_DEFINITIONS: readonly BucketDefinition[] = [
 export const PLACEHOLDER_MODELS: readonly ModelPortfolio[] = [
   {
     id: '9001',
-    name: 'Placeholder Now: Cash',
-    bucket: 'NOW',
+    name: 'Placeholder Cash reserve',
     taxFunnel: null,
     lines: [
       { tickerSymbol: 'SGOV', weightBps: 6000 },
@@ -69,31 +68,32 @@ export const PLACEHOLDER_MODELS: readonly ModelPortfolio[] = [
   },
   {
     id: '9002',
-    name: 'Placeholder Soon: Core bonds',
-    bucket: 'SOON',
+    name: 'Placeholder Income 30/70',
     taxFunnel: null,
     lines: [
-      { tickerSymbol: 'BND', weightBps: 5000 },
-      { tickerSymbol: 'SHY', weightBps: 3000 },
-      { tickerSymbol: 'TIP', weightBps: 2000 },
+      { tickerSymbol: 'VTI', weightBps: 2000 },
+      { tickerSymbol: 'VXUS', weightBps: 1000 },
+      { tickerSymbol: 'BND', weightBps: 4000 },
+      { tickerSymbol: 'SHY', weightBps: 2000 },
+      { tickerSymbol: 'TIP', weightBps: 1000 },
     ],
   },
   {
     id: '9003',
-    name: 'Placeholder Later: Broad equity',
-    bucket: 'LATER',
+    name: 'Placeholder Balanced 60/40',
     taxFunnel: null,
     lines: [
-      { tickerSymbol: 'VTI', weightBps: 5000 },
-      { tickerSymbol: 'VOO', weightBps: 2000 },
-      { tickerSymbol: 'VXUS', weightBps: 2000 },
-      { tickerSymbol: 'VNQ', weightBps: 1000 },
+      { tickerSymbol: 'VTI', weightBps: 3500 },
+      { tickerSymbol: 'VOO', weightBps: 1000 },
+      { tickerSymbol: 'VXUS', weightBps: 1500 },
+      { tickerSymbol: 'BND', weightBps: 2500 },
+      { tickerSymbol: 'SHY', weightBps: 1000 },
+      { tickerSymbol: 'TIP', weightBps: 500 },
     ],
   },
   {
     id: '9004',
-    name: 'Placeholder Later: Roth growth',
-    bucket: 'LATER',
+    name: 'Placeholder Roth growth',
     taxFunnel: 'TAX_FREE',
     lines: [
       { tickerSymbol: 'VTI', weightBps: 6000 },

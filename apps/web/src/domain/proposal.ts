@@ -1,8 +1,6 @@
 /**
- * US-21: the proposal in shares. A bucket's dollars are split across its
- * model's (or the advisor's own) weights, exactly as on the Breakdown screen;
- * each dollar amount becomes whole shares at the ticker's price, with what is
- * left over held as cash.
+ * US-21: the proposal in shares. Each fund's dollars in an account become
+ * whole shares at the ticker's price, with what is left over held as cash.
  *
  * Share counts are worked out live from the plan, but kept only when the
  * advisor locks the proposal in (decision: "lock in proposal", not
@@ -13,14 +11,13 @@
 
 import { addCents, sharesValueCents, wholeShares, type Cents } from '@ai4rig/engine';
 
-import { modelsById, sleeveHoldings } from './breakdown.js';
-import { BUCKETS } from './types.js';
-import type { BucketType, ClientCase, ModelPortfolio, ProposalShare, Ticker } from './types.js';
+import { bucketOf, tickersBySymbol } from './breakdown.js';
+import type { BucketType, ClientCase, ProposalShare, Ticker } from './types.js';
 
 export interface ProposedPosition {
   readonly bucket: BucketType;
   readonly tickerSymbol: string;
-  /** The holding's share of the bucket's dollars. */
+  /** The money in the fund. */
   readonly amountCents: Cents;
   /** Null when the ticker has no price yet. */
   readonly priceCents: Cents | null;
@@ -30,51 +27,49 @@ export interface ProposedPosition {
   readonly cashCents: Cents | null;
 }
 
-/** The positions one account's plan works out to right now, in shares where there is a price. */
+/** The funds one account holds right now, in shares where there is a price. Empty funds are left out. */
 export function proposedPositions(
   account: ClientCase['accounts'][number],
-  models: readonly ModelPortfolio[],
-  tickers: readonly Ticker[],
+  tickerList: readonly Ticker[],
 ): ProposedPosition[] {
-  const byId = modelsById(models);
-  const prices = new Map(tickers.map((t) => [t.symbol, t.priceCents]));
+  const tickers = tickersBySymbol(tickerList);
 
-  return BUCKETS.flatMap((bucket) =>
-    sleeveHoldings(account, bucket, byId).map((holding): ProposedPosition => {
-      const priceCents = prices.get(holding.tickerSymbol) ?? null;
+  return account.lines
+    .filter((line) => line.amountCents > 0)
+    .map((line): ProposedPosition => {
+      const bucket = bucketOf(line.tickerSymbol, tickers);
+      const priceCents = tickers.get(line.tickerSymbol)?.priceCents ?? null;
       if (priceCents === null) {
         return {
           bucket,
-          tickerSymbol: holding.tickerSymbol,
-          amountCents: holding.marketValueCents,
+          tickerSymbol: line.tickerSymbol,
+          amountCents: line.amountCents,
           priceCents: null,
           shares: null,
           costCents: null,
           cashCents: null,
         };
       }
-      const bought = wholeShares(holding.marketValueCents, priceCents);
+      const bought = wholeShares(line.amountCents, priceCents);
       return {
         bucket,
-        tickerSymbol: holding.tickerSymbol,
-        amountCents: holding.marketValueCents,
+        tickerSymbol: line.tickerSymbol,
+        amountCents: line.amountCents,
         priceCents,
         shares: bought.shares,
         costCents: bought.costCents,
         cashCents: bought.cashCents,
       };
-    }),
-  );
+    });
 }
 
 /** Tickers in the plan with no price yet. Locking waits for these. */
 export function missingPrices(
   clientCase: ClientCase,
-  models: readonly ModelPortfolio[],
   tickers: readonly Ticker[],
 ): string[] {
   const symbols = clientCase.accounts.flatMap((account) =>
-    proposedPositions(account, models, tickers)
+    proposedPositions(account, tickers)
       .filter((p) => p.priceCents === null)
       .map((p) => p.tickerSymbol),
   );
@@ -88,11 +83,10 @@ export function missingPrices(
  */
 export function lockProposal(
   clientCase: ClientCase,
-  models: readonly ModelPortfolio[],
   tickers: readonly Ticker[],
   now: Date,
 ): ClientCase {
-  const missing = missingPrices(clientCase, models, tickers);
+  const missing = missingPrices(clientCase, tickers);
   if (missing.length > 0) {
     throw new Error(`Enter a price for ${missing.join(', ')} on the Tickers screen first.`);
   }
@@ -102,7 +96,7 @@ export function lockProposal(
     proposalLockedAt: now.toISOString(),
     accounts: clientCase.accounts.map((account) => ({
       ...account,
-      proposalShares: proposedPositions(account, models, tickers)
+      proposalShares: proposedPositions(account, tickers)
         .filter((p) => p.shares !== null && p.shares > 0 && p.priceCents !== null)
         .map(
           (p): ProposalShare => ({
@@ -170,13 +164,12 @@ export function totalOf(values: readonly (Cents | null)[]): Cents {
  */
 export function lockedMatchesPlan(
   clientCase: ClientCase,
-  models: readonly ModelPortfolio[],
   tickers: readonly Ticker[],
 ): boolean {
   if (clientCase.proposalLockedAt === null) return false;
   return clientCase.accounts.every((account) => {
     const locked = account.proposalShares.map((s) => `${s.bucket}:${s.tickerSymbol}:${s.shares}`);
-    const live = proposedPositions(account, models, tickers.map((t) => {
+    const live = proposedPositions(account, tickers.map((t) => {
       // Compare at the prices that were locked, so a price change alone does
       // not read as the plan changing.
       const lockedPrice = account.proposalShares.find((s) => s.tickerSymbol === t.symbol)?.priceCents;

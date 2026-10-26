@@ -1,5 +1,6 @@
 /**
- * Model portfolios (US-14): named sets of tickers and weights for one bucket.
+ * Model portfolios (US-14): named sets of tickers and weights for a whole
+ * account. Each ticker's default bucket decides where its money counts.
  * RIG's vendor models change quarterly, so an administrator maintains them
  * here; a custom model is just another one.
  */
@@ -13,7 +14,6 @@ import type { ModelPortfolioInput } from '../validation.js';
 interface ModelRow {
   id: number;
   name: string;
-  bucket: ModelPortfolio['bucket'];
   tax_funnel: ModelPortfolio['taxFunnel'];
 }
 
@@ -30,14 +30,12 @@ export function listModels(db: Db): ModelPortfolio[] {
 
   return db
     .prepare<[], ModelRow>(
-      `SELECT id, name, bucket, tax_funnel FROM model_portfolios
-       ORDER BY CASE bucket WHEN 'NOW' THEN 0 WHEN 'SOON' THEN 1 ELSE 2 END, name`,
+      'SELECT id, name, tax_funnel FROM model_portfolios ORDER BY name COLLATE NOCASE',
     )
     .all()
     .map((row) => ({
       id: String(row.id),
       name: row.name,
-      bucket: row.bucket,
       taxFunnel: row.tax_funnel,
       lines: lines
         .filter((line) => line.model_id === row.id)
@@ -66,20 +64,6 @@ function checkModel(db: Db, input: ModelPortfolioInput, id: number | null): void
       `Not in the ticker universe: ${unknown.join(', ')}. Add ${unknown.length === 1 ? 'it' : 'them'} on the Tickers screen first.`,
     );
   }
-
-  if (id !== null) {
-    const inUse = db
-      .prepare<[number, string], { count: number }>(
-        'SELECT COUNT(*) AS count FROM account_sleeves WHERE model_id = ? AND bucket <> ?',
-      )
-      .get(id, input.bucket);
-    if ((inUse?.count ?? 0) > 0) {
-      throw new HttpError(
-        409,
-        `This model is in use for a different bucket on ${inUse?.count} account(s), so its bucket cannot change. Make a new model instead.`,
-      );
-    }
-  }
 }
 
 function writeLines(db: Db, modelId: number, input: ModelPortfolioInput): void {
@@ -94,8 +78,8 @@ export function createModel(db: Db, input: ModelPortfolioInput, now: Date = new 
   const id = db.transaction((): number => {
     checkModel(db, input, null);
     const { lastInsertRowid } = db
-      .prepare('INSERT INTO model_portfolios (name, bucket, tax_funnel, updated_at) VALUES (?, ?, ?, ?)')
-      .run(input.name, input.bucket, input.taxFunnel, now.toISOString());
+      .prepare('INSERT INTO model_portfolios (name, tax_funnel, updated_at) VALUES (?, ?, ?)')
+      .run(input.name, input.taxFunnel, now.toISOString());
     writeLines(db, Number(lastInsertRowid), input);
     return Number(lastInsertRowid);
   })();
@@ -119,9 +103,8 @@ export function updateModel(
     if (changes === 0) return false;
 
     checkModel(db, input, id);
-    db.prepare('UPDATE model_portfolios SET name = ?, bucket = ?, tax_funnel = ?, updated_at = ? WHERE id = ?').run(
+    db.prepare('UPDATE model_portfolios SET name = ?, tax_funnel = ?, updated_at = ? WHERE id = ?').run(
       input.name,
-      input.bucket,
       input.taxFunnel,
       now.toISOString(),
       id,
@@ -133,7 +116,7 @@ export function updateModel(
   return found ? getModel(db, id) : null;
 }
 
-/** Accounts that followed this model keep their money in the bucket, with no model chosen. */
+/** Accounts filled from this model keep their funds and money, with no model named. */
 export function deleteModel(db: Db, id: number): boolean {
   return db.prepare('DELETE FROM model_portfolios WHERE id = ?').run(id).changes > 0;
 }

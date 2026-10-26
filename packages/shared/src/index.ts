@@ -139,38 +139,23 @@ export interface LifeExpectancyEstimate {
 }
 
 /**
- * How a bucket's money is invested (US-23). Blake, Sept 23: "a dropdown where
- * you basically either click model or manual."
+ * The money in one fund in one account. Dollars (cents), not a weight: the
+ * advisor can type either the dollars or the percent, and a typed dollar
+ * amount has to stay exact. The percent is worked out from the account's
+ * amount to invest.
  */
-export const SLEEVE_MODES = ['MODEL', 'MANUAL'] as const;
-export type SleeveMode = (typeof SLEEVE_MODES)[number];
-
-/** One ticker in a manual bucket. Basis points, the same unit a model uses. */
-export interface SleeveLine {
+export interface AccountLine {
   readonly tickerSymbol: string;
-  readonly weightBps: number;
+  readonly amountCents: Cents;
 }
 
 /**
- * The part of one account's balance that sits in one bucket, and what that
- * money follows. The advisor types the amount (RIG: "for now, it is entered
- * manually for each account") and then either picks a model or lists symbols.
+ * One account (RIG, 10/26: they allocate by account, not by bucket). Its
+ * advisory fee is held as cash and counts toward Now; the app works that out
+ * from the balance and RIG's tiers, so it is not stored here. The rest of the
+ * balance is invested in `lines`, usually filled from one model and then
+ * adjusted or added to. Each fund counts toward its ticker's default bucket.
  */
-export interface BucketSleeve {
-  readonly bucket: BucketType;
-  readonly amountCents: Cents;
-  /** MODEL follows `modelId`. MANUAL follows `lines`. */
-  readonly mode: SleeveMode;
-  /** A ModelPortfolio id, or null when none is chosen. Always null under MANUAL. */
-  readonly modelId: string | null;
-  /**
-   * The advisor's own symbols and weights. Used under MANUAL, empty under
-   * MODEL. Unlike a model these need not add up to 100%, so a half-finished
-   * case can still be saved; positions appear once they do add up.
-   */
-  readonly lines: readonly SleeveLine[];
-}
-
 export interface Account {
   readonly id: string;
   readonly accountType: AccountType;
@@ -179,12 +164,14 @@ export interface Account {
   readonly maskedNumber: string;
   /** Typed by the advisor, as on RIG's profile sheet. */
   readonly balanceCents: Cents;
+  /** The model the funds were filled from, or null when they were picked by hand. */
+  readonly modelId: string | null;
   /**
-   * Exactly three, Now then Soon then Later. Their amounts should add up to the
-   * balance; anything left over shows as unallocated. Not enforced, so a
-   * half-finished case can still be saved.
+   * The funds and the money in each. Need not add up to the amount to invest,
+   * so a half-finished case can still be saved; the difference shows as left
+   * to allocate (or over).
    */
-  readonly sleeves: readonly BucketSleeve[];
+  readonly lines: readonly AccountLine[];
   /**
    * Whole share counts locked in for this account's proposal (US-21). Empty
    * until the advisor locks the proposal in; not recalculated on save.
@@ -211,29 +198,30 @@ export interface ModelLine {
 }
 
 /**
- * A model portfolio: which tickers, in what proportions, for money in one
- * bucket. RIG's vendor models change quarterly, so these are data an
- * administrator edits. A "custom model" is just another one of these.
+ * A model portfolio: which tickers, in what proportions, for a whole account
+ * (a 60/40 model puts its bonds in Soon and its stocks in Later through each
+ * ticker's default bucket). RIG builds these in YCharts and they change
+ * quarterly, so these are data an administrator edits. A "custom model" is
+ * just another one of these.
  */
 export interface ModelPortfolio {
   readonly id: string;
   readonly name: string;
-  readonly bucket: BucketType;
   /** The funnel this model is meant for, or null for any. Only used to sort the dropdown. */
   readonly taxFunnel: TaxFunnel | null;
   readonly lines: readonly ModelLine[];
 }
 
 /**
- * One position the app works out from a sleeve's amount and its model. Derived
- * every time, never stored or sent to the API (decision D2).
+ * One position in one account, and the bucket it counts toward. Worked out
+ * from the account's funds and the advisory fee cash every time, never stored
+ * or sent to the API.
  */
 export interface Holding {
   readonly accountId: string;
   readonly bucket: BucketType;
-  /** The model the position came from, or null when the bucket is manual. */
-  readonly modelId: string | null;
-  readonly tickerSymbol: string;
+  /** A fund's ticker, or null for the account's advisory fee cash. */
+  readonly tickerSymbol: string | null;
   readonly marketValueCents: Cents;
 }
 

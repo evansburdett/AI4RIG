@@ -1,8 +1,7 @@
 /**
- * The ticker-and-percentage table, shared by the model editor (US-14) and a
- * manual bucket on the account card (US-23). Both are the same job -- choose
- * symbols, give each a weight -- so they are the same component, and a change
- * to one is a change to both.
+ * The ticker-and-percentage table of the model editor (US-14). Each ticker
+ * shows the bucket it counts toward, so a model's Now / Soon / Later mix is
+ * visible while it is built.
  *
  * Weights are kept as typed text while editing and only parsed to basis points
  * on the way out, so a half-typed "12." does not blank the field.
@@ -15,7 +14,7 @@
 
 import { Fragment, useId, useState } from 'react';
 
-import type { BucketType, SleeveLine, Ticker } from '../domain/types.js';
+import type { ModelLine, Ticker } from '../domain/types.js';
 import { BUCKET_LABELS } from '../domain/lifeStage.js';
 import { WHOLE_BPS, bpsToPercentInput, formatBps, parsePercentToBps } from '../domain/percent.js';
 import { isValidSymbol, normalizeSymbol } from '../domain/tickers.js';
@@ -34,7 +33,7 @@ export function newDraftLine(): DraftLine {
   return { key: ++lineKey, tickerSymbol: '', percentText: '' };
 }
 
-export function toDraftLines(lines: readonly SleeveLine[]): DraftLine[] {
+export function toDraftLines(lines: readonly ModelLine[]): DraftLine[] {
   return lines.map((line) => ({
     key: ++lineKey,
     tickerSymbol: line.tickerSymbol,
@@ -51,7 +50,7 @@ export function draftTotalBps(lines: readonly DraftLine[]): number {
 }
 
 /** Only the lines that are complete and readable. */
-export function toSleeveLines(lines: readonly DraftLine[]): SleeveLine[] {
+export function toModelLines(lines: readonly DraftLine[]): ModelLine[] {
   return lines.flatMap((l) => {
     const weightBps = parsePercentToBps(l.percentText);
     return l.tickerSymbol === '' || weightBps === null || weightBps === 0
@@ -60,15 +59,8 @@ export function toSleeveLines(lines: readonly DraftLine[]): SleeveLine[] {
   });
 }
 
-/**
- * What is wrong with these lines, or null. `requireFull` is the difference
- * between the two callers: a reusable model has to add up to exactly 100%,
- * while a manual bucket may be half finished and still save.
- */
-export function draftProblem(
-  lines: readonly DraftLine[],
-  { requireFull }: { requireFull: boolean },
-): string | null {
+/** What is wrong with these lines, or null. A model adds up to exactly 100%. */
+export function draftProblem(lines: readonly DraftLine[]): string | null {
   if (lines.some((l) => l.tickerSymbol === '')) return 'Enter a ticker on every line, adding any new ones.';
   if (new Set(lines.map((l) => l.tickerSymbol)).size !== lines.length) {
     return 'Each ticker can appear once.';
@@ -78,31 +70,19 @@ export function draftProblem(
   }
 
   const total = draftTotalBps(lines);
-  if (total > WHOLE_BPS) return `Weights add up to ${formatBps(total)}, which is over 100%.`;
-  if (requireFull && total !== WHOLE_BPS) return `Weights add up to ${formatBps(total)}, not 100%.`;
+  if (total !== WHOLE_BPS) return `Weights add up to ${formatBps(total)}, not 100%.`;
   return null;
 }
 
 interface Props {
   lines: readonly DraftLine[];
   tickers: readonly Ticker[];
-  /** Which bucket this money sits in, to flag a symbol RIG usually puts elsewhere. */
-  bucket: BucketType;
   onChange: (lines: DraftLine[]) => void;
   /** Adds a symbol to the universe. Rejects with the reason when it cannot. */
   onAddTicker: (ticker: Ticker) => Promise<Ticker>;
-  /** Label on the add button, which differs between a model and a bucket. */
-  addLabel?: string;
 }
 
-export function WeightedLines({
-  lines,
-  tickers,
-  bucket,
-  onChange,
-  onAddTicker,
-  addLabel = 'Add ticker',
-}: Props) {
+export function WeightedLines({ lines, tickers, onChange, onAddTicker }: Props) {
   const tickerBySymbol = new Map(tickers.map((t) => [t.symbol, t]));
   const totalBps = draftTotalBps(lines);
   const listId = useId();
@@ -120,9 +100,7 @@ export function WeightedLines({
           <tr>
             <th scope="col">Ticker</th>
             <th scope="col">Weight</th>
-            <th scope="col">
-              <span className="visually-hidden">Notes</span>
-            </th>
+            <th scope="col">Bucket</th>
             <th scope="col" className="row-actions">
               <span className="visually-hidden">Actions</span>
             </th>
@@ -174,12 +152,13 @@ export function WeightedLines({
                     </span>
                   </td>
                   <td>
-                    {ticker !== undefined && ticker.defaultBucket !== bucket && (
-                      <span
-                        className="tag"
-                        title="RIG's ticker mapping puts this symbol in another bucket"
-                      >
-                        usually {BUCKET_LABELS[ticker.defaultBucket]}
+                    {ticker !== undefined && (
+                      <span className="bucket-tag">
+                        <span
+                          className={`swatch bucket-${ticker.defaultBucket.toLowerCase()}`}
+                          aria-hidden="true"
+                        />{' '}
+                        {BUCKET_LABELS[ticker.defaultBucket]}
                       </span>
                     )}
                   </td>
@@ -201,7 +180,7 @@ export function WeightedLines({
                         <NewTickerFields
                           key={symbol}
                           symbol={symbol}
-                          suggestedBucket={bucket}
+                          suggestedBucket="LATER"
                           onAdd={onAddTicker}
                           onAdded={(added) => {
                             setTyped((current) => ({ ...current, [line.key]: added.symbol }));
@@ -237,7 +216,7 @@ export function WeightedLines({
 
       <div className="button-row">
         <button type="button" onClick={() => onChange([...lines, newDraftLine()])}>
-          {addLabel}
+          Add ticker
         </button>
       </div>
     </>
