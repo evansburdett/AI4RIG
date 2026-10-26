@@ -5,7 +5,7 @@
  *
  * Starts the packaged app that `desktop:dist` just built (release/), against
  * a throwaway data folder, and checks that it really works: the API answers,
- * the front end is served, migrations ran, the placeholder tickers loaded,
+ * the front end is served, migrations ran, the tickers loaded,
  * and a case can be created. Then it quits the app and checks that the
  * database closed cleanly. CI runs this on Windows and macOS after every
  * build; run it locally before handing an installer to anyone.
@@ -74,7 +74,7 @@ try {
   check(page.includes('<title>AI4RIG</title>'), 'the front end is served');
 
   const tickers = await (await fetch(`${url}/api/tickers`)).json();
-  check(Array.isArray(tickers) && tickers.length > 0, `${tickers.length} placeholder tickers loaded`);
+  check(Array.isArray(tickers) && tickers.length > 0, `${tickers.length} tickers loaded`);
 
   const created = await (await fetch(`${url}/api/clients`, { method: 'POST' })).json();
   check(typeof created.clientNumber === 'string', `a case can be created (${created.clientNumber})`);

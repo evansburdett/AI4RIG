@@ -6,8 +6,10 @@
  *
  * Each install has its own database in the user's app-data folder. On every
  * start the migrations run, so installing a newer version upgrades the data
- * in place. On the very first start, the placeholder tickers and models are
- * loaded so the screens are not empty; sample client cases never are.
+ * in place. RIG's own models and their tickers arrive with the migrations
+ * (0012). The placeholder tickers and models are only loaded into a database
+ * that is still empty after that, which is none since 0012; sample client
+ * cases never are.
  */
 
 import { mkdirSync } from 'node:fs';
@@ -51,7 +53,9 @@ export function databasePathIn(dataDir: string): string {
 }
 
 /**
- * Load the placeholder tickers and models into a brand-new database only.
+ * Load the placeholder tickers and models into a database with none at all.
+ * Since migration 0012 ships RIG's own, a new install already has some and
+ * skips these; the check stays so nothing ever overwrites the advisor's.
  * Their seed replaces its own rows, so running it again would undo any edits
  * the advisor has made to those models.
  */

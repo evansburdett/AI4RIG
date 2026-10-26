@@ -82,7 +82,7 @@ describe('startServer', () => {
     socket.destroy();
   });
 
-  it('starts a new install with placeholder tickers and models, and no client cases', async () => {
+  it('starts a new install with tickers and models (RIG\'s, from the migrations), and no client cases', async () => {
     server = await startServer(folders());
     const tickers = (await (await fetch(`${server.url}/api/tickers`)).json()) as unknown[];
     const models = (await (await fetch(`${server.url}/api/models`)).json()) as unknown[];
