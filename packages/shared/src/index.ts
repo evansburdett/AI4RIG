@@ -262,6 +262,14 @@ export interface AdvisoryFeeTier {
   readonly rateBps: number;
 }
 
+/** What the Settings screen shows. The OpenAI key itself is never sent back. */
+export interface AppSettings {
+  readonly openAiKeyConfigured: boolean;
+  /** False in development, where the key comes from .env. */
+  readonly openAiKeyEditable: boolean;
+  readonly openAiModel: string;
+}
+
 export interface BucketDefinition {
   readonly bucket: BucketType;
   readonly label: string;

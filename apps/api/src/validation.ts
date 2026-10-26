@@ -265,6 +265,20 @@ export const advisoryFeeTiersSchema = z
     'Tiers have to be listed lowest balance first, with no two starting at the same balance',
   );
 
+/**
+ * Saving or removing the OpenAI key. Keys are long single tokens; anything
+ * with spaces in it is a paste that went wrong.
+ */
+export const openAiKeySchema = z.object({
+  apiKey: z
+    .string()
+    .trim()
+    .min(20, 'That is too short to be an OpenAI API key')
+    .max(400)
+    .regex(/^\S+$/, 'An API key has no spaces in it')
+    .nullable(),
+});
+
 export const bucketParam = bucket;
 
 /**

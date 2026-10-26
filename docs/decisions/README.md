@@ -17,6 +17,7 @@ call it made.
 | [0004](0004-money-as-integer-cents.md) | Money is integer cents everywhere | Accepted |
 | [0005](0005-engine-does-no-io.md) | The calculation engine does no I/O | Accepted |
 | [0006](0006-no-pii-anywhere.md) | No personally identifying information anywhere | Accepted |
+| [0007](0007-desktop-packaging-and-updates.md) | How the desktop app is packaged and updated | Accepted |
 
 New ADR: copy the shape of an existing one, take the next number, add a row
 above.

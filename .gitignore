@@ -6,6 +6,8 @@ dist/
 build/
 out/
 release/
+# The desktop app's staging folder (apps/desktop/scripts/build.mjs)
+apps/desktop/stage/
 *.tsbuildinfo
 
 # Local environment — never commit; see .env.example for the key list

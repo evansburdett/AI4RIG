@@ -30,13 +30,14 @@ apps/api           Express API, port 3001 — owns the database
   src/routes/        One file per resource: validate, call a repository, respond
   src/repositories/  All the SQL
   src/validation.ts  zod schemas for every request body
-apps/desktop       Electron shell — empty until packaging, late in the project
+apps/desktop       Electron shell — the installable desktop app RIG runs
 packages/shared    Domain types shared by the API and the web app (the API contract)
 packages/engine    Deterministic calculations (integer-cents money, model splits), no I/O
 packages/db        SQLite connection, migration runner, seed loader
   migrations/      Numbered .sql files — the shared schema
   seed/            Sample data (no real client data, ever)
 docs/DEVELOPMENT.md    Setup, daily workflow, troubleshooting
+docs/DESKTOP.md        Building, installing, and updating the desktop app
 docs/decisions/        Architecture decision records
 docs/uml/              PlantUML source and rendered diagrams
 scripts/               doctor, setup, dev
@@ -55,6 +56,7 @@ All from the repo root. Full table in
 | `npm run dev` | API + web app together |
 | `npm run db:reset` | Delete and rebuild your local database |
 | `npm run check` | typecheck + lint + test — run before every push |
+| `npm run desktop:dist -- --mac` | Build the desktop installers ([docs/DESKTOP.md](docs/DESKTOP.md)) |
 
 ## How it fits together
 
