@@ -1,5 +1,5 @@
 /**
- * The desktop app's OpenAI key (US-28): a small file in the user's own
+ * A key the desktop app keeps (OpenAI for US-28, Market Data for live prices): a small file in the user's own
  * app-data folder, encrypted with the operating system's credential store
  * (Keychain on macOS, DPAPI on Windows) through Electron's safeStorage.
  *

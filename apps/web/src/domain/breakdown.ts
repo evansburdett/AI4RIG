@@ -1,11 +1,16 @@
 /**
  * Where a client's money sits, worked out from what the advisor entered.
  *
- * RIG allocates by account (10/26). Each account's advisory fee is held as
- * cash and counts toward Now. The rest of the balance, the amount to invest,
- * goes into funds: usually filled from a model, then adjusted fund by fund.
- * Each fund counts toward its ticker's default bucket, so the Now / Soon /
- * Later totals are added up from the funds rather than typed.
+ * RIG allocates by account (10/26). A fund gets into an account from a model,
+ * by hand, or from a statement, and after that every fund behaves the same: it
+ * holds shares, and its dollars are those shares at today's price. Dollars and
+ * weights are how the advisor places the money; shares are what the client
+ * owns, and they stay put when the market moves.
+ *
+ * An account's balance is its funds plus cash not in a fund. The cash pays the
+ * advisory fee first and counts toward Now. Each fund counts toward its
+ * ticker's default bucket, so the Now / Soon / Later totals are added up from
+ * the funds rather than typed.
  *
  * Provisional home: this belongs in packages/engine next to splitByWeights.
  * It is pure, so moving it is a file move.
@@ -47,16 +52,6 @@ export function allocatedCents(account: Account): Cents {
   return addCents(...account.lines.map((line) => line.amountCents));
 }
 
-/**
- * Whether the account is what a client holds, from a statement, rather than
- * a plan to invest a balance: at least one fund carries the shares it holds.
- * RIG (meeting, 10/26): shares rarely change between reviews, the price is
- * live, and the value should be today's without anyone retyping it.
- */
-export function holdsShares(account: Account): boolean {
-  return account.lines.some((line) => line.heldSharesMicros !== null);
-}
-
 /** A ticker's exact price in millionths of a dollar, or its price in cents when that is all there is. */
 export function exactPriceMicros(ticker: Ticker | undefined): number | null {
   if (ticker === undefined) return null;
@@ -68,31 +63,73 @@ export function exactPriceMicros(ticker: Ticker | undefined): number | null {
  * millionths, so the product is held as a BigInt: 93,572.35 shares of a
  * money market at $1.000000 is already past what a double holds exactly.
  */
-export function heldValueCents(sharesMicros: number, priceMicros: number): Cents {
+export function valueOfSharesCents(sharesMicros: number, priceMicros: number): Cents {
   const product = BigInt(sharesMicros) * BigInt(priceMicros);
   return Number((product + 5_000_000_000n) / 10_000_000_000n);
 }
 
 /**
- * A statement account at today's prices: each held fund is worth its shares
- * times the ticker's current price, and the balance is what the funds add up
- * to, so it is never typed. A fund with no price keeps its last value. Any
- * other account comes back unchanged (the same object).
+ * Mutual funds (five letters ending in X) and cash funds can be bought in
+ * fractions. Stocks and ETFs are bought in whole shares.
+ */
+export function buysWholeShares(ticker: Ticker): boolean {
+  return ticker.assetClass !== 'CASH' && !/^[A-Z]{4}X$/.test(ticker.symbol);
+}
+
+const SHARE_MICROS = 1_000_000n;
+
+/**
+ * The shares some dollars buy. A fraction is taken far enough that it comes
+ * back to the same cent. Whole shares never spend more than the dollars, and
+ * half a cent of slack keeps dollars that came from a share count on that
+ * count: 2,060 shares at $53.0092 is $109,198.95, a hair under 2,060 exactly.
+ */
+export function sharesForDollars(amountCents: Cents, ticker: Ticker, priceMicros: number): number {
+  const numerator = (BigInt(amountCents) * 10_000n + 5_000n) * SHARE_MICROS;
+  const price = BigInt(priceMicros);
+  if (buysWholeShares(ticker)) return Number((numerator / price / SHARE_MICROS) * SHARE_MICROS);
+  return Number((BigInt(amountCents) * 10_000n * SHARE_MICROS + price / 2n) / price);
+}
+
+/** A fund's dollars as shares at today's price. What whole shares cannot use stays in the balance as cash. */
+function pinnedToShares(line: AccountLine, ticker: Ticker, priceMicros: number): AccountLine {
+  const sharesMicros = sharesForDollars(line.amountCents, ticker, priceMicros);
+  return { ...line, sharesMicros, amountCents: valueOfSharesCents(sharesMicros, priceMicros) };
+}
+
+/**
+ * The one rule for every fund in every account, however it got there. A fund
+ * with shares is worth them at today's price, and its change in value is a
+ * change in the balance: a price move, or a share count the advisor typed
+ * because the client bought or sold. A fund with dollars and no shares yet (a
+ * model just filled, dollars or a weight just typed) becomes shares at today's
+ * price, and that is money moving inside the account: the balance stays, and
+ * what whole shares could not use is cash. With no price, a fund stays as it
+ * is until there is one.
+ *
+ * The same object when nothing moved.
  */
 export function atCurrentPrices(account: Account, tickers: ReadonlyMap<string, Ticker>): Account {
-  if (!holdsShares(account)) return account;
+  let balanceCents = account.balanceCents;
   const lines = account.lines.map((line) => {
-    const price = exactPriceMicros(tickers.get(line.tickerSymbol));
-    if (line.heldSharesMicros === null || price === null) return line;
-    const amountCents = heldValueCents(line.heldSharesMicros, price);
-    return amountCents === line.amountCents ? line : { ...line, amountCents };
+    const ticker = tickers.get(line.tickerSymbol);
+    const price = exactPriceMicros(ticker);
+    if (ticker === undefined || price === null) return line;
+
+    if (line.sharesMicros === null) {
+      return line.amountCents === 0 ? line : pinnedToShares(line, ticker, price);
+    }
+
+    const amountCents = valueOfSharesCents(line.sharesMicros, price);
+    if (amountCents === line.amountCents) return line;
+    balanceCents += amountCents - line.amountCents;
+    return { ...line, amountCents };
   });
-  const balanceCents = addCents(...lines.map((line) => line.amountCents));
   const unchanged = balanceCents === account.balanceCents && lines.every((line, i) => line === account.lines[i]);
   return unchanged ? account : { ...account, lines, balanceCents };
 }
 
-/** Every statement account in the case at today's prices. The same object when nothing moved. */
+/** Every account in the case at today's prices. The same object when nothing moved. */
 export function caseAtCurrentPrices(clientCase: ClientCase, tickerList: readonly Ticker[]): ClientCase {
   const tickers = tickersBySymbol(tickerList);
   const accounts = clientCase.accounts.map((account) => atCurrentPrices(account, tickers));
@@ -100,11 +137,28 @@ export function caseAtCurrentPrices(clientCase: ClientCase, tickerList: readonly
 }
 
 /**
- * What the account has in cash funds (money market, sweep) against a year of
- * its fee. For a statement account the fee is paid from cash it already
- * holds, so this is the check that it can be.
+ * Turns any fund still in dollars into shares, and nothing else: unlike
+ * caseAtCurrentPrices it does not revalue funds that already have shares. This
+ * is what goes in the working copy. If dollars stayed there, every new price
+ * would just buy a different number of shares, and the balance would never
+ * move. The same object when there is nothing to do.
  */
-export function cashForFeeCents(account: Account, tickers: ReadonlyMap<string, Ticker>): Cents {
+export function caseWithSharesPinned(clientCase: ClientCase, tickerList: readonly Ticker[]): ClientCase {
+  const tickers = tickersBySymbol(tickerList);
+  const accounts = clientCase.accounts.map((account) => {
+    const lines = account.lines.map((line) => {
+      const ticker = tickers.get(line.tickerSymbol);
+      const price = exactPriceMicros(ticker);
+      if (ticker === undefined || price === null || line.sharesMicros !== null || line.amountCents === 0) return line;
+      return pinnedToShares(line, ticker, price);
+    });
+    return lines.every((line, i) => line === account.lines[i]) ? account : { ...account, lines };
+  });
+  return accounts.every((account, i) => account === clientCase.accounts[i]) ? clientCase : { ...clientCase, accounts };
+}
+
+/** What the account's cash funds (money market, sweep) hold. */
+export function cashFundsCents(account: Account, tickers: ReadonlyMap<string, Ticker>): Cents {
   return addCents(
     ...account.lines
       .filter((line) => tickers.get(line.tickerSymbol)?.assetClass === 'CASH')
@@ -112,48 +166,95 @@ export function cashForFeeCents(account: Account, tickers: ReadonlyMap<string, T
   );
 }
 
+/** How the money in an account that is not in a fund is spoken for. */
+export interface AccountCash {
+  /** The balance less the funds. Negative when the funds add up to more. */
+  readonly uninvestedCents: Cents;
+  /** Held back for the year's advisory fee, up to the fee. */
+  readonly feeCashCents: Cents;
+  /** Too little to buy another share of anything: staying cash is the plan, not a job left undone. */
+  readonly roundingCents: Cents;
+  /** Still to put in a fund. Negative when the funds add up to more than the balance. */
+  readonly leftCents: Cents;
+}
+
+export function accountCash(account: Account, tickers: ReadonlyMap<string, Ticker>, feeCents: Cents): AccountCash {
+  const uninvestedCents = account.balanceCents - allocatedCents(account);
+  const feeCashCents = Math.max(Math.min(uninvestedCents, feeCents), 0);
+  const spare = uninvestedCents - feeCashCents;
+  const oneShareOfEach = addCents(
+    ...account.lines.map((line) => {
+      const ticker = tickers.get(line.tickerSymbol);
+      return ticker !== undefined && buysWholeShares(ticker) ? (ticker.priceCents ?? 0) : 0;
+    }),
+  );
+  const roundingCents = spare > 0 && spare <= oneShareOfEach ? spare : 0;
+  return { uninvestedCents, feeCashCents, roundingCents, leftCents: spare - roundingCents };
+}
+
 /**
- * The balance less the fee cash: what the funds should add up to. A
- * statement account's balance is its funds, fee cash included in whatever
- * cash it holds, so all of it counts.
+ * What the funds are a share of: the balance less the cash held for the fee.
+ * An account from a statement often has no such cash, because its fee comes
+ * from a money market it already holds, and then all of it counts.
  */
 export function investableCents(account: Account, feeCents: Cents): Cents {
-  if (holdsShares(account)) return account.balanceCents;
-  return Math.max(account.balanceCents - feeCents, 0);
+  const uninvested = account.balanceCents - allocatedCents(account);
+  return account.balanceCents - Math.max(Math.min(uninvested, feeCents), 0);
 }
 
-/** Still to put in a fund. Negative when the funds add up to more than there is. */
-export function leftToAllocateCents(account: Account, feeCents: Cents): Cents {
-  return investableCents(account, feeCents) - allocatedCents(account);
+/** Still to put in a fund. Negative when the funds add up to more than the balance. */
+export function leftToAllocateCents(account: Account, tickers: ReadonlyMap<string, Ticker>, feeCents: Cents): Cents {
+  return accountCash(account, tickers, feeCents).leftCents;
+}
+
+/** What the year's fee can come from: cash not in a fund, and cash funds. */
+export function cashForFeeCents(account: Account, tickers: ReadonlyMap<string, Ticker>): Cents {
+  return Math.max(account.balanceCents - allocatedCents(account), 0) + cashFundsCents(account, tickers);
 }
 
 /**
- * Fill the account from a model: its weights applied to the amount to invest,
- * to the exact cent. Replaces the funds, including any added by hand, so the
- * screen asks before doing this over funds the advisor has changed.
+ * Fill the account from a model: its weights applied to the balance less a
+ * year's fee (RIG, 10/26), to the exact cent. The dollars become shares at
+ * today's price (atCurrentPrices). Replaces the funds, including any added by
+ * hand, so the screen asks before doing this over funds the advisor has
+ * changed.
  */
 export function applyModel(account: Account, model: ModelPortfolio, feeCents: Cents): Account {
   const shares = splitByWeights(
-    investableCents(account, feeCents),
+    Math.max(account.balanceCents - feeCents, 0),
     model.lines.map((line) => ({ key: line.tickerSymbol, weightBps: line.weightBps })),
   );
   return {
     ...account,
     modelId: model.id,
     lines: shares.map(
-      (share): AccountLine => ({ tickerSymbol: share.key, amountCents: share.amountCents, heldSharesMicros: null }),
+      (share): AccountLine => ({ tickerSymbol: share.key, amountCents: share.amountCents, sharesMicros: null }),
     ),
   };
 }
 
-/** Whether the funds are still exactly what the model would give, for the "adjusted" label. */
-export function matchesModel(account: Account, model: ModelPortfolio, feeCents: Cents): boolean {
+/**
+ * Whether the funds are still what the model would give today. Whole shares
+ * land up to one share off the dollars, and a cent is rounding. An edit makes
+ * this false, and so do prices moving unevenly, which is the same news to the
+ * advisor: the account has moved away from its model.
+ */
+export function matchesModel(
+  account: Account,
+  model: ModelPortfolio,
+  feeCents: Cents,
+  tickers: ReadonlyMap<string, Ticker>,
+): boolean {
   const filled = applyModel(account, model, feeCents).lines;
   return (
     filled.length === account.lines.length &&
-    filled.every((line) =>
-      account.lines.some((own) => own.tickerSymbol === line.tickerSymbol && own.amountCents === line.amountCents),
-    )
+    filled.every((line) => {
+      const own = account.lines.find((l) => l.tickerSymbol === line.tickerSymbol);
+      if (own === undefined) return false;
+      const ticker = tickers.get(line.tickerSymbol);
+      const oneShare = ticker !== undefined && buysWholeShares(ticker) ? (ticker.priceCents ?? 0) : 0;
+      return Math.abs(own.amountCents - line.amountCents) <= Math.max(oneShare, 1);
+    })
   );
 }
 
@@ -194,10 +295,11 @@ export function linesAsWeights(lines: readonly AccountLine[]): ModelLine[] {
 
 /**
  * Keeps model accounts on their model as balances change. An account whose
- * funds were exactly its model before the edit is filled again at its new
+ * funds were still its model before the edit is filled again at its new
  * amount to invest, so a new balance, or a new fee tier from another
- * account's balance, carries through. One the advisor has adjusted is left
- * alone and shows what is left to allocate instead.
+ * account's balance, carries through. One that has moved away from its model
+ * is left alone and shows what is left to allocate instead, and so is one whose
+ * balance and fee did not change: its shares are the record.
  */
 export function followModels(
   previous: ClientCase,
@@ -205,14 +307,18 @@ export function followModels(
   models: ReadonlyMap<string, ModelPortfolio>,
   previousFees: FeesByAccount,
   nextFees: FeesByAccount,
+  tickers: ReadonlyMap<string, Ticker>,
 ): Account[] {
   return next.map((account) => {
     const model = account.modelId === null ? undefined : models.get(account.modelId);
     const before = previous.accounts.find((a) => a.id === account.id);
     if (model === undefined || before === undefined || before.modelId !== account.modelId) return account;
-    if (!matchesModel(before, model, previousFees.get(before.id) ?? 0)) return account;
+    const previousFee = previousFees.get(before.id) ?? 0;
+    const nextFee = nextFees.get(account.id) ?? 0;
+    if (before.balanceCents === account.balanceCents && previousFee === nextFee) return account;
+    if (!matchesModel(before, model, previousFee, tickers)) return account;
     if (before.lines !== account.lines) return account;
-    return applyModel(account, model, nextFees.get(account.id) ?? 0);
+    return applyModel(account, model, nextFee);
   });
 }
 
@@ -224,19 +330,19 @@ export function bucketOf(tickerSymbol: string, tickers: ReadonlyMap<string, Tick
 }
 
 /**
- * Every position in one account and the bucket it counts toward: the fee cash
- * in Now, then each fund. Nothing for an empty fund.
+ * Every position in one account and the bucket it counts toward: the cash
+ * held for the fee and left over from whole shares in Now, then each fund.
+ * Money still to allocate is in no bucket yet. Nothing for an empty fund.
  */
 export function accountHoldings(
   account: Account,
   tickers: ReadonlyMap<string, Ticker>,
   feeCents: Cents,
 ): Holding[] {
-  // A statement account's fee is paid from the cash funds it holds, which
-  // are already in Now; counting it again would double it.
+  const { feeCashCents, roundingCents } = accountCash(account, tickers, feeCents);
   const cash: Holding[] =
-    feeCents > 0 && account.balanceCents > 0 && !holdsShares(account)
-      ? [{ accountId: account.id, bucket: 'NOW', tickerSymbol: null, marketValueCents: Math.min(feeCents, account.balanceCents) }]
+    feeCashCents + roundingCents > 0
+      ? [{ accountId: account.id, bucket: 'NOW', tickerSymbol: null, marketValueCents: feeCashCents + roundingCents }]
       : [];
   return [
     ...cash,
@@ -353,7 +459,7 @@ export function computeBreakdown(
   return {
     totalCents,
     unallocatedCents: addCents(
-      ...clientCase.accounts.map((account) => leftToAllocateCents(account, fees.get(account.id) ?? 0)),
+      ...clientCase.accounts.map((account) => leftToAllocateCents(account, tickers, fees.get(account.id) ?? 0)),
     ),
     byAssetClass: slice(holdings, tickers, totalCents),
     byBucket,
@@ -462,7 +568,7 @@ export function bucketsByAccount(
       nowCents: amount('NOW'),
       soonCents: amount('SOON'),
       laterCents: amount('LATER'),
-      unallocatedCents: leftToAllocateCents(account, feeCents),
+      unallocatedCents: leftToAllocateCents(account, tickers, feeCents),
       balanceCents: account.balanceCents,
     };
   });
@@ -475,7 +581,7 @@ export interface BucketHolding {
   readonly accountType: AccountType;
   readonly maskedNumber: string;
   readonly marketValueCents: Cents;
-  /** Whole shares at the ticker's price (US-21), or null for cash or a fund with no price. */
+  /** The shares the fund holds (US-21), or null for cash or a fund with no price. */
   readonly shares: number | null;
   readonly assetClass: AssetClass | null;
 }
@@ -495,6 +601,7 @@ export function holdingsInBucket(
         .filter((holding) => holding.bucket === bucket)
         .map((holding): BucketHolding => {
           const ticker = holding.tickerSymbol === null ? undefined : tickers.get(holding.tickerSymbol);
+          const sharesMicros = account.lines.find((l) => l.tickerSymbol === holding.tickerSymbol)?.sharesMicros ?? null;
           return {
             key: `${account.id}:${holding.tickerSymbol ?? 'fee-cash'}`,
             symbol: holding.tickerSymbol,
@@ -502,7 +609,11 @@ export function holdingsInBucket(
             maskedNumber: account.maskedNumber,
             marketValueCents: holding.marketValueCents,
             shares:
-              ticker?.priceCents == null ? null : wholeShares(holding.marketValueCents, ticker.priceCents).shares,
+              sharesMicros !== null
+                ? sharesMicros / 1_000_000
+                : ticker?.priceCents == null
+                  ? null
+                  : wholeShares(holding.marketValueCents, ticker.priceCents).shares,
             assetClass: holding.tickerSymbol === null ? 'CASH' : (ticker?.assetClass ?? null),
           };
         }),

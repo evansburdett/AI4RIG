@@ -203,7 +203,7 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
           .map((l) => ({
             tickerSymbol: l.ticker_symbol,
             amountCents: l.amount_cents,
-            heldSharesMicros: l.shares_micros,
+            sharesMicros: l.shares_micros,
           })),
         proposalShares: proposalRows
           .filter((p) => p.account_id === a.id)
@@ -473,7 +473,7 @@ export function saveClientCase(
       );
       const accountId = Number(lastInsertRowid);
       account.lines.forEach((line, position) =>
-        addLine.run(accountId, position, line.tickerSymbol, line.amountCents, line.heldSharesMicros),
+        addLine.run(accountId, position, line.tickerSymbol, line.amountCents, line.sharesMicros),
       );
       for (const share of account.proposalShares) {
         addProposalShare.run(accountId, share.bucket, share.tickerSymbol, share.shares, share.priceCents);

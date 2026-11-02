@@ -75,7 +75,7 @@ const accountLine = z.object({
   amountCents: cents.min(0, 'An amount in a fund cannot be negative'),
   // Millionths of a share, from an imported statement. Optional so an older
   // client that does not know about it still saves.
-  heldSharesMicros: z.int().min(0, 'Shares held cannot be negative').nullable().default(null),
+  sharesMicros: z.int().min(0, 'Shares cannot be negative').nullable().default(null),
 });
 
 const account = z.object({
@@ -297,6 +297,22 @@ export const openAiKeySchema = z.object({
     .max(400)
     .regex(/^\S+$/, 'An API key has no spaces in it')
     .nullable(),
+});
+
+/** The same checks for the key behind live prices. */
+export const marketDataKeySchema = z.object({
+  apiKey: z
+    .string()
+    .trim()
+    .min(20, 'That is too short to be a Market Data API key')
+    .max(400)
+    .regex(/^\S+$/, 'An API key has no spaces in it')
+    .nullable(),
+});
+
+export const priceRefreshSchema = z.object({
+  symbols: z.array(z.string().trim().toUpperCase().min(1).max(10)).max(1000).optional(),
+  skipCheckedToday: z.boolean().default(false),
 });
 
 export const bucketParam = bucket;

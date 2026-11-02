@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import { BucketBar } from '../components/BucketBar.js';
 import { Callout } from '../components/Callout.js';
 import { About } from '../components/Help.js';
+import { RefreshPrices } from '../components/RefreshPrices.js';
 import {
   bucketsByAccount,
   computeBreakdown,
@@ -19,7 +20,14 @@ import {
   TAX_FUNNEL_LABELS,
 } from '../domain/lifeStage.js';
 import { formatCents, formatCentsWhole, formatPercent } from '../domain/money.js';
-import type { AdvisoryFeeTier, ClientCase, Ticker } from '../domain/types.js';
+import { caseSymbols } from '../domain/prices.js';
+import type {
+  AdvisoryFeeTier,
+  ClientCase,
+  PriceRefreshRequest,
+  PriceRefreshResult,
+  Ticker,
+} from '../domain/types.js';
 import type { Slice } from '../domain/breakdown.js';
 import { computePlanTotals, targetAllocation } from '../domain/worksheet.js';
 
@@ -27,6 +35,9 @@ interface Props {
   clientCase: ClientCase;
   tickers: readonly Ticker[];
   feeTiers: readonly AdvisoryFeeTier[];
+  /** Looks up today's prices for the funds in this case. */
+  onRefreshPrices: (request: PriceRefreshRequest) => Promise<PriceRefreshResult>;
+  today: Date;
 }
 
 /**
@@ -35,7 +46,8 @@ interface Props {
  * account balances, their fee cash, and the funds in each account, each
  * counted in its ticker's bucket.
  */
-export function AssetClassBreakdown({ clientCase, tickers, feeTiers }: Props) {
+export function AssetClassBreakdown({ clientCase, tickers, feeTiers, onRefreshPrices, today }: Props) {
+  const symbols = useMemo(() => caseSymbols(clientCase), [clientCase]);
   const totals = useMemo(() => computePlanTotals(clientCase, feeTiers), [clientCase, feeTiers]);
   const fees = useMemo(() => feesByAccount(totals.advisoryFees), [totals.advisoryFees]);
   const breakdown = useMemo(() => computeBreakdown(clientCase, tickers, fees), [clientCase, tickers, fees]);
@@ -54,6 +66,8 @@ export function AssetClassBreakdown({ clientCase, tickers, feeTiers }: Props) {
           {formatCents(breakdown.totalCents)} across {clientCase.accounts.length} accounts
         </p>
       </header>
+
+      <RefreshPrices symbols={symbols} tickers={tickers} onRefresh={onRefreshPrices} auto today={today} />
 
       {breakdown.unallocatedCents !== 0 && (
         <Callout tone="warning" title="Not all of the money is in a fund">
@@ -154,9 +168,7 @@ export function AssetClassBreakdown({ clientCase, tickers, feeTiers }: Props) {
             Target is what the questionnaire says this client needs in Now and Soon; Later is the
             rest of the money, so it has no target of its own. Actual is each
             account&rsquo;s fee cash, in Now, plus every fund in the bucket its ticker maps to,
-            across all the accounts. Target percentages come from
-            this client&rsquo;s own answers, per RIG&rsquo;s answer that they are &ldquo;calculated
-            using the inputs we provided on the attached spreadsheet.&rdquo;
+            across all the accounts. Target percentages come from this client&rsquo;s own answers.
           </p>
         </About>
       </section>

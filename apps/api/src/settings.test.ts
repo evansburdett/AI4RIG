@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { openDatabase, runMigrations, type Db } from '@ai4rig/db';
-import type { AppSettings } from '@ai4rig/shared';
+import type { AppSettings, PriceRefreshResult } from '@ai4rig/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createApp, type AppDeps } from './app.js';
@@ -89,6 +89,64 @@ describe('OpenAI key settings', () => {
 
     const attempt = await fetch(`${base}/api/settings/openai-key`, json({ apiKey: null }));
     expect(attempt.status).toBe(409);
+  });
+});
+
+describe('Market Data key settings', () => {
+  it('saves a key, reports it as set without ever returning it, and removes it', async () => {
+    const store = memorySecretStore();
+    const base = await serve({ marketDataKey: store });
+
+    const key = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    const saved = await fetch(`${base}/api/settings/market-data-key`, json({ apiKey: key }));
+    expect(saved.status).toBe(200);
+    const body = await saved.text();
+    expect(body).not.toContain(key);
+    expect(JSON.parse(body)).toMatchObject({ marketDataKeyConfigured: true, marketDataKeyEditable: true });
+    expect(store.get()).toBe(key);
+
+    await fetch(`${base}/api/settings/market-data-key`, json({ apiKey: null }));
+    expect(store.get()).toBeUndefined();
+  });
+
+  it('refuses a bad paste, and will not change a key that comes from .env', async () => {
+    const base = await serve({ marketDataKey: memorySecretStore() });
+    expect((await fetch(`${base}/api/settings/market-data-key`, json({ apiKey: 'short' }))).status).toBe(400);
+
+    await stop?.();
+    const fromEnv = await serve({ marketDataKey: envSecretStore('from-env-file-abcdefghijklmnop') });
+    expect((await fetch(`${fromEnv}/api/settings/market-data-key`, json({ apiKey: null }))).status).toBe(409);
+  });
+});
+
+describe('POST /api/prices/refresh', () => {
+  const post = (body: unknown) => ({
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  it('saves prices from the source and returns every ticker', async () => {
+    const base = await serve({
+      priceSource: async (symbols) =>
+        new Map(symbols.map((symbol) => [symbol, { priceMicros: 12_345_600, asOf: '2026-10-30' }])),
+    });
+    const response = await fetch(`${base}/api/prices/refresh`, post({ symbols: ['fxaix'] }));
+    expect(response.status).toBe(200);
+    const result = (await response.json()) as PriceRefreshResult;
+    expect(result.updated).toEqual(['FXAIX']);
+    expect(result.tickers.find((t) => t.symbol === 'FXAIX')).toMatchObject({
+      priceMicros: 12_345_600,
+      priceCents: 1_235,
+      priceAsOf: '2026-10-30',
+    });
+  });
+
+  it('tells the advisor where to put a key, even in the installed app', async () => {
+    const base = await serve({ marketDataKey: envSecretStore(undefined) }, 'production');
+    const response = await fetch(`${base}/api/prices/refresh`, post({ symbols: ['FXAIX'] }));
+    expect(response.status).toBe(503);
+    expect(((await response.json()) as { error: string }).error).toMatch(/Settings screen/);
   });
 });
 

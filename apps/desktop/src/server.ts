@@ -30,6 +30,7 @@ export interface ServerOptions {
   readonly referenceSeedDir: string;
   readonly appVersion: string;
   readonly openAiKey: SecretStore;
+  readonly marketDataKey: SecretStore;
 }
 
 export interface RunningServer {
@@ -92,6 +93,7 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
     },
     db,
     openAiKey: options.openAiKey,
+    marketDataKey: options.marketDataKey,
     webRoot: options.webRoot,
   });
 

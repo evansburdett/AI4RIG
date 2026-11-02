@@ -316,6 +316,8 @@ The shapes on both ends (`ClientCase`, `Ticker`, ...) are defined once, in
 | `PUT /api/bucket-definitions/:bucket` | Edit one bucket's label, horizon, and wording |
 | `GET /api/advisory-fee-tiers` | RIG's fee schedule, lowest balance first |
 | `PUT /api/advisory-fee-tiers` | Replace the whole schedule (first tier starts at $0) |
+| `POST /api/prices/refresh` | Look up `{ symbols?, skipCheckedToday? }` on Market Data and save the prices. Returns every ticker, plus which were `updated`, which of those `changed`, which were `assumedCash` ($1.00), and which were `notFound`. 503 without a key; 502 changes nothing |
+| `PUT /api/settings/market-data-key` | Save `{ apiKey }` or remove it with `null`. Never returned. 409 when it comes from `.env` |
 | `POST /api/life-expectancy/estimate` | US-28 AI estimate from `{ age, gender, healthConcerns, healthConcernOther }`. Saves nothing. 503 without `OPENAI_API_KEY` |
 
 `apps/api/src/routes.test.ts` has a test for each, and is the quickest way to
@@ -400,14 +402,17 @@ lookups:
   total is not confirmed; `FEE_TIER_BASIS` in `worksheet.ts` is the switch.
 - **Positions from a model**: `splitByWeights` in `packages/engine`, which
   splits a dollar amount across weights to the exact cent.
-- **Shares**: `wholeShares` in `packages/engine` (whole shares only, the rest
-  as cash) and `apps/web/src/domain/proposal.ts` (lock in, value at today's
-  prices).
+- **Funds and shares**: `atCurrentPrices` in `apps/web/src/domain/breakdown.ts`
+  is the one rule for every fund, however it got into the account (ADR 0009).
+  `apps/web/src/domain/proposal.ts` locks a proposal in.
 - **Breakdown, drift, per-account view**: `apps/web/src/domain/breakdown.ts`.
 - **Life expectancy**: an AI estimate the advisor can override
   (`apps/api/src/lifeExpectancy.ts`). Only age, gender, and health concerns
   are sent. It needs `OPENAI_API_KEY` in your own `.env` (see `.env.example`);
   without it the button says so and the age is typed in.
+
+- **Live prices**: `apps/api/src/prices.ts` (ADR 0008). It needs
+  `MARKETDATA_API_KEY` in your own `.env`, and only ticker symbols are sent.
 
 The worksheet and breakdown code runs in the browser today because it only
 needs the case on screen. It is pure, so moving it into `packages/engine` is a

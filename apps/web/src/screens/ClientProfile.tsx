@@ -3,9 +3,10 @@ import { useMemo, useState } from 'react';
 import { AccountCard } from '../components/AccountCard.js';
 import { BucketBar } from '../components/BucketBar.js';
 import { Callout } from '../components/Callout.js';
-import { About, InfoTip } from '../components/Help.js';
+import { About } from '../components/Help.js';
 import { LifeExpectancyField } from '../components/LifeExpectancyField.js';
 import { ProposalShares } from '../components/ProposalShares.js';
+import { RefreshPrices } from '../components/RefreshPrices.js';
 import {
   CheckboxGroupField,
   DerivedField,
@@ -19,6 +20,7 @@ import {
   feesByAccount,
   followModels,
   modelsById,
+  tickersBySymbol,
   varianceAdvice,
   type FeesByAccount,
 } from '../domain/breakdown.js';
@@ -36,6 +38,7 @@ import {
 import { formatDateTime } from '../domain/dates.js';
 import { formatCents, formatCentsWhole } from '../domain/money.js';
 import { formatBps } from '../domain/percent.js';
+import { caseSymbols } from '../domain/prices.js';
 import {
   GENDERS,
   HEALTH_CONCERNS,
@@ -55,6 +58,8 @@ import type {
   LifeExpectancyRequest,
   ModelPortfolio,
   PlannedExpense,
+  PriceRefreshRequest,
+  PriceRefreshResult,
   Ticker,
 } from '../domain/types.js';
 import {
@@ -74,6 +79,8 @@ interface Props {
   feeTiers: readonly AdvisoryFeeTier[];
   /** Saves the tickers and prices an account's holdings import needs. */
   onImport: (request: ImportRequest) => Promise<ImportResult>;
+  /** Looks up today's prices for the funds in this case. */
+  onRefreshPrices: (request: PriceRefreshRequest) => Promise<PriceRefreshResult>;
   /** Saves an account's funds as a reusable model. */
   onSaveAsModel: (model: ModelPortfolio) => Promise<ModelPortfolio>;
   onAddTicker: (ticker: Ticker) => Promise<Ticker>;
@@ -101,6 +108,7 @@ export function ClientProfile({
   onSaveAsModel,
   onAddTicker,
   onImport,
+  onRefreshPrices,
   onEstimateLifeExpectancy,
   today,
 }: Props) {
@@ -112,6 +120,7 @@ export function ClientProfile({
   const fees = useMemo(() => feesByAccount(totals.advisoryFees), [totals.advisoryFees]);
   /** The account Add account just made, which scrolls itself into view. */
   const [addedAccountId, setAddedAccountId] = useState<string | null>(null);
+  const symbols = useMemo(() => caseSymbols(clientCase), [clientCase]);
   const { nowInputs, soonInputs } = clientCase;
 
   function patch(changes: Partial<ClientCase>) {
@@ -125,7 +134,7 @@ export function ClientProfile({
    */
   function patchAccounts(accounts: readonly Account[]) {
     const nextFees = feesByAccount(accountAdvisoryFees({ ...clientCase, accounts: [...accounts] }, feeTiers));
-    patch({ accounts: followModels(clientCase, accounts, modelsById(models), fees, nextFees) });
+    patch({ accounts: followModels(clientCase, accounts, modelsById(models), fees, nextFees, tickersBySymbol(tickers)) });
   }
 
   return (
@@ -382,7 +391,7 @@ export function ClientProfile({
       </section>
 
       <section className="card">
-        <h3>Plan totals</h3>
+        <h3>Target allocation</h3>
         <p className="muted">What the client needs in Now and Soon. Later is the rest, invested for growth.</p>
 
         <BucketBar
@@ -407,11 +416,7 @@ export function ClientProfile({
             Now and Soon come from the answers above. Later is total investable assets less Now and
             less Soon, so it fills in as account balances are entered below.
           </p>
-          <p>
-            The split comes from this client&rsquo;s own answers, not from a table keyed by stage of
-            life. An accumulator with no income gap and no Social Security bridge gets a small Soon
-            bucket without anything having to weight it.
-          </p>
+          <p>The split comes from this client&rsquo;s own answers, not from their stage of life.</p>
         </About>
       </section>
 
@@ -433,9 +438,12 @@ export function ClientProfile({
         </div>
         <p className="muted">
           Enter each balance. A year of its advisory fee is held as cash; pick a model for the
-          rest, then adjust any fund by dollars or weight. Each fund counts toward its ticker&rsquo;s
-          bucket.
+          rest, import a statement, or add funds by hand. Dollars and weight place money inside the
+          balance. Shares are what the client owns, so the balance follows them. Each fund counts
+          toward its ticker&rsquo;s bucket.
         </p>
+
+        <RefreshPrices symbols={symbols} tickers={tickers} onRefresh={onRefreshPrices} auto today={today} />
 
         {clientCase.accounts.length === 0 && (
           <p className="empty">No accounts yet. Add one to start.</p>
@@ -684,18 +692,14 @@ function AdvisoryFeeTable({
   );
 }
 
-/** The arithmetic behind a bucket total, with the workbook cell for each line. */
+/** The arithmetic behind a bucket total. */
 function WorksheetLines({ worksheet }: { worksheet: BucketWorksheet }) {
   return (
     <table>
       <tbody>
         {worksheet.lines.map((line) => (
-          <tr key={line.cell}>
-            <th scope="row">
-              {line.label}
-              {line.note !== undefined && <InfoTip text={line.note} />}
-            </th>
-            <td className="cell">{line.cell}</td>
+          <tr key={line.label}>
+            <th scope="row">{line.label}</th>
             <td className="amount">{formatCents(line.amountCents)}</td>
           </tr>
         ))}
@@ -703,7 +707,6 @@ function WorksheetLines({ worksheet }: { worksheet: BucketWorksheet }) {
       <tfoot>
         <tr>
           <th scope="row">Total</th>
-          <td />
           <td className="amount">{formatCents(worksheet.totalCents)}</td>
         </tr>
       </tfoot>

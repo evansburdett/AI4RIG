@@ -2,23 +2,26 @@ import type { AppSettings } from '@ai4rig/shared';
 import { Router } from 'express';
 
 import type { SecretStore } from '../secrets.js';
-import { openAiKeySchema, parseOr400 } from '../validation.js';
+import { marketDataKeySchema, openAiKeySchema, parseOr400 } from '../validation.js';
 
 /**
- * Settings the advisor can change on this computer. Today that is only the
- * OpenAI key for US-28. The key goes in and never comes back out: reads say
- * only whether one is set.
+ * Settings the advisor can change on this computer: the OpenAI key for US-28
+ * and the Market Data key for live prices. A key goes in and never comes back
+ * out: reads say only whether one is set.
  *
- *   GET /api/settings              { openAiKeyConfigured, openAiKeyEditable, openAiModel }
- *   PUT /api/settings/openai-key   { apiKey: "sk-..." } to save, { apiKey: null } to remove
+ *   GET /api/settings                   whether each key is set and can be changed
+ *   PUT /api/settings/openai-key        { apiKey: "sk-..." } to save, { apiKey: null } to remove
+ *   PUT /api/settings/market-data-key   the same
  *        409 when the key comes from .env and the app cannot change it
  */
 export function createSettingsRouter({
   openAiKey,
   openAiModel,
+  marketDataKey,
 }: {
   openAiKey: SecretStore;
   openAiModel: string;
+  marketDataKey: SecretStore;
 }): Router {
   const router = Router();
 
@@ -26,6 +29,8 @@ export function createSettingsRouter({
     openAiKeyConfigured: openAiKey.get() !== undefined,
     openAiKeyEditable: openAiKey.writable,
     openAiModel,
+    marketDataKeyConfigured: marketDataKey.get() !== undefined,
+    marketDataKeyEditable: marketDataKey.writable,
   });
 
   router.get('/api/settings', (_req, res) => {
@@ -43,6 +48,20 @@ export function createSettingsRouter({
       return;
     }
     openAiKey.set(body.apiKey);
+    res.json(current());
+  });
+
+  router.put('/api/settings/market-data-key', (req, res) => {
+    const body = parseOr400(marketDataKeySchema, req.body, res);
+    if (body === null) return;
+
+    if (!marketDataKey.writable) {
+      res.status(409).json({
+        error: 'This computer reads the Market Data key from .env. Change MARKETDATA_API_KEY there instead.',
+      });
+      return;
+    }
+    marketDataKey.set(body.apiKey);
     res.json(current());
   });
 

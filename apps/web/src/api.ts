@@ -18,6 +18,8 @@ import type {
   LifeExpectancyEstimate,
   LifeExpectancyRequest,
   ModelPortfolio,
+  PriceRefreshRequest,
+  PriceRefreshResult,
   Ticker,
 } from './domain/types.js';
 
@@ -67,7 +69,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     response = await fetch(`${baseUrl}${path}`, init);
   } catch {
     throw new ApiError(
-      `Could not reach the API at ${baseUrl}. Is it running? Try "npm run dev" from the repo root.`,
+      sameOrigin
+        ? 'The app could not reach its own data. Close it and open it again.'
+        : `Could not reach the API at ${baseUrl}. Is it running? Try "npm run dev" from the repo root.`,
       0,
     );
   }
@@ -172,6 +176,14 @@ export const api = {
   /** Saves the key, or removes it with null. The key is never sent back. */
   saveOpenAiKey: (apiKey: string | null) =>
     send<AppSettings>('/api/settings/openai-key', 'PUT', { apiKey }),
+
+  /** Saves the key, or removes it with null. The key is never sent back. */
+  saveMarketDataKey: (apiKey: string | null) =>
+    send<AppSettings>('/api/settings/market-data-key', 'PUT', { apiKey }),
+
+  /** Looks prices up on the server and saves them. Returns the whole universe. */
+  refreshPrices: (request: PriceRefreshRequest) =>
+    send<PriceRefreshResult>('/api/prices/refresh', 'POST', request),
 
   /** US-28. Nothing is saved; the answer goes in the person's field. */
   estimateLifeExpectancy: (request: LifeExpectancyRequest) =>

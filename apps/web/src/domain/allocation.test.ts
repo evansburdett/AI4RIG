@@ -1,18 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  accountCash,
   accountHoldings,
   amountForWeight,
   applyModel,
   atCurrentPrices,
   bucketsByAccount,
   caseAtCurrentPrices,
+  caseWithSharesPinned,
   cashForFeeCents,
   computeBreakdown,
   computeDrift,
   feesByAccount,
   followModels,
-  heldValueCents,
   holdingsInBucket,
   investableCents,
   leftToAllocateCents,
@@ -21,7 +22,9 @@ import {
   modelBucketMix,
   modelChoices,
   modelsById,
+  sharesForDollars,
   tickersBySymbol,
+  valueOfSharesCents,
   varianceAdvice,
   weightBpsOf,
 } from './breakdown.js';
@@ -101,10 +104,10 @@ describe('an account allocated by fund (10/26)', () => {
   });
 
   it('invests the balance less the fee, and says what is left', () => {
-    expect(leftToAllocateCents(joint, 12_000_00)).toBe(0);
-    expect(leftToAllocateCents(ACCUMULATOR_CASE.accounts[0]!, 4_200_00)).toBe(15_000_00);
-    // More in funds than there is to invest comes back negative.
-    expect(leftToAllocateCents(joint, 20_000_00)).toBe(-8_000_00);
+    expect(leftToAllocateCents(joint, TICKERS, 12_000_00)).toBe(0);
+    expect(leftToAllocateCents(ACCUMULATOR_CASE.accounts[0]!, TICKERS, 4_200_00)).toBe(15_000_00);
+    // More in funds than the balance comes back negative.
+    expect(leftToAllocateCents({ ...joint, balanceCents: 1_000_000_00 }, TICKERS, 12_000_00)).toBe(-188_000_00);
   });
 
   it('fills from a model to the exact cent of the amount to invest', () => {
@@ -112,14 +115,14 @@ describe('an account allocated by fund (10/26)', () => {
     expect(filled.modelId).toBe('9003');
     expect(filled.lines.reduce((t, l) => t + l.amountCents, 0)).toBe(1_188_000_00);
     expect(filled.lines.find((l) => l.tickerSymbol === 'VTI')?.amountCents).toBe(415_800_00);
-    expect(matchesModel(filled, BALANCED, 12_000_00)).toBe(true);
+    expect(matchesModel(filled, BALANCED, 12_000_00, TICKERS)).toBe(true);
   });
 
   it('notices when a fund has been adjusted away from the model', () => {
     const roth = WORKBOOK_CASE.accounts[2]!;
-    expect(matchesModel(roth, ROTH_GROWTH, 3_000_00)).toBe(true);
+    expect(matchesModel(roth, ROTH_GROWTH, 3_000_00, TICKERS)).toBe(true);
     const adjusted = { ...roth, lines: roth.lines.map((l) => (l.tickerSymbol === 'VTI' ? { ...l, amountCents: 1 } : l)) };
-    expect(matchesModel(adjusted, ROTH_GROWTH, 3_000_00)).toBe(false);
+    expect(matchesModel(adjusted, ROTH_GROWTH, 3_000_00, TICKERS)).toBe(false);
   });
 
   it('turns a typed weight into dollars of the amount to invest, and back', () => {
@@ -132,7 +135,7 @@ describe('an account allocated by fund (10/26)', () => {
     const weights = linesAsWeights(joint.lines);
     expect(weights.reduce((t, l) => t + l.weightBps, 0)).toBe(10_000);
     expect(weights.find((l) => l.tickerSymbol === 'BND')?.weightBps).toBe(1683);
-    expect(linesAsWeights([{ tickerSymbol: 'VTI', amountCents: 0, heldSharesMicros: null }])).toEqual([]);
+    expect(linesAsWeights([{ tickerSymbol: 'VTI', amountCents: 0, sharesMicros: null }])).toEqual([]);
   });
 });
 
@@ -142,33 +145,34 @@ describe('followModels', () => {
   const fees = (feeCents: number) => new Map([[roth.id, feeCents]]);
 
   it('refills an account still on its model when the balance changes', () => {
-    const [next] = followModels(before, [{ ...roth, balanceCents: 400_000_00 }], MODELS, fees(3_000_00), fees(4_000_00));
+    const [next] = followModels(before, [{ ...roth, balanceCents: 400_000_00 }], MODELS, fees(3_000_00), fees(4_000_00), TICKERS);
     expect(next!.lines).toEqual([
-      { tickerSymbol: 'VTI', amountCents: 237_600_00, heldSharesMicros: null },
-      { tickerSymbol: 'VXUS', amountCents: 158_400_00, heldSharesMicros: null },
+      { tickerSymbol: 'VTI', amountCents: 237_600_00, sharesMicros: null },
+      { tickerSymbol: 'VXUS', amountCents: 158_400_00, sharesMicros: null },
     ]);
   });
 
   it('refills when only the fee moves, as when another balance changes the tier', () => {
-    const [next] = followModels(before, [roth], MODELS, fees(3_000_00), fees(4_500_00));
+    const [next] = followModels(before, [roth], MODELS, fees(3_000_00), fees(4_500_00), TICKERS);
     expect(next!.lines.reduce((t, l) => t + l.amountCents, 0)).toBe(295_500_00);
   });
 
   it('leaves an adjusted account alone', () => {
-    const adjusted = { ...roth, lines: [{ tickerSymbol: 'VTI', amountCents: 297_000_00, heldSharesMicros: null }] };
+    const adjusted = { ...roth, lines: [{ tickerSymbol: 'VTI', amountCents: 297_000_00, sharesMicros: null }] };
     const [next] = followModels(
       { ...WORKBOOK_CASE, accounts: [adjusted] },
       [{ ...adjusted, balanceCents: 400_000_00 }],
       MODELS,
       fees(3_000_00),
       fees(4_000_00),
+      TICKERS,
     );
     expect(next!.lines).toEqual(adjusted.lines);
   });
 
   it('keeps the edit itself when the funds are what changed', () => {
-    const edited = { ...roth, lines: [{ tickerSymbol: 'VTI', amountCents: 1_00, heldSharesMicros: null }] };
-    expect(followModels(before, [edited], MODELS, fees(3_000_00), fees(3_000_00))[0]).toBe(edited);
+    const edited = { ...roth, lines: [{ tickerSymbol: 'VTI', amountCents: 1_00, sharesMicros: null }] };
+    expect(followModels(before, [edited], MODELS, fees(3_000_00), fees(3_000_00), TICKERS)[0]).toBe(edited);
   });
 });
 
@@ -256,57 +260,181 @@ describe('models', () => {
   });
 });
 
-describe('a statement account (shares held, valued at today\'s price)', () => {
+describe('one kind of fund, however it got into the account', () => {
+  const MUTUAL_FUND = { symbol: 'ABCDX', name: null, assetClass: 'EQUITY', defaultBucket: 'LATER', priceCents: 263_50, priceMicros: 263_500_000, priceAsOf: '2026-10-30' } as const;
+  const tickers = tickersBySymbol([...PLACEHOLDER_TICKERS, MUTUAL_FUND]);
+  const repriced = (symbol: string, cents: number) =>
+    tickersBySymbol([...PLACEHOLDER_TICKERS, MUTUAL_FUND].map((t) => (t.symbol === symbol ? { ...t, priceCents: cents, priceMicros: cents * 10_000 } : t)));
+
+  const blank = { ...ACCUMULATOR_CASE.accounts[0]!, modelId: null, balanceCents: 100_000_00, lines: [] };
+  const withDollars = (tickerSymbol: string, amountCents: number) => ({ tickerSymbol, amountCents, sharesMicros: null });
+  /** The way an imported statement looks: the balance is the funds, nothing else. */
   const statement = {
-    ...ACCUMULATOR_CASE.accounts[0]!,
-    modelId: null,
-    balanceCents: 0,
+    ...blank,
+    balanceCents: 59_000_00,
     lines: [
-      { tickerSymbol: 'SGOV', amountCents: 9_000_00, heldSharesMicros: 90_000_000 },
-      { tickerSymbol: 'VTI', amountCents: 50_000_00, heldSharesMicros: 166_500_000 },
-      // Added by dollars after the import: a purchase, not a holding.
-      { tickerSymbol: 'BND', amountCents: 1_000_00, heldSharesMicros: null },
+      { tickerSymbol: 'SGOV', amountCents: 9_000_00, sharesMicros: 90_000_000 },
+      { tickerSymbol: 'VTI', amountCents: 50_000_00, sharesMicros: 166_666_667 },
     ],
   };
 
-  it('is worth its shares at today\'s prices, and its balance follows', () => {
-    // SGOV 90 × $100 = $9,000; VTI 166.5 × $300 = $49,950; BND $1,000.
-    const valued = atCurrentPrices(statement, TICKERS);
-    expect(valued.lines.map((l) => l.amountCents)).toEqual([9_000_00, 49_950_00, 1_000_00]);
-    expect(valued.balanceCents).toBe(59_950_00);
-
-    const later = tickersBySymbol(
-      PLACEHOLDER_TICKERS.map((t) => (t.symbol === 'VTI' ? { ...t, priceCents: 320_00, priceMicros: 320_000_000 } : t)),
-    );
-    expect(atCurrentPrices(valued, later).balanceCents).toBe(9_000_00 + 53_280_00 + 1_000_00);
+  it('turns dollars into whole shares of an ETF, and the rest stays in the balance as cash', () => {
+    // 166 × $300 = $49,800 of the $50,000 typed.
+    const placed = atCurrentPrices({ ...blank, lines: [withDollars('VTI', 50_000_00)] }, tickers);
+    expect(placed.lines[0]).toEqual({ tickerSymbol: 'VTI', amountCents: 49_800_00, sharesMicros: 166_000_000 });
+    expect(placed.balanceCents).toBe(100_000_00);
   });
 
-  it('keeps a fund\'s last value when its ticker has no price', () => {
+  it('turns dollars into a fraction of a mutual fund or cash fund, landing on the same cent', () => {
+    const placed = atCurrentPrices({ ...blank, lines: [withDollars('ABCDX', 50_000_00), withDollars('SGOV', 1_234_56)] }, tickers);
+    expect(placed.lines.map((l) => l.amountCents)).toEqual([50_000_00, 1_234_56]);
+    expect(placed.lines[0]?.sharesMicros).toBe(189_753_321);
+    expect(placed.balanceCents).toBe(100_000_00);
+  });
+
+  it('does not lose a share to rounding when dollars came from a share count', () => {
+    const exact = { symbol: 'SPYI', name: null, assetClass: 'EQUITY', defaultBucket: 'LATER', priceCents: 53_01, priceMicros: 53_009_200, priceAsOf: null } as const;
+    expect(sharesForDollars(109_198_95, exact, 53_009_200)).toBe(2_060_000_000);
+  });
+
+  it('lets typed shares move the balance, since that is what the client owns', () => {
+    const sold = { ...statement, lines: statement.lines.map((l) => (l.tickerSymbol === 'VTI' ? { ...l, sharesMicros: 100_000_000 } : l)) };
+    const valued = atCurrentPrices(sold, tickers);
+    expect(valued.lines[1]?.amountCents).toBe(30_000_00);
+    expect(valued.balanceCents).toBe(39_000_00);
+  });
+
+  it('builds a balance from shares typed on an empty account', () => {
+    const typed = { ...blank, balanceCents: 0, lines: [{ tickerSymbol: 'VTI', amountCents: 0, sharesMicros: 10_000_000 }] };
+    expect(atCurrentPrices(typed, tickers).balanceCents).toBe(3_000_00);
+  });
+
+  it('keeps dollars typed into an imported account inside the balance', () => {
+    // The old behavior raised the balance by $50,000.
+    const account = atCurrentPrices(statement, tickers);
+    const typed = atCurrentPrices({ ...account, lines: [...account.lines, withDollars('BND', 50_000_00)] }, tickers);
+    expect(typed.balanceCents).toBe(account.balanceCents);
+    expect(leftToAllocateCents(typed, tickers, 0)).toBeLessThan(-49_000_00);
+  });
+
+  it('moves dollars and the balance when a price moves, on every account, and leaves cash alone', () => {
+    const placed = atCurrentPrices({ ...blank, lines: [withDollars('VTI', 50_000_00)] }, tickers);
+    const later = atCurrentPrices(placed, repriced('VTI', 320_00));
+    expect(later.lines[0]).toEqual({ tickerSymbol: 'VTI', amountCents: 53_120_00, sharesMicros: 166_000_000 });
+    // $50,200 of cash from before, plus the same 166 shares at the new price.
+    expect(later.balanceCents).toBe(50_200_00 + 53_120_00);
+  });
+
+  it('holds dollars until there is a price, then makes them shares without touching the balance', () => {
     const noPrice = tickersBySymbol(PLACEHOLDER_TICKERS.map((t) => (t.symbol === 'VTI' ? { ...t, priceCents: null, priceMicros: null } : t)));
-    expect(atCurrentPrices(statement, noPrice).lines[1]?.amountCents).toBe(50_000_00);
+    const waiting = atCurrentPrices({ ...blank, lines: [withDollars('VTI', 50_000_00)] }, noPrice);
+    expect(waiting.lines[0]).toEqual(withDollars('VTI', 50_000_00));
+    const priced = atCurrentPrices(waiting, tickers);
+    expect(priced.lines[0]?.sharesMicros).toBe(166_000_000);
+    expect(priced.balanceCents).toBe(100_000_00);
   });
 
   it('values shares at the exact price, so they match the statement', () => {
     // 2,060 × $53.0092 = $109,198.952: the statement's $109,198.95, where the
     // cent-rounded $53.01 would give $109,200.60.
-    expect(heldValueCents(2_060_000_000, 53_009_200)).toBe(109_198_95);
+    expect(valueOfSharesCents(2_060_000_000, 53_009_200)).toBe(109_198_95);
     // Large enough that a double would lose it: 93,572.35 shares at $1.
-    expect(heldValueCents(93_572_350_000, 1_000_000)).toBe(93_572_35);
+    expect(valueOfSharesCents(93_572_350_000, 1_000_000)).toBe(93_572_35);
   });
 
-  it('leaves an account allocated by dollars alone, as the same object', () => {
-    const joint = WORKBOOK_CASE.accounts[0]!;
-    expect(atCurrentPrices(joint, TICKERS)).toBe(joint);
-    expect(caseAtCurrentPrices(WORKBOOK_CASE, PLACEHOLDER_TICKERS)).toBe(WORKBOOK_CASE);
+  it('moves the balance on a later price once dollars are pinned to shares', () => {
+    const filled = { ...WORKBOOK_CASE, accounts: [{ ...blank, lines: [withDollars('VTI', 50_000_00)] }] };
+    const pinned = caseWithSharesPinned(filled, PLACEHOLDER_TICKERS);
+    expect(pinned.accounts[0]?.lines[0]?.sharesMicros).toBe(166_000_000);
+    expect(pinned.accounts[0]?.balanceCents).toBe(100_000_00);
+
+    const up = PLACEHOLDER_TICKERS.map((t) => (t.symbol === 'VTI' ? { ...t, priceCents: 320_00, priceMicros: 320_000_000 } : t));
+    const shown = caseAtCurrentPrices(pinned, up).accounts[0]!;
+    expect(shown.lines[0]?.sharesMicros).toBe(166_000_000);
+    expect(shown.balanceCents).toBe(100_000_00 + 166 * 20_00);
+
+    // Left in dollars, the same new price just buys fewer shares: the bug this prevents.
+    expect(caseAtCurrentPrices(filled, up).accounts[0]?.balanceCents).toBe(100_000_00);
   });
 
-  it('pays the fee from its cash funds instead of setting it aside on top', () => {
-    const valued = atCurrentPrices(statement, TICKERS);
+  it('pins only what is still in dollars, without revaluing anything else', () => {
+    const settled = { ...WORKBOOK_CASE, accounts: [statement] };
+    expect(caseWithSharesPinned(settled, PLACEHOLDER_TICKERS)).toBe(settled);
+    const noPrice = PLACEHOLDER_TICKERS.map((t) => (t.symbol === 'VTI' ? { ...t, priceCents: null, priceMicros: null } : t));
+    const waiting = { ...WORKBOOK_CASE, accounts: [{ ...blank, lines: [withDollars('VTI', 50_000_00)] }] };
+    expect(caseWithSharesPinned(waiting, noPrice)).toBe(waiting);
+  });
+
+  it('comes back as the same object when nothing moved', () => {
+    const settled = atCurrentPrices(statement, tickers);
+    expect(atCurrentPrices(settled, tickers)).toBe(settled);
+    const settledCase = caseAtCurrentPrices(WORKBOOK_CASE, PLACEHOLDER_TICKERS);
+    expect(caseAtCurrentPrices(settledCase, PLACEHOLDER_TICKERS)).toBe(settledCase);
+  });
+
+  it('pays the fee from cash funds when an imported account has no other cash', () => {
+    const valued = atCurrentPrices(statement, tickers);
     expect(investableCents(valued, 900_00)).toBe(valued.balanceCents);
-    expect(leftToAllocateCents(valued, 900_00)).toBe(0);
-    expect(cashForFeeCents(valued, TICKERS)).toBe(9_000_00);
+    expect(leftToAllocateCents(valued, tickers, 900_00)).toBe(0);
+    expect(cashForFeeCents(valued, tickers)).toBe(9_000_00);
     // No separate fee cash: SGOV already is the cash.
-    expect(accountHoldings(valued, TICKERS, 900_00).map((h) => h.tickerSymbol)).toEqual(['SGOV', 'VTI', 'BND']);
+    expect(accountHoldings(valued, tickers, 900_00).map((h) => h.tickerSymbol)).toEqual(['SGOV', 'VTI']);
+  });
+
+  it('holds the fee back from the same kind of account when it has the money', () => {
+    const open = atCurrentPrices({ ...statement, balanceCents: statement.balanceCents + 5_000_00 }, tickers);
+    const cash = accountCash(open, tickers, 900_00);
+    expect(cash.feeCashCents).toBe(900_00);
+    expect(investableCents(open, 900_00)).toBe(open.balanceCents - 900_00);
+    expect(accountHoldings(open, tickers, 900_00)[0]?.tickerSymbol).toBeNull();
+  });
+
+  it('counts what whole shares leave behind as cash, not as work left to do', () => {
+    const model = { id: 'm', name: 'All VTI', taxFunnel: null, lines: [{ tickerSymbol: 'VTI', weightBps: 10_000 }] };
+    const filled = atCurrentPrices(applyModel({ ...blank, balanceCents: 100_000_00 }, model, 1_000_00), tickers);
+    // $99,000 at $300 is exactly 330 shares; a nudge in the balance leaves change.
+    const change = { ...filled, balanceCents: 100_000_00 + 250_00 };
+    expect(accountCash(change, tickers, 1_000_00)).toEqual({
+      uninvestedCents: 1_250_00,
+      feeCashCents: 1_000_00,
+      roundingCents: 250_00,
+      leftCents: 0,
+    });
+    expect(accountHoldings(change, tickers, 1_000_00)[0]?.marketValueCents).toBe(1_250_00);
+    // More than a share's price is money still to place.
+    const more = { ...filled, balanceCents: 100_000_00 + 400_00 };
+    expect(accountCash(more, tickers, 1_000_00)).toMatchObject({ roundingCents: 0, leftCents: 400_00 });
+  });
+
+  it('still matches its model right after a fill, and not once prices have moved it', () => {
+    const model = { id: 'm', name: 'Split', taxFunnel: null, lines: [{ tickerSymbol: 'VTI', weightBps: 5_000 }, { tickerSymbol: 'ABCDX', weightBps: 5_000 }] };
+    const filled = atCurrentPrices(applyModel(blank, model, 1_000_00), tickers);
+    expect(matchesModel(filled, model, 1_000_00, tickers)).toBe(true);
+
+    const moved = repriced('VTI', 400_00);
+    const later = atCurrentPrices(filled, moved);
+    expect(matchesModel(later, model, 1_000_00, moved)).toBe(false);
+
+    // Typing a new balance then changes the cash, not the shares.
+    const models = new Map([['m', model]]);
+    const fee = new Map([[blank.id, 1_000_00]]);
+    const asTyped = { ...later, modelId: 'm', balanceCents: later.balanceCents + 10_000_00 };
+    const [next] = followModels({ ...WORKBOOK_CASE, accounts: [{ ...later, modelId: 'm' }] }, [asTyped], models, fee, fee, moved);
+    expect(next).toBe(asTyped);
+  });
+
+  it('does not refill a model account when neither its balance nor its fee changed', () => {
+    const model = { id: 'm', name: 'All VTI', taxFunnel: null, lines: [{ tickerSymbol: 'VTI', weightBps: 10_000 }] };
+    const filled = atCurrentPrices(applyModel(blank, model, 1_000_00), tickers);
+    const fee = new Map([[blank.id, 1_000_00]]);
+    const [next] = followModels({ ...WORKBOOK_CASE, accounts: [filled] }, [filled], new Map([['m', model]]), fee, fee, tickers);
+    expect(next).toBe(filled);
+  });
+
+  it('shows the shares a fund holds in the bucket list', () => {
+    const clientCase = { ...WORKBOOK_CASE, accounts: [atCurrentPrices(statement, tickers)] };
+    const later = holdingsInBucket(clientCase, [...PLACEHOLDER_TICKERS, MUTUAL_FUND], new Map(), 'LATER');
+    expect(later.find((h) => h.symbol === 'VTI')?.shares).toBeCloseTo(166.666667, 6);
   });
 });
 

@@ -47,7 +47,7 @@ describe('Now bucket', () => {
 
   it('adds the advisory fee cash on top of E16 (US-19)', () => {
     const now = computeNow(WORKBOOK_NOW, 39_000_00);
-    expect(now.lines.at(-1)).toMatchObject({ amountCents: 39_000_00, cell: 'Fee' });
+    expect(now.lines.at(-1)).toMatchObject({ amountCents: 39_000_00 });
     expect(now.totalCents).toBe(229_000_00);
   });
 
@@ -91,11 +91,6 @@ describe('Soon bucket', () => {
     const tenYears = computeSoon({ ...WORKBOOK_SOON, incomeGapYears: 10 });
     expect(fiveYears.lines[1]?.amountCents).toBe(9_000_00); // 60,000 x 5 x 3%
     expect(tenYears.lines[1]?.amountCents).toBe(18_000_00);
-  });
-
-  it('flags where the workbook contradicts itself, and RIG\'s change to it', () => {
-    const noted = computeSoon(WORKBOOK_SOON).lines.filter((l) => l.note !== undefined);
-    expect(noted.map((l) => l.cell)).toEqual(['E28', 'E48']);
   });
 });
 

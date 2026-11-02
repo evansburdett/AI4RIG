@@ -190,8 +190,8 @@ describe('holdingsToAccount', () => {
     expect(account.balanceCents).toBe(26_250_00);
     expect(account.modelId).toBeNull();
     expect(account.lines).toEqual([
-      { tickerSymbol: 'VXPXX', amountCents: 20_000_00, heldSharesMicros: 20_000_000_000 },
-      { tickerSymbol: 'MSFT', amountCents: 6_250_00, heldSharesMicros: 12_500_000 },
+      { tickerSymbol: 'VXPXX', amountCents: 20_000_00, sharesMicros: 20_000_000_000 },
+      { tickerSymbol: 'MSFT', amountCents: 6_250_00, sharesMicros: 12_500_000 },
     ]);
   });
 });

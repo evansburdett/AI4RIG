@@ -177,17 +177,19 @@ async function start(): Promise<void> {
   log(`starting AI4RIG ${app.getVersion()} (${process.platform}/${process.arch}), data in ${dataDir}`);
 
   const appDir = app.getAppPath();
+  const keychain = {
+    isAvailable: () => safeStorage.isEncryptionAvailable(),
+    encrypt: (plain: string) => safeStorage.encryptString(plain),
+    decrypt: (encrypted: Buffer) => safeStorage.decryptString(encrypted),
+  };
   server = await startServer({
     dataDir,
     webRoot: join(appDir, 'web'),
     migrationsDir: join(appDir, 'db', 'migrations'),
     referenceSeedDir: join(appDir, 'db', 'reference-seed'),
     appVersion: app.getVersion(),
-    openAiKey: fileSecretStore(join(dataDir, 'openai-key'), {
-      isAvailable: () => safeStorage.isEncryptionAvailable(),
-      encrypt: (plain) => safeStorage.encryptString(plain),
-      decrypt: (encrypted) => safeStorage.decryptString(encrypted),
-    }),
+    openAiKey: fileSecretStore(join(dataDir, 'openai-key'), keychain),
+    marketDataKey: fileSecretStore(join(dataDir, 'market-data-key'), keychain),
   });
   log(`serving on ${server.url}, database ${server.databasePath}`);
 

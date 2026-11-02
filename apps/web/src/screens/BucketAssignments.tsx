@@ -1,15 +1,22 @@
 import { useEffect, useState } from 'react';
 
-import { Callout } from '../components/Callout.js';
 import { About } from '../components/Help.js';
 import { NewTickerFields } from '../components/NewTickerFields.js';
+import { RefreshPrices } from '../components/RefreshPrices.js';
 import { typedMoney } from '../components/typedMoney.js';
 import { ASSET_CLASS_LABELS, BUCKET_LABELS } from '../domain/lifeStage.js';
 import { formatDay } from '../domain/dates.js';
 import { centsToInput, parseCents } from '../domain/money.js';
 import { isValidSymbol, normalizeSymbol } from '../domain/tickers.js';
 import { ASSET_CLASSES, BUCKETS } from '../domain/types.js';
-import type { AssetClass, BucketDefinition, BucketType, Ticker } from '../domain/types.js';
+import type {
+  AssetClass,
+  BucketDefinition,
+  BucketType,
+  PriceRefreshRequest,
+  PriceRefreshResult,
+  Ticker,
+} from '../domain/types.js';
 
 interface Props {
   tickers: readonly Ticker[];
@@ -18,6 +25,9 @@ interface Props {
   /** Adds a symbol to the universe (US-24). Rejects with the reason when it cannot. */
   onAddTicker: (ticker: Ticker) => Promise<Ticker>;
   onSaveDefinition: (definition: BucketDefinition) => Promise<void>;
+  /** Looks up today's price for every symbol. */
+  onRefreshPrices: (request: PriceRefreshRequest) => Promise<PriceRefreshResult>;
+  today: Date;
 }
 
 /**
@@ -32,6 +42,8 @@ export function BucketAssignments({
   onSaveTicker,
   onAddTicker,
   onSaveDefinition,
+  onRefreshPrices,
+  today,
 }: Props) {
   const [filter, setFilter] = useState('');
   const [newSymbolText, setNewSymbolText] = useState('');
@@ -57,16 +69,11 @@ export function BucketAssignments({
   return (
     <div>
       <header className="screen-header">
-        <h2>Ticker universe and bucket rules</h2>
+        <h2>Tickers and buckets</h2>
         <p className="muted">
-          Administrator screen. {tickers.length} symbols in the approved universe.
+          {tickers.length} symbols.
         </p>
       </header>
-
-      <Callout tone="info" title="Placeholder investment universe">
-        RIG has not sent the Common Investments list yet. These symbols come from the sample seed
-        data and are not the firm&rsquo;s approved set (US-06).
-      </Callout>
 
       <section className="card">
         <h3>Default bucket by ticker</h3>
@@ -74,10 +81,13 @@ export function BucketAssignments({
         <About>
           <p>
             A model that uses a symbol in a different bucket is flagged on the Models screen, not
-            blocked. A symbol typed on a model or a manual bucket that is not listed here can be
-            added from there too. Prices are typed here until RIG picks a price provider.
+            blocked. A symbol typed on a model or an account that is not listed here can be
+            added from there too. Prices come from Market Data when a key is set on the Settings
+            screen. A price typed here stands until the next refresh.
           </p>
         </About>
+
+        <RefreshPrices tickers={tickers} onRefresh={onRefreshPrices} today={today} />
 
         <div className="add-ticker">
           <div className="field">
@@ -210,20 +220,13 @@ export function BucketAssignments({
           />
         ))}
       </section>
-
-      <About title="Why there are no asset-class rules">
-        <p>
-          A rule mapping a whole asset class to a bucket was planned but not built; the per-ticker
-          defaults above cover the same ground for a universe this size.
-        </p>
-      </About>
     </div>
   );
 }
 
 /**
- * US-21: the price shares are worked out at. Typed here until RIG picks a
- * price provider; the date shows how old it is.
+ * US-21: the price shares are worked out at, from Market Data or typed here;
+ * the date shows how old it is.
  */
 function TickerPriceEditor({
   ticker,

@@ -23,9 +23,6 @@ import type {
 export interface WorksheetLine {
   readonly label: string;
   readonly amountCents: Cents;
-  readonly cell: string;
-  /** Set where the workbook contradicts itself and RIG needs to confirm. */
-  readonly note?: string;
 }
 
 export interface BucketWorksheet {
@@ -92,22 +89,21 @@ export function computeNow(inputs: NowInputs, advisoryFeeCents: Cents): BucketWo
     {
       label: `Income draw from investable assets (${inputs.incomeDrawMonths} months)`,
       amountCents: multiplyCents(inputs.monthlyIncomeDrawCents, inputs.incomeDrawMonths),
-      cell: 'E6',
+      // E6
     },
     {
       label: 'Cash the client wants to see in the bank',
       amountCents: inputs.bankReserveCents,
-      cell: 'E9',
+      // E9
     },
     {
       label: 'Large upcoming planned expenses',
       amountCents: addCents(...inputs.plannedExpenses.map((e) => e.costCents)),
-      cell: 'E15',
+      // E15
     },
     {
       label: "Advisory fee cash, one year (held in each account's Now)",
       amountCents: advisoryFeeCents,
-      cell: 'Fee',
     },
   ];
 
@@ -120,7 +116,7 @@ export function computeSoon(inputs: SoonInputs): BucketWorksheet {
     {
       label: `Income gap (${inputs.incomeGapYears} years)`,
       amountCents: multiplyCents(inputs.annualIncomeGapCents, inputs.incomeGapYears),
-      cell: 'E23',
+      // E23
     },
     {
       label: `Inflation hedge (${inputs.incomeGapYears} years of the gap x ${INFLATION_HEDGE_RATE * 100}%)`,
@@ -128,34 +124,34 @@ export function computeSoon(inputs: SoonInputs): BucketWorksheet {
         multiplyCents(inputs.annualIncomeGapCents, inputs.incomeGapYears),
         INFLATION_HEDGE_RATE,
       ),
-      cell: 'E28',
-      note: 'Changed at RIG’s request on Oct 26: 3% of the gap for each year covered. The workbook uses 7.5% of five years’ gap.',
+      // E28. RIG changed this on Oct 26: 3% of the gap for each year covered.
+      // The workbook uses 7.5% of five years' gap.
     },
     {
       label: 'Social Security bridge (delayed optimization)',
       amountCents: sumGapEntries(inputs.socialSecurityBridges),
-      cell: 'E33',
+      // E33
     },
     {
       label: 'Additional healthcare gap',
       amountCents: sumGapEntries(inputs.healthcareGaps),
-      cell: 'E38',
+      // E38
     },
     {
       label: 'Miscellaneous costs',
       amountCents: addCents(...inputs.miscellaneousCosts.map((c) => c.costCents)),
-      cell: 'E43',
+      // E43
     },
     {
       label: 'Forced withdrawals from qualified accounts (10 years)',
       amountCents: sumGapEntries(inputs.forcedWithdrawals),
-      cell: 'E48',
-      note: 'Workbook applies the 1.15 gross-up to row 46 but not row 47. Confirm with RIG.',
+      // E48. The workbook applies the 1.15 gross-up to row 46 but not row 47.
+      // Still to confirm with RIG.
     },
     {
       label: 'Money to hold conservatively',
       amountCents: inputs.conservativeReserveCents,
-      cell: 'E51',
+      // E51
     },
   ];
 
@@ -171,9 +167,9 @@ export function computeLater(
   return {
     bucket: 'LATER',
     lines: [
-      { label: 'Total investable assets', amountCents: investableAssetsCents, cell: 'E59' },
-      { label: 'Less the Now bucket', amountCents: -nowTotalCents, cell: 'E16' },
-      { label: 'Less the Soon bucket', amountCents: -soonTotalCents, cell: 'E52' },
+      { label: 'Total investable assets', amountCents: investableAssetsCents }, // E59,
+      { label: 'Less the Now bucket', amountCents: -nowTotalCents }, // E16,
+      { label: 'Less the Soon bucket', amountCents: -soonTotalCents }, // E52,
     ],
     totalCents: addCents(investableAssetsCents, -nowTotalCents, -soonTotalCents),
   };

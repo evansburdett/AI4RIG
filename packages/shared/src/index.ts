@@ -148,12 +148,12 @@ export interface AccountLine {
   readonly tickerSymbol: string;
   readonly amountCents: Cents;
   /**
-   * The shares the account holds, in millionths of a share, when the fund
-   * came from an imported statement (which can hold fractions). Null for a
-   * fund allocated by dollars or weight: those are bought in whole shares,
-   * worked out from the price. Changing a fund's dollars clears it.
+   * The shares in this fund, in millionths of a share, since statements and
+   * mutual funds hold fractions. This is the record: amountCents is these at
+   * the last price. Null only until a fund placed by dollars or weight has a
+   * price to turn into shares.
    */
-  readonly heldSharesMicros: number | null;
+  readonly sharesMicros: number | null;
 }
 
 /**
@@ -169,7 +169,7 @@ export interface Account {
   readonly taxFunnel: TaxFunnel;
   /** Last four only, as RIG masks them today. */
   readonly maskedNumber: string;
-  /** Typed by the advisor, as on RIG's profile sheet. */
+  /** The funds at the last price plus cash not in a fund. Typing it sets the cash. */
   readonly balanceCents: Cents;
   /** The model the funds were filled from, or null when they were picked by hand. */
   readonly modelId: string | null;
@@ -262,9 +262,9 @@ export interface Ticker {
   readonly assetClass: AssetClass;
   readonly defaultBucket: BucketType;
   /**
-   * Price per share (US-21), typed on the Tickers screen until RIG picks a
-   * price provider. Null when nobody has entered one; shares cannot be worked
-   * out for this ticker until then.
+   * Price per share (US-21), from Market Data, a statement, or typed on the
+   * Tickers screen. Null when there is none yet; shares cannot be worked out
+   * for this ticker until then.
    */
   readonly priceCents: Cents | null;
   /**
@@ -295,6 +295,29 @@ export interface AppSettings {
   /** False in development, where the key comes from .env. */
   readonly openAiKeyEditable: boolean;
   readonly openAiModel: string;
+  /** Live prices: the same two answers, for the Market Data key. */
+  readonly marketDataKeyConfigured: boolean;
+  readonly marketDataKeyEditable: boolean;
+}
+
+/** What to look up. Left empty, the whole universe, looking now. */
+export interface PriceRefreshRequest {
+  readonly symbols?: readonly string[];
+  /** Skip funds already looked up today, for a refresh nobody asked for by hand. */
+  readonly skipCheckedToday?: boolean;
+}
+
+export interface PriceRefreshResult {
+  /** The whole universe after the refresh, for the screens to show. */
+  readonly tickers: readonly Ticker[];
+  /** Priced from the market just now. */
+  readonly updated: readonly string[];
+  /** Those whose price is different from the one already saved. */
+  readonly changed: readonly string[];
+  /** Cash funds the market had no price for, now at $1.00. */
+  readonly assumedCash: readonly string[];
+  /** No price found. These keep whatever price they had. */
+  readonly notFound: readonly string[];
 }
 
 export interface BucketDefinition {
