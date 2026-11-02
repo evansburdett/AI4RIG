@@ -1,8 +1,9 @@
 /**
- * Where the OpenAI key (US-28) comes from. The API never reads a key from
- * anywhere else, so the same routes work whichever one is plugged in:
+ * Where an API key (OpenAI for US-28, Market Data for live prices) comes from.
+ * The API never reads a key from anywhere else, so the same routes work
+ * whichever one is plugged in:
  *
- *   - development: OPENAI_API_KEY in the repo's .env, read-only here
+ *   - development: the key's variable in the repo's .env, read-only here
  *   - the desktop app: a file in the user's own app-data folder, encrypted
  *     with the operating system's keychain, set from the Settings screen
  *     (apps/desktop/src/secretStore.ts)

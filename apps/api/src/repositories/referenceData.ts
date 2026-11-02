@@ -131,6 +131,23 @@ export function upsertTicker(db: Db, ticker: TickerInput, today: Date = new Date
   return saved;
 }
 
+/**
+ * Prices from the market, in one transaction. The date is the day the price
+ * is from, not the day it was looked up: a mutual fund's price on a Monday
+ * morning is Friday's, and the screens should say so.
+ */
+export function savePrices(
+  db: Db,
+  prices: readonly { readonly symbol: string; readonly priceMicros: number; readonly asOf: string }[],
+): void {
+  const update = db.prepare(
+    'UPDATE tickers SET price_micros = ?, price_cents = ?, price_as_of = ? WHERE symbol = ?',
+  );
+  db.transaction(() => {
+    for (const { symbol, priceMicros, asOf } of prices) update.run(priceMicros, centsOf(priceMicros), asOf, symbol);
+  })();
+}
+
 /** An exact price to the cent: never below 1, since a price of $0 is refused. */
 function centsOf(priceMicros: number): number {
   return Math.max(Math.round(priceMicros / 10_000), 1);

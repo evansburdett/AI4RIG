@@ -46,6 +46,7 @@ function folders() {
     referenceSeedDir,
     appVersion: '1.2.3',
     openAiKey: memorySecretStore(),
+    marketDataKey: memorySecretStore(),
   };
 }
 

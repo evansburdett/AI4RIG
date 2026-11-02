@@ -5,10 +5,12 @@ import express, { type ErrorRequestHandler, type Express } from 'express';
 import { DEFAULT_OPENAI_MODEL, type ApiConfig } from './config.js';
 import { constraintStatus, HttpError } from './errors.js';
 import { openAiEstimator, type Estimator } from './lifeExpectancy.js';
+import { createPriceRefresher, marketDataPrices, type PriceSource } from './prices.js';
 import { createClientsRouter } from './routes/clients.js';
 import { createImportsRouter } from './routes/imports.js';
 import { createLifeExpectancyRouter } from './routes/lifeExpectancy.js';
 import { createModelsRouter } from './routes/models.js';
+import { createPricesRouter } from './routes/prices.js';
 import { createReferenceDataRouter } from './routes/referenceData.js';
 import { createSettingsRouter } from './routes/settings.js';
 import { envSecretStore, type SecretStore } from './secrets.js';
@@ -24,6 +26,10 @@ export interface AppDeps {
    * only; the desktop app passes a store the Settings screen can write.
    */
   openAiKey?: SecretStore;
+  /** Where the Market Data key lives, on the same terms as the OpenAI key. */
+  marketDataKey?: SecretStore;
+  /** Injected by tests so they never call Market Data. */
+  priceSource?: PriceSource;
   /**
    * A built front end (apps/web/dist) to serve from this same address. The
    * desktop app uses it so the window and the API share one origin; in
@@ -67,12 +73,15 @@ export function createApp({
   config,
   db = openDatabase(),
   openAiKey = envSecretStore(config.openAiApiKey),
+  marketDataKey = envSecretStore(config.marketDataApiKey),
   estimator,
+  priceSource,
   webRoot,
 }: AppDeps): CreatedApp {
   const openAiModel = config.openAiModel ?? DEFAULT_OPENAI_MODEL;
   const estimate =
     estimator ?? openAiEstimator({ apiKey: () => openAiKey.get(), model: openAiModel });
+  const prices = priceSource ?? marketDataPrices({ apiKey: () => marketDataKey.get() });
 
   const app = express();
   app.disable('x-powered-by');
@@ -104,7 +113,8 @@ export function createApp({
   app.use(createModelsRouter(db));
   app.use(createImportsRouter(db));
   app.use(createLifeExpectancyRouter(estimate));
-  app.use(createSettingsRouter({ openAiKey, openAiModel }));
+  app.use(createPricesRouter(createPriceRefresher(db, prices)));
+  app.use(createSettingsRouter({ openAiKey, openAiModel, marketDataKey }));
 
   if (webRoot !== undefined) {
     app.use((req, res, next) => {

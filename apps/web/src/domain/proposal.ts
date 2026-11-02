@@ -50,12 +50,12 @@ export function proposedPositions(
           cashCents: null,
         };
       }
-      // Held from a statement: the whole shares the account already has, not
-      // what its dollars would buy at a price rounded to the cent.
+      // The whole shares the fund already has, not what its dollars would buy
+      // at a price rounded to the cent.
       const bought =
-        line.heldSharesMicros === null
+        line.sharesMicros === null
           ? wholeShares(line.amountCents, priceCents)
-          : heldWholeShares(line.amountCents, line.heldSharesMicros, priceCents);
+          : heldWholeShares(line.amountCents, line.sharesMicros, priceCents);
       return {
         bucket,
         tickerSymbol: line.tickerSymbol,
@@ -68,8 +68,8 @@ export function proposedPositions(
     });
 }
 
-function heldWholeShares(amountCents: Cents, heldSharesMicros: number, priceCents: Cents) {
-  const shares = Math.floor(heldSharesMicros / 1_000_000);
+function heldWholeShares(amountCents: Cents, sharesMicros: number, priceCents: Cents) {
+  const shares = Math.floor(sharesMicros / 1_000_000);
   const costCents = sharesValueCents(shares, priceCents);
   return { shares, costCents, cashCents: Math.max(amountCents - costCents, 0) };
 }

@@ -100,15 +100,15 @@ describe('client cases', () => {
     // The Joint account's funds, picked by hand, in display order.
     expect(body.accounts[0]?.modelId).toBeNull();
     expect(body.accounts[0]?.lines.slice(0, 3)).toEqual([
-      { tickerSymbol: 'SGOV', amountCents: 114_000_00, heldSharesMicros: null },
-      { tickerSymbol: 'BIL', amountCents: 76_000_00, heldSharesMicros: null },
-      { tickerSymbol: 'BND', amountCents: 200_000_00, heldSharesMicros: null },
+      { tickerSymbol: 'SGOV', amountCents: 114_000_00, sharesMicros: null },
+      { tickerSymbol: 'BIL', amountCents: 76_000_00, sharesMicros: null },
+      { tickerSymbol: 'BND', amountCents: 200_000_00, sharesMicros: null },
     ]);
     expect(body.accounts[2]).toMatchObject({
       modelId: '9004',
       lines: [
-        { tickerSymbol: 'VTI', amountCents: 178_200_00, heldSharesMicros: null },
-        { tickerSymbol: 'VXUS', amountCents: 118_800_00, heldSharesMicros: null },
+        { tickerSymbol: 'VTI', amountCents: 178_200_00, sharesMicros: null },
+        { tickerSymbol: 'VXUS', amountCents: 118_800_00, sharesMicros: null },
       ],
     });
     expect(body.nowInputs.plannedExpenses).toEqual([
@@ -157,8 +157,8 @@ describe('client cases', () => {
           proposalShares: [],
           modelId: '9002',
           lines: [
-            { tickerSymbol: 'TIP', amountCents: 12_345_67, heldSharesMicros: null },
-            { tickerSymbol: 'BND', amountCents: 37_154_33, heldSharesMicros: null },
+            { tickerSymbol: 'TIP', amountCents: 12_345_67, sharesMicros: null },
+            { tickerSymbol: 'BND', amountCents: 37_154_33, sharesMicros: null },
           ],
         },
       ],
@@ -185,8 +185,8 @@ describe('client cases', () => {
     expect(reread.accounts[2]).toMatchObject({
       modelId: '9002',
       lines: [
-        { tickerSymbol: 'TIP', amountCents: 12_345_67, heldSharesMicros: null },
-        { tickerSymbol: 'BND', amountCents: 37_154_33, heldSharesMicros: null },
+        { tickerSymbol: 'TIP', amountCents: 12_345_67, sharesMicros: null },
+        { tickerSymbol: 'BND', amountCents: 37_154_33, sharesMicros: null },
       ],
     });
     // Local ids are replaced by database ids.
@@ -365,7 +365,7 @@ describe('tickers', () => {
       ...original,
       accounts: original.accounts.map((a, i) =>
         i === 0
-          ? { ...a, lines: [...a.lines, { tickerSymbol: 'SCHD', amountCents: 15_000_00, heldSharesMicros: null }] }
+          ? { ...a, lines: [...a.lines, { tickerSymbol: 'SCHD', amountCents: 15_000_00, sharesMicros: null }] }
           : a,
       ),
     };
@@ -754,8 +754,8 @@ describe('funds in an account (10/26)', () => {
   it('saves funds that do not add up to the balance yet, and a fund with nothing in it', async () => {
     const original = await accumulator();
     const lines = [
-      { tickerSymbol: 'VOO', amountCents: 25_000_00, heldSharesMicros: null },
-      { tickerSymbol: 'VTI', amountCents: 0, heldSharesMicros: null },
+      { tickerSymbol: 'VOO', amountCents: 25_000_00, sharesMicros: null },
+      { tickerSymbol: 'VTI', amountCents: 0, sharesMicros: null },
     ];
     const saved = await call<ClientCase>('PUT', '/api/clients/2317', withLines(original, lines));
     expect(saved.status).toBe(200);
@@ -766,15 +766,15 @@ describe('funds in an account (10/26)', () => {
 
   it('refuses a negative amount, and a fund twice', async () => {
     const original = await accumulator();
-    const negative = await call('PUT', '/api/clients/2317', withLines(original, [{ tickerSymbol: 'VTI', amountCents: -1, heldSharesMicros: null }]));
+    const negative = await call('PUT', '/api/clients/2317', withLines(original, [{ tickerSymbol: 'VTI', amountCents: -1, sharesMicros: null }]));
     expect(negative.status).toBe(400);
 
     const twice = await call<{ issues: { message: string }[] }>(
       'PUT',
       '/api/clients/2317',
       withLines(original, [
-        { tickerSymbol: 'VTI', amountCents: 1_00, heldSharesMicros: null },
-        { tickerSymbol: 'vti', amountCents: 2_00, heldSharesMicros: null },
+        { tickerSymbol: 'VTI', amountCents: 1_00, sharesMicros: null },
+        { tickerSymbol: 'vti', amountCents: 2_00, sharesMicros: null },
       ]),
     );
     expect(twice.status).toBe(400);
@@ -786,7 +786,7 @@ describe('funds in an account (10/26)', () => {
     const { status, body } = await call<{ error: string }>(
       'PUT',
       '/api/clients/2317',
-      withLines(original, [{ tickerSymbol: 'NOTREAL', amountCents: 1_00, heldSharesMicros: null }]),
+      withLines(original, [{ tickerSymbol: 'NOTREAL', amountCents: 1_00, sharesMicros: null }]),
     );
     expect(status).toBe(400);
     expect(body.error).toMatch(/NOTREAL is not in the ticker list/);
@@ -794,7 +794,7 @@ describe('funds in an account (10/26)', () => {
 
   it('replaces the funds rather than adding to them', async () => {
     const original = await accumulator();
-    await call('PUT', '/api/clients/2317', withLines(original, [{ tickerSymbol: 'VTI', amountCents: 1_00, heldSharesMicros: null }]));
+    await call('PUT', '/api/clients/2317', withLines(original, [{ tickerSymbol: 'VTI', amountCents: 1_00, sharesMicros: null }]));
     const rows = db
       .prepare<[], { n: number }>(
         `SELECT COUNT(*) AS n FROM account_lines l
@@ -870,8 +870,8 @@ describe('importing from spreadsheets (10/26)', () => {
   it('keeps the shares an account holds from a statement, fractions and all', async () => {
     const { body: original } = await call<ClientCase>('GET', '/api/clients/2317');
     const lines = [
-      { tickerSymbol: 'VTI', amountCents: 1_234_56, heldSharesMicros: 4_115_200 },
-      { tickerSymbol: 'SGOV', amountCents: 500_00, heldSharesMicros: null },
+      { tickerSymbol: 'VTI', amountCents: 1_234_56, sharesMicros: 4_115_200 },
+      { tickerSymbol: 'SGOV', amountCents: 500_00, sharesMicros: null },
     ];
     const saved = await call<ClientCase>('PUT', '/api/clients/2317', {
       ...original,

@@ -18,6 +18,8 @@ call it made.
 | [0005](0005-engine-does-no-io.md) | The calculation engine does no I/O | Accepted |
 | [0006](0006-no-pii-anywhere.md) | No personally identifying information anywhere | Accepted |
 | [0007](0007-desktop-packaging-and-updates.md) | How the desktop app is packaged and updated | Accepted |
+| [0008](0008-live-prices-from-market-data.md) | Live prices from Market Data, looked up on demand | Accepted |
+| [0009](0009-every-fund-holds-shares.md) | Every fund holds shares, however it got into the account | Accepted |
 
 New ADR: copy the shape of an existing one, take the next number, add a row
 above.

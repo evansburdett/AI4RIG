@@ -32,20 +32,27 @@ export function ConnectionStatus() {
     };
   }, []);
 
-  if (state.kind === 'checking') return <span className="muted">Checking the API…</span>;
+  if (state.kind === 'checking') return <span className="muted">Connecting…</span>;
 
   if (state.kind === 'down') {
     return (
       <span className="status status-down" role="status">
-        API unreachable. {state.message}
+        Not connected. {state.message}
       </span>
     );
   }
 
   const { health } = state;
+  // The installed app has a version; only development needs the plumbing.
+  if (health.appVersion !== null) {
+    return (
+      <span className="status status-ok" role="status">
+        Version {health.appVersion}
+      </span>
+    );
+  }
   return (
     <span className="status status-ok" role="status" title={`API at ${api.baseUrl}`}>
-      {health.appVersion !== null && <>Version {health.appVersion} · </>}
       Connected · {health.databasePath} · {health.migrationsApplied} migration
       {health.migrationsApplied === 1 ? '' : 's'} applied
     </span>

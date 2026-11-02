@@ -110,7 +110,7 @@ describe('funds held from a statement', () => {
     // those dollars would only buy 2,059.
     const account = {
       ...WORKBOOK_CASE.accounts[0]!,
-      lines: [{ tickerSymbol: 'VTI', amountCents: 109_198_95, heldSharesMicros: 2_060_000_000 }],
+      lines: [{ tickerSymbol: 'VTI', amountCents: 109_198_95, sharesMicros: 2_060_000_000 }],
     };
     const [position] = proposedPositions(account, withPrice('VTI', 53_01));
     expect(position).toMatchObject({ shares: 2060, costCents: 109_200_60, cashCents: 0 });

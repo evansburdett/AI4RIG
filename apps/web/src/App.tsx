@@ -12,9 +12,11 @@ import type {
   ImportRequest,
   ImportResult,
   ModelPortfolio,
+  PriceRefreshRequest,
+  PriceRefreshResult,
   Ticker,
 } from './domain/types.js';
-import { caseAtCurrentPrices } from './domain/breakdown.js';
+import { caseAtCurrentPrices, caseWithSharesPinned } from './domain/breakdown.js';
 import { withTicker } from './domain/tickers.js';
 import { hrefFor, isReferenceScreen, useRoute, type Screen } from './routing.js';
 import { AssetClassBreakdown } from './screens/AssetClassBreakdown.js';
@@ -135,6 +137,30 @@ export function App() {
   const shown = useMemo(() => (draft === null ? null : caseAtCurrentPrices(draft, tickers)), [draft, tickers]);
   const activeClientNumber = route.clientNumber ?? lastClientNumber;
 
+  /**
+   * Funds still in dollars become shares as soon as there is a price: a model
+   * just filled, a price that just arrived, or a case saved before shares were
+   * the record. On a case with no unsaved edits this is saved straight away,
+   * since it was not the advisor's edit and should not read as one.
+   */
+  useEffect(() => {
+    if (draft === null) return;
+    const pinned = caseWithSharesPinned(draft, tickers);
+    if (pinned === draft) return;
+
+    setDraft(pinned);
+    if (draft !== saved) return;
+    setSaved(pinned);
+    api
+      .saveClient(pinned)
+      .then((result) => {
+        // Unless the advisor has started editing since: then theirs stands.
+        setSaved((current) => (current === pinned ? result : current));
+        setDraft((current) => (current === pinned ? result : current));
+      })
+      .catch((error: unknown) => setActionError(describeError(error)));
+  }, [draft, saved, tickers]);
+
   const selectClient = useCallback(
     (clientNumber: string) => {
       if (
@@ -250,6 +276,17 @@ export function App() {
     const result = await api.runImport(request);
     setTickers(result.tickers);
     setModels(result.models);
+    return result;
+  }, []);
+
+  /**
+   * Live prices. The open case revalues on its own from here: `shown` works
+   * statement accounts out from the tickers. Throws on failure so the button
+   * can say why, with every price left as it was.
+   */
+  const refreshPrices = useCallback(async (request: PriceRefreshRequest): Promise<PriceRefreshResult> => {
+    const result = await api.refreshPrices(request);
+    setTickers(result.tickers);
     return result;
   }, []);
 
@@ -405,6 +442,8 @@ export function App() {
             onSaveTicker={saveTicker}
             onAddTicker={addTicker}
             onSaveDefinition={saveDefinition}
+            onRefreshPrices={refreshPrices}
+            today={today}
           />
         ) : route.screen === 'fees' ? (
           <FeeTiers tiers={feeTiers} onSave={saveFeeTiers} />
@@ -419,7 +458,13 @@ export function App() {
         ) : shown === null ? (
           <p className="empty">Loading…</p>
         ) : route.screen === 'breakdown' ? (
-          <AssetClassBreakdown clientCase={shown} tickers={tickers} feeTiers={feeTiers} />
+          <AssetClassBreakdown
+            clientCase={shown}
+            tickers={tickers}
+            feeTiers={feeTiers}
+            onRefreshPrices={refreshPrices}
+            today={today}
+          />
         ) : (
           <ClientProfile
             clientCase={shown}
@@ -430,6 +475,7 @@ export function App() {
             onSaveAsModel={saveModel}
             onAddTicker={addTicker}
             onImport={runImport}
+            onRefreshPrices={refreshPrices}
             onEstimateLifeExpectancy={api.estimateLifeExpectancy}
             today={today}
           />

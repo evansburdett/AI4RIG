@@ -146,7 +146,7 @@ export function openAiEstimator(settings: OpenAiSettings): Estimator {
       // Never echo the body: an auth failure's body can quote part of the key.
       const reason =
         response.status === 401
-          ? 'OpenAI refused the API key in .env'
+          ? 'OpenAI refused the API key'
           : response.status === 429
             ? 'OpenAI is rate limiting this key or it is out of credit'
             : `OpenAI answered ${response.status}`;

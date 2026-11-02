@@ -92,8 +92,8 @@ After that it opens normally.
 ### First run
 
 1. Go to **Settings** and paste the OpenAI API key (we set this up with Ari in
-   person). It is encrypted with the computer's own keychain and never shown
-   again.
+   person) and RIG's Market Data key, from their Market Data dashboard. Each
+   is encrypted with the computer's own keychain and never shown again.
 2. RIG's 26 vendor models and their funds come with the app (0.1.4 on). Each
    fund's bucket is a best guess; it can be changed on the **Tickers**
    screen, and a newer model spreadsheet imported on the **Models** screen.
@@ -121,6 +121,7 @@ as a download link.
 
 - `ai4rig.db`: every case, ticker, model, and fee tier
 - `openai-key`: the encrypted OpenAI key
+- `market-data-key`: the encrypted Market Data key
 - `logs/main.log`: what the app did, for troubleshooting (**Help → Open Log File**)
 
 **Updating or uninstalling never deletes this folder.**
@@ -183,7 +184,7 @@ with the fix. Installed apps never move to an older version.
 apps/desktop/
   src/main.ts             Electron: window, menu, backup, updates, single instance
   src/server.ts           starts the API + front end on 127.0.0.1 (no Electron; tested)
-  src/secretStore.ts      the encrypted OpenAI key file (no Electron; tested)
+  src/secretStore.ts      the encrypted API key files (no Electron; tested)
   src/updates.ts          checking GitHub Releases
   scripts/build.mjs       builds apps/desktop/stage: what the installer contains
   scripts/after-pack.mjs  signs the Mac app ad hoc so Apple silicon will run it

@@ -15,6 +15,8 @@ export interface ApiConfig {
    */
   openAiApiKey?: string | undefined;
   openAiModel?: string;
+  /** Live prices. Optional in the same way: without it, prices are typed in. */
+  marketDataApiKey?: string | undefined;
   /** The installed app's version, shown in the footer. Unset in development. */
   appVersion?: string;
 }
@@ -53,5 +55,6 @@ export function loadConfig(): ApiConfig {
     nodeEnv: process.env.NODE_ENV ?? 'development',
     openAiApiKey: process.env.OPENAI_API_KEY?.trim() || undefined,
     openAiModel: process.env.OPENAI_MODEL?.trim() || DEFAULT_OPENAI_MODEL,
+    marketDataApiKey: process.env.MARKETDATA_API_KEY?.trim() || undefined,
   };
 }

@@ -43,15 +43,15 @@ export function Models({ models, tickers, onSave, onDelete, onAddTicker, onImpor
       <header className="screen-header">
         <h2>Model portfolios</h2>
         <p className="muted">
-          Administrator screen. {models.length} model{models.length === 1 ? '' : 's'}. Each one is
-          a set of tickers and weights that fills an account.
+          {models.length} model{models.length === 1 ? '' : 's'}. Each one is a set of tickers and
+          weights that fills an account.
         </p>
       </header>
 
       {models.some((m) => m.name.startsWith('Placeholder ')) && (
         <Callout tone="info" title="Placeholder models">
-          The models named &ldquo;Placeholder&rdquo; came with the app so the profile had something
-          to pick. Import RIG&rsquo;s vendor models below, then delete the placeholders.
+          The models named &ldquo;Placeholder&rdquo; came with an early version of the app. Once no
+          account uses them, they can be deleted.
         </Callout>
       )}
 

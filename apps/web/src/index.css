@@ -495,12 +495,6 @@ tfoot td {
   white-space: nowrap;
 }
 
-.cell {
-  font-size: var(--text-caption);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  color: var(--text-muted);
-}
-
 .row-actions {
   width: 1%;
   white-space: nowrap;
@@ -572,14 +566,19 @@ table.funds {
 }
 
 .cell-input input {
-  width: 8.5rem;
+  width: 7rem;
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
 /* The weight column: never more than "100.00". */
 .funds td:nth-child(3) .cell-input input {
-  width: 4.5rem;
+  width: 4rem;
+}
+
+/* The shares column: room for "93,572.35". */
+.funds td:nth-child(6) .cell-input input {
+  width: 6rem;
 }
 
 .bucket-tag {
@@ -932,6 +931,15 @@ table.funds {
 
 .add-ticker .field {
   margin: 0;
+}
+
+/* Live prices: the button, how old the prices are, and what the last refresh found. */
+.refresh-prices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem var(--space-2);
+  align-items: center;
+  margin-bottom: var(--space-3);
 }
 
 /* US-28: the life expectancy age with its estimate button beside it. */

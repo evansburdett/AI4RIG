@@ -228,7 +228,7 @@ export function holdingsToAccount(account: Account, holdings: readonly ImportedH
   }
 
   const lines = [...merged].map(
-    ([tickerSymbol, { amountCents, sharesMicros }]): AccountLine => ({ tickerSymbol, amountCents, heldSharesMicros: sharesMicros }),
+    ([tickerSymbol, { amountCents, sharesMicros }]): AccountLine => ({ tickerSymbol, amountCents, sharesMicros }),
   );
   return {
     ...account,
