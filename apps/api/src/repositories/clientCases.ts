@@ -74,6 +74,7 @@ interface AccountRow {
   masked_number: string;
   balance_cents: number;
   model_id: number | null;
+  model_filled_at: string | null;
 }
 
 interface LineRow {
@@ -186,7 +187,7 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
 
   const accounts = db
     .prepare<[number], AccountRow>(
-      `SELECT id, account_type, tax_funnel, masked_number, balance_cents, model_id
+      `SELECT id, account_type, tax_funnel, masked_number, balance_cents, model_id, model_filled_at
        FROM accounts WHERE client_case_id = ? ORDER BY position, id`,
     )
     .all(row.id)
@@ -198,6 +199,7 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
         maskedNumber: a.masked_number,
         balanceCents: a.balance_cents,
         modelId: a.model_id === null ? null : String(a.model_id),
+        modelFilledAt: a.model_filled_at,
         lines: lineRows
           .filter((l) => l.account_id === a.id)
           .map((l) => ({
@@ -286,7 +288,7 @@ export function getClientCase(db: Db, clientNumber: string): ClientCase | null {
  * never typed by the advisor, so two advisors on the LAN cannot pick the same
  * one. Non-numeric numbers, if anyone ever adds one by hand, are skipped.
  */
-function nextClientNumber(db: Db): string {
+export function nextClientNumber(db: Db): string {
   const row = db
     .prepare<[], { highest: number | null }>(
       `SELECT MAX(CAST(client_number AS INTEGER)) AS highest
@@ -449,8 +451,8 @@ export function saveClientCase(
     }
 
     const addAccount = db.prepare(
-      `INSERT INTO accounts (client_case_id, position, account_type, tax_funnel, masked_number, balance_cents, model_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO accounts (client_case_id, position, account_type, tax_funnel, masked_number, balance_cents, model_id, model_filled_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     const addLine = db.prepare(
       `INSERT INTO account_lines (account_id, position, ticker_symbol, amount_cents, shares_micros)
@@ -470,6 +472,7 @@ export function saveClientCase(
         account.maskedNumber,
         account.balanceCents,
         account.modelId === null ? null : Number(account.modelId),
+        account.modelId === null ? null : (account.modelFilledAt ?? null),
       );
       const accountId = Number(lastInsertRowid);
       account.lines.forEach((line, position) =>

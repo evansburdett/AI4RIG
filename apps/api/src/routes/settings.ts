@@ -1,8 +1,17 @@
-import type { AppSettings } from '@ai4rig/shared';
+import type { Db } from '@ai4rig/db';
+import { DEFAULT_THRESHOLDS, type AlertThresholds, type AppSettings } from '@ai4rig/shared';
 import { Router } from 'express';
 
 import type { SecretStore } from '../secrets.js';
-import { marketDataKeySchema, openAiKeySchema, parseOr400 } from '../validation.js';
+import { marketDataKeySchema, openAiKeySchema, parseOr400, thresholdsSchema } from '../validation.js';
+
+/** The alert thresholds this computer uses, or the defaults until someone changes them. */
+export function readThresholds(db: Db): AlertThresholds {
+  const row = db.prepare<[], { value: string }>("SELECT value FROM app_settings WHERE key = 'thresholds'").get();
+  if (row === undefined) return DEFAULT_THRESHOLDS;
+  const parsed = thresholdsSchema.safeParse(JSON.parse(row.value));
+  return parsed.success ? parsed.data : DEFAULT_THRESHOLDS;
+}
 
 /**
  * Settings the advisor can change on this computer: the OpenAI key for US-28
@@ -12,16 +21,19 @@ import { marketDataKeySchema, openAiKeySchema, parseOr400 } from '../validation.
  *   GET /api/settings                   whether each key is set and can be changed
  *   PUT /api/settings/openai-key        { apiKey: "sk-..." } to save, { apiKey: null } to remove
  *   PUT /api/settings/market-data-key   the same
+ *   PUT /api/settings/thresholds        { cashExcessBps, driftBps } for the account alerts
  *        409 when the key comes from .env and the app cannot change it
  */
 export function createSettingsRouter({
   openAiKey,
   openAiModel,
   marketDataKey,
+  db,
 }: {
   openAiKey: SecretStore;
   openAiModel: string;
   marketDataKey: SecretStore;
+  db: Db;
 }): Router {
   const router = Router();
 
@@ -31,6 +43,7 @@ export function createSettingsRouter({
     openAiModel,
     marketDataKeyConfigured: marketDataKey.get() !== undefined,
     marketDataKeyEditable: marketDataKey.writable,
+    thresholds: readThresholds(db),
   });
 
   router.get('/api/settings', (_req, res) => {
@@ -48,6 +61,15 @@ export function createSettingsRouter({
       return;
     }
     openAiKey.set(body.apiKey);
+    res.json(current());
+  });
+
+  router.put('/api/settings/thresholds', (req, res) => {
+    const thresholds = parseOr400(thresholdsSchema, req.body, res);
+    if (thresholds === null) return;
+    db.prepare(
+      "INSERT INTO app_settings (key, value) VALUES ('thresholds', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+    ).run(JSON.stringify(thresholds));
     res.json(current());
   });
 

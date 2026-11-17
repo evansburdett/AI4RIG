@@ -236,8 +236,8 @@ export function ImportHoldings({ account, tickers, feeFor, onImport, onApply }: 
                       <span className={h.problem !== null ? 'field-error import-note' : 'text-warn import-note'}>{note}</span>
                     )}
                   </td>
-                  <td className="amount">{h.sharesMicros === null ? '—' : formatShares(h.sharesMicros)}</td>
-                  <td className="amount">{h.priceMicros === null ? '—' : formatPrice(h.priceMicros)}</td>
+                  <td className="amount">{h.sharesMicros === null ? 'N/A' : formatShares(h.sharesMicros)}</td>
+                  <td className="amount">{h.priceMicros === null ? 'N/A' : formatPrice(h.priceMicros)}</td>
                   <td className="amount">{formatCents(h.marketValueCents)}</td>
                   <td>
                     <BucketTag bucket={known?.defaultBucket ?? choice?.bucket ?? h.bucket} />

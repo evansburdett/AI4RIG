@@ -3,9 +3,7 @@ import { useMemo, useState } from 'react';
 import { AccountCard } from '../components/AccountCard.js';
 import { BucketBar } from '../components/BucketBar.js';
 import { Callout } from '../components/Callout.js';
-import { About } from '../components/Help.js';
 import { LifeExpectancyField } from '../components/LifeExpectancyField.js';
-import { ProposalShares } from '../components/ProposalShares.js';
 import { RefreshPrices } from '../components/RefreshPrices.js';
 import {
   CheckboxGroupField,
@@ -17,6 +15,7 @@ import {
 import { MoneyInput } from '../components/MoneyInput.js';
 import {
   bucketsByAccount,
+  cashTargetsByAccount,
   feesByAccount,
   followModels,
   modelsById,
@@ -38,6 +37,8 @@ import {
 import { formatDateTime } from '../domain/dates.js';
 import { formatCents, formatCentsWhole } from '../domain/money.js';
 import { formatBps } from '../domain/percent.js';
+import { bucketLight } from '../domain/report.js';
+import { LightDot } from '../components/LightDot.js';
 import { caseSymbols } from '../domain/prices.js';
 import {
   GENDERS,
@@ -49,6 +50,7 @@ import {
 import type {
   Account,
   AdvisoryFeeTier,
+  AlertThresholds,
   AllocationTarget,
   ClientCase,
   GapEntry,
@@ -86,6 +88,8 @@ interface Props {
   onAddTicker: (ticker: Ticker) => Promise<Ticker>;
   /** US-28: an AI suggestion for one person's life expectancy. */
   onEstimateLifeExpectancy: (request: LifeExpectancyRequest) => Promise<LifeExpectancyEstimate>;
+  /** When the account alerts go off (Settings). */
+  thresholds: AlertThresholds;
   onChange: (next: ClientCase) => void;
   today: Date;
 }
@@ -110,6 +114,7 @@ export function ClientProfile({
   onImport,
   onRefreshPrices,
   onEstimateLifeExpectancy,
+  thresholds,
   today,
 }: Props) {
   const totals = useMemo(() => computePlanTotals(clientCase, feeTiers), [clientCase, feeTiers]);
@@ -169,7 +174,7 @@ export function ClientProfile({
                   max={today.getFullYear()}
                   onChange={(birthYear) => updatePerson({ birthYear })}
                 />
-                <DerivedField label="Age" value={age === null ? '—' : String(age)} />
+                <DerivedField label="Age" value={age === null ? '' : String(age)} />
                 <SelectField
                   label="Gender"
                   value={person.gender ?? ''}
@@ -248,7 +253,7 @@ export function ClientProfile({
         <div className="grid three">
           <DerivedField
             label="Years the plan must cover"
-            value={planYears === null ? '—' : `${planYears} years`}
+            value={planYears === null ? '' : `${planYears} years`}
           />
           <SelectField
             label="Money cycle phase"
@@ -279,13 +284,14 @@ export function ClientProfile({
             labels={TAX_BRACKET_LABELS}
             onChange={(value) => patch({ taxBracketPct: value === '' ? null : Number(value) })}
           />
+          <DerivedField label="Total account balances" value={formatCents(totals.investableAssetsCents)} />
           <DerivedField
             label="Advisory fee, per year"
             value={formatCents(totals.advisoryFeeCents)}
             hint={
               feeRateBps !== undefined
-                ? `${formatBps(feeRateBps)} tier on the household total, held as cash in Now`
-                : 'Worked out once balances are entered'
+                ? `${formatBps(feeRateBps)} tier on the household total`
+                : 'Shows once balances are entered'
             }
           />
           <TextField
@@ -411,16 +417,14 @@ export function ClientProfile({
           </Callout>
         )}
 
-        <About title="How these are worked out">
-          <p>
-            Now and Soon come from the answers above. Later is total investable assets less Now and
-            less Soon, so it fills in as account balances are entered below.
-          </p>
-          <p>The split comes from this client&rsquo;s own answers, not from their stage of life.</p>
-        </About>
       </section>
 
-      <HouseholdBuckets clientCase={clientCase} tickers={tickers} fees={fees} target={target} />
+      <HouseholdBuckets
+        clientCase={clientCase}
+        tickers={tickers}
+        fees={cashTargetsByAccount(clientCase, fees, modelsById(models))}
+        target={target}
+      />
 
       <section className="card">
         <div className="card-head">
@@ -437,10 +441,7 @@ export function ClientProfile({
           </button>
         </div>
         <p className="muted">
-          Enter each balance. A year of its advisory fee is held as cash; pick a model for the
-          rest, import a statement, or add funds by hand. Dollars and weight place money inside the
-          balance. Shares are what the client owns, so the balance follows them. Each fund counts
-          toward its ticker&rsquo;s bucket.
+          Enter each balance, then choose a model, import a statement, or add funds.
         </p>
 
         <RefreshPrices symbols={symbols} tickers={tickers} onRefresh={onRefreshPrices} auto today={today} />
@@ -461,6 +462,7 @@ export function ClientProfile({
             onSaveAsModel={onSaveAsModel}
             onAddTicker={onAddTicker}
             onImport={onImport}
+            thresholds={thresholds}
             // The fee follows the household's tier, which this balance can move.
             feeFor={(balanceCents) =>
               accountAdvisoryFees(
@@ -499,7 +501,6 @@ export function ClientProfile({
         <AdvisoryFeeTable clientCase={clientCase} fees={totals.advisoryFees} total={totals.advisoryFeeCents} />
       </section>
 
-      <ProposalShares clientCase={clientCase} tickers={tickers} onChange={onChange} />
     </div>
   );
 }
@@ -537,9 +538,9 @@ function HouseholdBuckets({
   const rows = bucketsByAccount(clientCase, tickers, fees);
   const sum = (pick: (r: (typeof rows)[number]) => number) => rows.reduce((t, r) => t + pick(r), 0);
   const lines = [
-    { label: 'Now', actual: sum((r) => r.nowCents), target: target.nowCents },
-    { label: 'Soon', actual: sum((r) => r.soonCents), target: target.soonCents },
-    { label: 'Later', actual: sum((r) => r.laterCents), target: target.laterCents },
+    { label: 'Now', bucket: 'NOW' as const, actual: sum((r) => r.nowCents), target: target.nowCents },
+    { label: 'Soon', bucket: 'SOON' as const, actual: sum((r) => r.soonCents), target: target.soonCents },
+    { label: 'Later', bucket: 'LATER' as const, actual: sum((r) => r.laterCents), target: target.laterCents },
   ];
   const unallocated = sum((r) => r.unallocatedCents);
   const advice = varianceAdvice(lines[0]!.actual - lines[0]!.target, lines[1]!.actual - lines[1]!.target, unallocated);
@@ -547,10 +548,7 @@ function HouseholdBuckets({
   return (
     <section className="card">
       <h3>All accounts against the plan</h3>
-      <p className="muted">
-        The fee cash and funds in every account added up by bucket, against what the plan needs in
-        Now and Soon.
-      </p>
+      <p className="muted">Every account added up by bucket, against the plan.</p>
 
       <BucketBar
         totalCents={sum((r) => r.balanceCents)}
@@ -575,26 +573,20 @@ function HouseholdBuckets({
             <th scope="col" className="amount">
               Variance
             </th>
+            <th scope="col">Status</th>
           </tr>
         </thead>
         <tbody>
           {lines.map((line) => {
             const variance = line.actual - line.target;
-            // Later has no target of its own: it is whatever Now and Soon leave.
-            if (line.label === 'Later') {
-              return (
-                <tr key={line.label}>
-                  <th scope="row">{line.label}</th>
-                  <td className="amount muted">the rest</td>
-                  <td className="amount">{formatCentsWhole(line.actual)}</td>
-                  <td className="amount muted">—</td>
-                </tr>
-              );
-            }
+            const status = bucketLight(line.bucket, line.actual, line.target);
             return (
               <tr key={line.label}>
                 <th scope="row">{line.label}</th>
-                <td className="amount">{formatCentsWhole(line.target)}</td>
+                <td className="amount">
+                  {formatCentsWhole(line.target)}
+                  {line.bucket === 'LATER' && <span className="muted"> (the rest)</span>}
+                </td>
                 <td className="amount">{formatCentsWhole(line.actual)}</td>
                 <td className="amount">
                   {variance === 0 ? (
@@ -606,6 +598,9 @@ function HouseholdBuckets({
                     </span>
                   )}
                 </td>
+                <td>
+                  <LightDot light={status.light} title={status.message} />
+                </td>
               </tr>
             );
           })}
@@ -616,6 +611,7 @@ function HouseholdBuckets({
               <th scope="row">{unallocated > 0 ? 'Not in a fund' : 'Funds over the amount to invest'}</th>
               <td />
               <td className="amount text-warn">{formatCentsWhole(Math.abs(unallocated))}</td>
+              <td />
               <td />
             </tr>
           </tfoot>
@@ -674,7 +670,7 @@ function AdvisoryFeeTable({
                 {account !== undefined && account.maskedNumber !== '' && ` ····${account.maskedNumber}`}
               </th>
               <td className="amount">{formatCents(fee.balanceCents)}</td>
-              <td className="amount">{fee.rateBps === 0 ? '—' : formatBps(fee.rateBps)}</td>
+              <td className="amount">{fee.rateBps === 0 ? 'N/A' : formatBps(fee.rateBps)}</td>
               <td className="amount">{formatCents(fee.feeCents)}</td>
             </tr>
           );

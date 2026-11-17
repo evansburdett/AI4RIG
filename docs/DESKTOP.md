@@ -101,6 +101,8 @@ After that it opens normally.
    which can be deleted.
 3. Cases use client numbers only: no names, no account numbers (ADR 0006).
 
+The step-by-step guide to send RIG is [INSTALL-AND-UPDATE.md](INSTALL-AND-UPDATE.md).
+
 ### Before installing on a managed laptop
 
 If LPL manages their laptops, installing software or running unsigned apps

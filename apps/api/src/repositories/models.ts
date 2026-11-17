@@ -15,6 +15,7 @@ interface ModelRow {
   id: number;
   name: string;
   tax_funnel: ModelPortfolio['taxFunnel'];
+  updated_at: string;
 }
 
 interface LineRow {
@@ -30,13 +31,14 @@ export function listModels(db: Db): ModelPortfolio[] {
 
   return db
     .prepare<[], ModelRow>(
-      'SELECT id, name, tax_funnel FROM model_portfolios ORDER BY name COLLATE NOCASE',
+      'SELECT id, name, tax_funnel, updated_at FROM model_portfolios ORDER BY name COLLATE NOCASE',
     )
     .all()
     .map((row) => ({
       id: String(row.id),
       name: row.name,
       taxFunnel: row.tax_funnel,
+      updatedAt: row.updated_at,
       lines: lines
         .filter((line) => line.model_id === row.id)
         .map((line) => ({ tickerSymbol: line.ticker_symbol, weightBps: line.weight_bps })),

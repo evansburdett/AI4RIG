@@ -89,7 +89,7 @@ export function LifeExpectancyField({ person, age, onChange, onEstimate }: Props
       {explanation !== null && <p className="field-hint">{explanation}</p>}
       {error !== null && <p className="field-error">{error}</p>}
       <p className="field-hint">
-        {blocker ?? 'Uses age, gender, and health concerns only. Type over it to use your own.'}
+        {blocker ?? 'Uses age, gender, and health concerns only.'}
       </p>
     </div>
   );

@@ -6,7 +6,7 @@
 
 import { useCallback, useSyncExternalStore } from 'react';
 
-export type Screen = 'profile' | 'breakdown' | 'models' | 'tickers' | 'fees' | 'settings';
+export type Screen = 'profile' | 'breakdown' | 'report' | 'models' | 'tickers' | 'fees' | 'settings';
 
 export interface Route {
   readonly screen: Screen;
@@ -27,7 +27,7 @@ export function parseHash(hash: string): Route {
 
   if (segments[0] === 'clients' && segments[1] !== undefined) {
     const clientNumber = decodeURIComponent(segments[1]);
-    const screen = segments[2] === 'breakdown' ? 'breakdown' : 'profile';
+    const screen = segments[2] === 'breakdown' ? 'breakdown' : segments[2] === 'report' ? 'report' : 'profile';
     return { screen, clientNumber };
   }
 
@@ -41,7 +41,9 @@ export function hrefFor(route: Route): string {
   if (route.screen === 'settings') return '#/settings';
   if (route.clientNumber === null) return '#/';
   const base = `#/clients/${encodeURIComponent(route.clientNumber)}`;
-  return route.screen === 'breakdown' ? `${base}/breakdown` : `${base}/profile`;
+  if (route.screen === 'breakdown') return `${base}/breakdown`;
+  if (route.screen === 'report') return `${base}/report`;
+  return `${base}/profile`;
 }
 
 function subscribe(onChange: () => void): () => void {

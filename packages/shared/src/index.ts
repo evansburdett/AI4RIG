@@ -174,6 +174,12 @@ export interface Account {
   /** The model the funds were filled from, or null when they were picked by hand. */
   readonly modelId: string | null;
   /**
+   * When the funds were last filled from the model (ISO timestamp). A model
+   * saved after this is one the account has not caught up with. Null or absent
+   * for an account filled before this was recorded.
+   */
+  readonly modelFilledAt?: string | null;
+  /**
    * The funds and the money in each. Need not add up to the amount to invest,
    * so a half-finished case can still be saved; the difference shows as left
    * to allocate (or over).
@@ -220,6 +226,8 @@ export interface ModelPortfolio {
   /** The funnel this model is meant for, or null for any. Only used to sort the dropdown. */
   readonly taxFunnel: TaxFunnel | null;
   readonly lines: readonly ModelLine[];
+  /** When the model was last saved (ISO timestamp). Set by the server. */
+  readonly updatedAt?: string;
 }
 
 /**
@@ -298,6 +306,114 @@ export interface AppSettings {
   /** Live prices: the same two answers, for the Market Data key. */
   readonly marketDataKeyConfigured: boolean;
   readonly marketDataKeyEditable: boolean;
+  readonly thresholds: AlertThresholds;
+}
+
+/** When an account's alerts go off. Changed on the Settings screen. */
+export interface AlertThresholds {
+  /** Cash beyond the account's cash target, as basis points of its balance, that calls for a rebalance. */
+  readonly cashExcessBps: number;
+  /** How far any fund's weight can move from its model, in basis points, before it shows as drifted. */
+  readonly driftBps: number;
+}
+
+export const DEFAULT_THRESHOLDS: AlertThresholds = { cashExcessBps: 500, driftBps: 100 };
+
+export type Light = 'GREEN' | 'YELLOW' | 'RED';
+
+/** One bucket on the client-facing report. */
+export interface ReportBucket {
+  readonly bucket: BucketType;
+  readonly title: string;
+  /** RIG's wording under the title: "Safe & Liquid". */
+  readonly subtitle: string;
+  /** What the accounts hold in this bucket. */
+  readonly actualCents: Cents;
+  /** What the plan calls for. For Later, the rest of the money. */
+  readonly targetCents: Cents;
+  readonly varianceCents: Cents;
+  readonly light: Light;
+  /** One plain sentence on what the light means. */
+  readonly message: string;
+  /** What the bucket is for. Null amount for a line that is a purpose, not a figure. */
+  readonly lines: readonly { readonly label: string; readonly amountCents: Cents | null }[];
+}
+
+export interface ReportWithdrawal {
+  readonly label: string;
+  readonly amountCents: Cents;
+}
+
+/**
+ * The bucket report as generated: its own numbers, frozen. It never points
+ * back into the case, so later edits and price moves leave it as it was.
+ */
+export interface ReportSnapshot {
+  readonly version: 1;
+  readonly clientNumber: string;
+  readonly initials: string;
+  readonly lifeStageLabel: string;
+  readonly planYears: number | null;
+  readonly totalCents: Cents;
+  readonly buckets: readonly ReportBucket[];
+  readonly accounts: readonly {
+    readonly label: string;
+    readonly nowCents: Cents;
+    readonly soonCents: Cents;
+    readonly laterCents: Cents;
+    readonly balanceCents: Cents;
+  }[];
+  readonly guardrails: {
+    /** The yearly spending budget as basis points of total assets (RIG uses 5.3%). */
+    readonly budgetBps: number;
+    readonly budgetCents: Cents;
+    readonly withdrawals: readonly ReportWithdrawal[];
+    readonly totalWithdrawalsCents: Cents;
+    readonly remainingCents: Cents;
+  };
+}
+
+export interface ClientReport {
+  readonly id: string;
+  readonly createdAt: string;
+  readonly snapshot: ReportSnapshot;
+}
+
+/** A file of cases to carry to another computer. */
+export interface CaseTransferFile {
+  readonly kind: 'ai4rig-cases';
+  readonly version: 1;
+  readonly exportedAt: string;
+  readonly cases: readonly ClientCase[];
+  /** Each case's saved reports, by client number. */
+  readonly reports: Readonly<Record<string, readonly ClientReport[]>>;
+  /** Every ticker and model the cases use, so the other computer can have them too. */
+  readonly tickers: readonly Ticker[];
+  readonly models: readonly ModelPortfolio[];
+}
+
+/** What to do with a case whose number is already on this computer. */
+export type ImportChoice = 'SKIP' | 'REPLACE' | 'COPY';
+
+export interface ImportCasesRequest {
+  readonly file: CaseTransferFile;
+  /** By client number. A conflict with no choice is skipped. */
+  readonly choices: Readonly<Record<string, ImportChoice>>;
+  /** True to only report what would happen. */
+  readonly dryRun: boolean;
+}
+
+export interface ImportCasesResult {
+  /** Numbers in the file not on this computer, and so added as they are. */
+  readonly added: readonly string[];
+  /** Numbers already here, before any choice. */
+  readonly conflicts: readonly string[];
+  readonly replaced: readonly string[];
+  /** Old number to the new number the copy was given. */
+  readonly copied: Readonly<Record<string, string>>;
+  readonly skipped: readonly string[];
+  /** Where the database was copied before importing. Null on a dry run. */
+  readonly backupPath: string | null;
 }
 
 /** What to look up. Left empty, the whole universe, looking now. */

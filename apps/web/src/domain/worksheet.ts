@@ -102,7 +102,7 @@ export function computeNow(inputs: NowInputs, advisoryFeeCents: Cents): BucketWo
       // E15
     },
     {
-      label: "Advisory fee cash, one year (held in each account's Now)",
+      label: 'Advisory fee, one year',
       amountCents: advisoryFeeCents,
     },
   ];

@@ -83,15 +83,13 @@ export function FeeTiers({ tiers, onSave }: Props) {
       <header className="screen-header">
         <h2>Advisory fee tiers</h2>
         <p className="muted">
-          Each account sets aside one year of its advisory fee as cash in its Now bucket, and the
-          plan&rsquo;s Now total includes it.
+          One year of the advisory fee is held as cash in each account&rsquo;s Now bucket.
         </p>
       </header>
 
       <section className="card">
         <Callout tone="info" title="The whole balance is charged one rate">
-          This is a breakpoint schedule, not a marginal one. The tier a balance falls in sets the
-          rate for all of it: $6,000,000 is charged 0.85% on the full $6,000,000.
+          The tier a balance falls in sets the rate for the whole balance.
         </Callout>
 
         <table>
@@ -127,7 +125,7 @@ export function FeeTiers({ tiers, onSave }: Props) {
                     {next === undefined
                       ? 'and up'
                       : next === null
-                        ? '—'
+                        ? 'N/A'
                         : `${formatCents(Math.max(next - 1, 0))}`}
                   </td>
                   <td>
@@ -183,7 +181,7 @@ export function FeeTiers({ tiers, onSave }: Props) {
         <h3>Which balance picks the tier</h3>
         <p>
           {FEE_TIER_BASIS === 'HOUSEHOLD'
-            ? 'The household’s total across all accounts picks the tier, and that one rate is charged on every account. Each account holds its own share of the fee as cash in its Now bucket.'
+            ? 'The household’s total across all accounts picks the tier, and that rate is charged on every account.'
             : 'Each account’s own balance picks its tier.'}
         </p>
       </section>

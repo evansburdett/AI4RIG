@@ -32,9 +32,8 @@ the record, and dollars are shares at today's price.** One function,
   if the two together fall short.
 - **With no price**, a fund holds its dollars until there is one.
 
-Mutual funds and cash funds are bought in fractions, and stocks and ETFs in whole
-shares. What whole shares cannot use stays as cash and counts toward Now. RIG has
-not confirmed this split yet.
+Every fund is bought to a hundredth of a share (RIG, 11/2: partials are a
+thing). What the hundredth cannot use stays as cash and counts toward Now.
 
 There is no schema change. `account_lines.shares_micros` already exists, and cash
 is the balance less the funds.

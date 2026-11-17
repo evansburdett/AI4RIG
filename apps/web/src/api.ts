@@ -9,7 +9,13 @@
 
 import type {
   AdvisoryFeeTier,
+  AlertThresholds,
   AppSettings,
+  CaseTransferFile,
+  ClientReport,
+  ImportCasesRequest,
+  ImportCasesResult,
+  ReportSnapshot,
   BucketDefinition,
   ClientCase,
   ClientSummary,
@@ -36,7 +42,7 @@ const baseUrl = sameOrigin
 if (!baseUrl) {
   throw new Error(
     'VITE_API_BASE_URL is not set. Copy .env.example to .env (or run "npm run setup"), ' +
-      'then restart the dev server — Vite only reads .env at startup.',
+      'then restart the dev server. Vite only reads .env at startup.',
   );
 }
 
@@ -184,6 +190,23 @@ export const api = {
   /** Looks prices up on the server and saves them. Returns the whole universe. */
   refreshPrices: (request: PriceRefreshRequest) =>
     send<PriceRefreshResult>('/api/prices/refresh', 'POST', request),
+
+  saveThresholds: (thresholds: AlertThresholds) => send<AppSettings>('/api/settings/thresholds', 'PUT', thresholds),
+
+  listReports: (clientNumber: string) => get<ClientReport[]>(`${clientPath(clientNumber)}/reports`),
+
+  /** Saved exactly as generated, and never changed after. */
+  addReport: (clientNumber: string, snapshot: ReportSnapshot) =>
+    send<ClientReport>(`${clientPath(clientNumber)}/reports`, 'POST', { snapshot }),
+
+  deleteReport: async (clientNumber: string, id: string): Promise<void> => {
+    await send<void>(`${clientPath(clientNumber)}/reports/${encodeURIComponent(id)}`, 'DELETE');
+  },
+
+  /** Every case, for a file another computer can import. */
+  exportCases: () => get<CaseTransferFile>('/api/transfer/export'),
+
+  importCases: (request: ImportCasesRequest) => send<ImportCasesResult>('/api/transfer/import', 'POST', request),
 
   /** US-28. Nothing is saved; the answer goes in the person's field. */
   estimateLifeExpectancy: (request: LifeExpectancyRequest) =>
