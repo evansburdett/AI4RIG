@@ -26,7 +26,7 @@ export function ClientSwitcher({ clients, activeClientNumber, onSelect, disabled
         {clients.map((client) => (
           <option key={client.clientNumber} value={client.clientNumber}>
             {client.clientNumber}
-            {client.initials === '' ? '' : ` — ${client.initials}`} ·{' '}
+            {client.initials === '' ? '' : ` · ${client.initials}`} ·{' '}
             {LIFE_STAGE_LABELS[client.lifeStage]}
           </option>
         ))}

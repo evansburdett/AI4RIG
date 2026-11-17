@@ -1119,3 +1119,278 @@ table caption {
   padding-left: 1.2rem;
   color: var(--warning-text);
 }
+
+/* ---------------------------------------------------------------------------
+   Stoplights (RIG, 11/2): green on track, yellow needs a look, red needs
+   action. The words say the same as the colour, so it reads in black and white.
+   --------------------------------------------------------------------------- */
+
+.stoplight {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  font-size: var(--text-body);
+}
+
+.stoplight.compact {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: var(--text-caption);
+}
+
+.stoplight-dot {
+  flex: none;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  transform: translateY(0.05rem);
+}
+
+.stoplight-green .stoplight-dot {
+  background: var(--success);
+}
+
+.stoplight-yellow .stoplight-dot {
+  background: var(--warning-border);
+}
+
+.stoplight-red .stoplight-dot {
+  background: var(--danger);
+}
+
+.stoplight-yellow:not(.compact) {
+  border-color: var(--warning-border);
+  background: var(--warning-soft);
+}
+
+.stoplight-red:not(.compact) {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.account-alerts {
+  margin: var(--space-1) 0 var(--space-2);
+}
+
+.icon-button {
+  white-space: nowrap;
+}
+
+.text-danger {
+  color: var(--danger);
+}
+
+.link.danger-link {
+  color: var(--danger);
+}
+
+/* The bucket report screen. */
+
+.readiness {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 var(--space-3);
+}
+
+.readiness li.ok span {
+  color: var(--success);
+}
+
+.readiness li.missing {
+  color: var(--danger);
+}
+
+.guardrail-inputs {
+  max-width: 32rem;
+  margin-bottom: var(--space-3);
+}
+
+.report-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.report-list li {
+  display: flex;
+  gap: var(--space-3);
+  padding: 0.25rem 0;
+}
+
+.report-list li.selected .link:first-child {
+  font-weight: 600;
+}
+
+.report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-2) var(--space-3);
+}
+
+.report-actions .field {
+  margin: 0;
+}
+
+.transfer-preview {
+  margin-top: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+
+.report {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-4, 1.5rem);
+  margin-bottom: var(--space-4, 1.5rem);
+}
+
+.report-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.report-head h2 {
+  margin: 0;
+}
+
+.report-total {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-variant-numeric: tabular-nums;
+}
+
+.report-total strong {
+  font-size: 1.5rem;
+}
+
+.report-buckets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: var(--space-3);
+}
+
+/* Drawn as buckets, like RIG's deliverable: an open top, a rounded base. */
+.report-bucket {
+  border: 2px solid var(--bucket-color);
+  border-top-width: 6px;
+  border-radius: 0.4rem 0.4rem 1.6rem 1.6rem;
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.report-bucket-now {
+  --bucket-color: var(--bucket-now);
+}
+
+.report-bucket-soon {
+  --bucket-color: var(--bucket-soon);
+}
+
+.report-bucket-later {
+  --bucket-color: var(--bucket-later);
+}
+
+.report-bucket h3 {
+  margin: 0;
+  color: var(--bucket-color);
+}
+
+.report-bucket-amount {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.report-bucket-subtitle {
+  margin: 0 0 var(--space-1);
+  font-weight: 600;
+}
+
+.report-bucket ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  flex: 1;
+}
+
+.report-bucket li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 0.15rem 0;
+  border-bottom: 1px dotted var(--border);
+}
+
+.report-bucket dl {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  margin: var(--space-1) 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.report-bucket dl div {
+  display: contents;
+}
+
+.report-bucket dd {
+  margin: 0;
+  text-align: right;
+}
+
+.report-lower {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: var(--space-4, 1.5rem);
+  margin-top: var(--space-4, 1.5rem);
+}
+
+.report-lower table {
+  width: 100%;
+}
+
+.report-indent {
+  padding-left: var(--space-3);
+  font-weight: 400;
+}
+
+/* Download PDF prints the report alone. */
+@media print {
+  .app-header,
+  .app-footer,
+  .no-print,
+  .callout {
+    display: none !important;
+  }
+
+  body,
+  main {
+    background: #fff;
+    padding: 0;
+    margin: 0;
+  }
+
+  .report {
+    border: 0;
+    padding: 0;
+  }
+
+  .report-bucket,
+  .stoplight-dot {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}

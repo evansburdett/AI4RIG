@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 
-import { About } from '../components/Help.js';
 import { NewTickerFields } from '../components/NewTickerFields.js';
 import { RefreshPrices } from '../components/RefreshPrices.js';
 import { typedMoney } from '../components/typedMoney.js';
@@ -78,14 +77,6 @@ export function BucketAssignments({
       <section className="card">
         <h3>Default bucket by ticker</h3>
         <p className="muted">Each symbol&rsquo;s usual bucket, asset class, and price per share.</p>
-        <About>
-          <p>
-            A model that uses a symbol in a different bucket is flagged on the Models screen, not
-            blocked. A symbol typed on a model or an account that is not listed here can be
-            added from there too. Prices come from Market Data when a key is set on the Settings
-            screen. A price typed here stands until the next refresh.
-          </p>
-        </About>
 
         <RefreshPrices tickers={tickers} onRefresh={onRefreshPrices} today={today} />
 
@@ -210,7 +201,6 @@ export function BucketAssignments({
 
       <section className="card">
         <h3>What each bucket is for</h3>
-        <p className="muted">The wording shown to the advisor when assigning a holding.</p>
 
         {definitions.map((definition) => (
           <BucketDefinitionEditor

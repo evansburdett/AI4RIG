@@ -11,6 +11,8 @@ import { createImportsRouter } from './routes/imports.js';
 import { createLifeExpectancyRouter } from './routes/lifeExpectancy.js';
 import { createModelsRouter } from './routes/models.js';
 import { createPricesRouter } from './routes/prices.js';
+import { createReportsRouter } from './routes/reports.js';
+import { createTransferRouter } from './routes/transfer.js';
 import { createReferenceDataRouter } from './routes/referenceData.js';
 import { createSettingsRouter } from './routes/settings.js';
 import { envSecretStore, type SecretStore } from './secrets.js';
@@ -86,9 +88,8 @@ export function createApp({
   const app = express();
   app.disable('x-powered-by');
 
-  // Whole client cases come through here; the default 100kb is tight for a
-  // case with many holdings.
-  app.use(express.json({ limit: '1mb' }));
+  // Whole client cases come through here, and an import can carry many.
+  app.use(express.json({ limit: '25mb' }));
   app.use(cors({ origin: config.webOrigins }));
 
   app.get('/api/health', (_req, res) => {
@@ -114,7 +115,9 @@ export function createApp({
   app.use(createImportsRouter(db));
   app.use(createLifeExpectancyRouter(estimate));
   app.use(createPricesRouter(createPriceRefresher(db, prices)));
-  app.use(createSettingsRouter({ openAiKey, openAiModel, marketDataKey }));
+  app.use(createReportsRouter(db));
+  app.use(createTransferRouter(db));
+  app.use(createSettingsRouter({ openAiKey, openAiModel, marketDataKey, db }));
 
   if (webRoot !== undefined) {
     app.use((req, res, next) => {

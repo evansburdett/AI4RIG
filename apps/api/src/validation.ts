@@ -85,6 +85,7 @@ const account = z.object({
   // Last four only (ADR 0006). Anything longer is a real account number.
   maskedNumber: z.string().trim().max(4, 'Masked number is the last four digits only'),
   balanceCents: cents,
+  modelFilledAt: z.iso.datetime().nullable().default(null),
   proposalShares: z
     .array(
       z.object({
@@ -313,6 +314,38 @@ export const marketDataKeySchema = z.object({
 export const priceRefreshSchema = z.object({
   symbols: z.array(z.string().trim().toUpperCase().min(1).max(10)).max(1000).optional(),
   skipCheckedToday: z.boolean().default(false),
+});
+
+export const thresholdsSchema = z.object({
+  cashExcessBps: z.int().min(0).max(10_000),
+  driftBps: z.int().min(1).max(10_000),
+});
+
+/**
+ * A report as the browser worked it out. Checked for shape and size, not
+ * recomputed: it is a record of what the advisor saw, and it is only ever
+ * shown back.
+ */
+export const reportSchema = z.object({
+  snapshot: z
+    .object({ version: z.literal(1), clientNumber: z.string().max(20) })
+    .loose()
+    .refine((s) => JSON.stringify(s).length <= 400_000, 'That report is too large to save'),
+});
+
+export const importCasesSchema = z.object({
+  file: z
+    .object({
+      kind: z.literal('ai4rig-cases', 'That is not an AI4RIG cases file'),
+      version: z.literal(1),
+      cases: z.array(z.unknown()).max(5000),
+      reports: z.record(z.string(), z.array(z.unknown())).default({}),
+      tickers: z.array(tickerSchema).default([]),
+      models: z.array(z.unknown()).default([]),
+    })
+    .loose(),
+  choices: z.record(z.string(), z.enum(['SKIP', 'REPLACE', 'COPY'])).default({}),
+  dryRun: z.boolean().default(false),
 });
 
 export const bucketParam = bucket;

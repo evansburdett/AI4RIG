@@ -2,14 +2,23 @@ import { useEffect, useState } from 'react';
 
 import { api } from '../api.js';
 import { Callout } from '../components/Callout.js';
-import type { AppSettings } from '../domain/types.js';
+import { CaseTransfer } from '../components/CaseTransfer.js';
+import { bpsToPercentInput, parsePercentToBps } from '../domain/percent.js';
+import type { AlertThresholds, AppSettings } from '../domain/types.js';
+
+interface Props {
+  /** The alert thresholds changed, so the open case's alerts can follow. */
+  onThresholdsChange: (thresholds: AlertThresholds) => void;
+  /** Cases came in from another computer. */
+  onCasesImported: () => Promise<void>;
+}
 
 /**
  * Settings for this computer: the API keys behind "Estimate with AI" (US-28)
  * and live prices. A key is typed once and kept on this computer; the app only
  * ever reports whether one is set, never the key itself.
  */
-export function Settings() {
+export function Settings({ onThresholdsChange, onCasesImported }: Props) {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -41,14 +50,25 @@ export function Settings() {
         </Callout>
       )}
 
+      {settings !== null && (
+        <ThresholdsCard
+          thresholds={settings.thresholds}
+          onSave={async (thresholds) => {
+            const saved = await api.saveThresholds(thresholds);
+            setSettings(saved);
+            onThresholdsChange(saved.thresholds);
+          }}
+        />
+      )}
+
+      <CaseTransfer onImported={onCasesImported} />
+
       <KeyCard
         id="market-data-key"
         title="Live prices"
         description={
           <>
-            The Market Data API key behind &ldquo;Refresh prices&rdquo;, from the firm&rsquo;s Market
-            Data dashboard. Only ticker symbols are ever sent with it. It is kept on this computer
-            only.
+            Used by Refresh prices. Kept on this computer only.
           </>
         }
         keyName="Market Data API key"
@@ -65,8 +85,7 @@ export function Settings() {
         title="AI life expectancy"
         description={
           <>
-            The OpenAI API key behind &ldquo;Estimate with AI&rdquo; on the profile. It is kept on this
-            computer only.
+            Used by Estimate with AI. Kept on this computer only.
           </>
         }
         keyName="OpenAI API key"
@@ -79,6 +98,79 @@ export function Settings() {
         onSave={async (apiKey) => setSettings(await api.saveOpenAiKey(apiKey))}
       />
     </div>
+  );
+}
+
+/** RIG (11/2): when an account's cash or its model calls for a rebalance. */
+function ThresholdsCard({
+  thresholds,
+  onSave,
+}: {
+  thresholds: AlertThresholds;
+  onSave: (thresholds: AlertThresholds) => Promise<void>;
+}) {
+  const [cashText, setCashText] = useState(bpsToPercentInput(thresholds.cashExcessBps));
+  const [driftText, setDriftText] = useState(bpsToPercentInput(thresholds.driftBps));
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const cash = parsePercentToBps(cashText);
+  const drift = parsePercentToBps(driftText);
+  const valid = cash !== null && drift !== null && drift > 0;
+
+  async function save() {
+    if (cash === null || drift === null) return;
+    setBusy(true);
+    setNotice(null);
+    setError(null);
+    try {
+      await onSave({ cashExcessBps: cash, driftBps: drift });
+      setNotice('Saved. The account alerts use these now.');
+    } catch (caught: unknown) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="card">
+      <h3>Account alerts</h3>
+      <p className="muted">When an account&rsquo;s cash or model needs a rebalance.</p>
+      <div className="grid two">
+        <div className="field">
+          <label htmlFor="cash-threshold">Extra cash before a rebalance (% of the account)</label>
+          <input
+            id="cash-threshold"
+            type="text"
+            inputMode="decimal"
+            value={cashText}
+            aria-invalid={cash === null}
+            onChange={(event) => setCashText(event.target.value)}
+          />
+          <p className="field-hint">Default 5%.</p>
+        </div>
+        <div className="field">
+          <label htmlFor="drift-threshold">Drift before a fund is flagged (percentage points)</label>
+          <input
+            id="drift-threshold"
+            type="text"
+            inputMode="decimal"
+            value={driftText}
+            aria-invalid={drift === null || drift === 0}
+            onChange={(event) => setDriftText(event.target.value)}
+          />
+          <p className="field-hint">Default 1.</p>
+        </div>
+      </div>
+      <div className="button-row">
+        <button type="button" className="primary" disabled={!valid || busy} onClick={() => void save()}>
+          {busy ? 'Saving\u2026' : 'Save'}
+        </button>
+        {notice !== null && <span className="muted">{notice}</span>}
+      </div>
+      {error !== null && <p className="field-error">{error}</p>}
+    </section>
   );
 }
 

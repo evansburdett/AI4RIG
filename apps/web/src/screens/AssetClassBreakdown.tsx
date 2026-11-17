@@ -2,11 +2,12 @@ import { useMemo } from 'react';
 
 import { BucketBar } from '../components/BucketBar.js';
 import { Callout } from '../components/Callout.js';
-import { About } from '../components/Help.js';
 import { RefreshPrices } from '../components/RefreshPrices.js';
 import {
   bucketsByAccount,
+  cashTargetsByAccount,
   computeBreakdown,
+  modelsById,
   computeDrift,
   feesByAccount,
   holdingsInBucket,
@@ -24,6 +25,7 @@ import { caseSymbols } from '../domain/prices.js';
 import type {
   AdvisoryFeeTier,
   ClientCase,
+  ModelPortfolio,
   PriceRefreshRequest,
   PriceRefreshResult,
   Ticker,
@@ -35,6 +37,7 @@ interface Props {
   clientCase: ClientCase;
   tickers: readonly Ticker[];
   feeTiers: readonly AdvisoryFeeTier[];
+  models: readonly ModelPortfolio[];
   /** Looks up today's prices for the funds in this case. */
   onRefreshPrices: (request: PriceRefreshRequest) => Promise<PriceRefreshResult>;
   today: Date;
@@ -46,10 +49,14 @@ interface Props {
  * account balances, their fee cash, and the funds in each account, each
  * counted in its ticker's bucket.
  */
-export function AssetClassBreakdown({ clientCase, tickers, feeTiers, onRefreshPrices, today }: Props) {
+export function AssetClassBreakdown({ clientCase, tickers, feeTiers, models, onRefreshPrices, today }: Props) {
   const symbols = useMemo(() => caseSymbols(clientCase), [clientCase]);
   const totals = useMemo(() => computePlanTotals(clientCase, feeTiers), [clientCase, feeTiers]);
-  const fees = useMemo(() => feesByAccount(totals.advisoryFees), [totals.advisoryFees]);
+  // Cash held for the fee and for each account's model counts toward Now.
+  const fees = useMemo(
+    () => cashTargetsByAccount(clientCase, feesByAccount(totals.advisoryFees), modelsById(models)),
+    [clientCase, totals.advisoryFees, models],
+  );
   const breakdown = useMemo(() => computeBreakdown(clientCase, tickers, fees), [clientCase, tickers, fees]);
   const target = useMemo(() => targetAllocation(clientCase, totals), [clientCase, totals]);
   const drift = useMemo(() => computeDrift(target, breakdown), [target, breakdown]);
@@ -73,7 +80,7 @@ export function AssetClassBreakdown({ clientCase, tickers, feeTiers, onRefreshPr
         <Callout tone="warning" title="Not all of the money is in a fund">
           {breakdown.unallocatedCents > 0
             ? `${formatCentsWhole(breakdown.unallocatedCents)} of the account balances is not in a fund yet.`
-            : `The funds add up to ${formatCentsWhole(-breakdown.unallocatedCents)} more than the account balances less their fee cash.`}{' '}
+            : `The funds add up to ${formatCentsWhole(-breakdown.unallocatedCents)} more than the account balances.`}{' '}
           Fix it on the Profile screen.
         </Callout>
       )}
@@ -89,7 +96,7 @@ export function AssetClassBreakdown({ clientCase, tickers, feeTiers, onRefreshPr
 
       <section className="card">
         <h3>Target against actual</h3>
-        <p className="muted">What the plan needs in Now and Soon, against what the accounts hold. Later is the rest.</p>
+        <p className="muted">What the plan needs in each bucket, against what the accounts hold.</p>
 
         <BucketBar
           totalCents={breakdown.totalCents}
@@ -118,19 +125,7 @@ export function AssetClassBreakdown({ clientCase, tickers, feeTiers, onRefreshPr
             </tr>
           </thead>
           <tbody>
-            {drift.map((row) => row.bucket === 'LATER' ? (
-              // Later has no target of its own: it is whatever Now and Soon leave.
-              <tr key={row.bucket}>
-                <th scope="row">
-                  <span className="swatch bucket-later" aria-hidden="true" /> {BUCKET_LABELS[row.bucket]}
-                </th>
-                <td className="amount muted">the rest</td>
-                <td className="amount muted">—</td>
-                <td className="amount">{formatCentsWhole(row.actualCents)}</td>
-                <td className="amount">{formatPercent(row.actualPct)}</td>
-                <td className="amount muted">—</td>
-              </tr>
-            ) : (
+            {drift.map((row) => (
               <tr key={row.bucket}>
                 <th scope="row">
                   <span
@@ -163,14 +158,6 @@ export function AssetClassBreakdown({ clientCase, tickers, feeTiers, onRefreshPr
           </ul>
         )}
 
-        <About>
-          <p>
-            Target is what the questionnaire says this client needs in Now and Soon; Later is the
-            rest of the money, so it has no target of its own. Actual is each
-            account&rsquo;s fee cash, in Now, plus every fund in the bucket its ticker maps to,
-            across all the accounts. Target percentages come from this client&rsquo;s own answers.
-          </p>
-        </About>
       </section>
 
       <section className="card">
@@ -209,7 +196,7 @@ export function AssetClassBreakdown({ clientCase, tickers, feeTiers, onRefreshPr
                 <td className="amount">{formatCentsWhole(account.laterCents)}</td>
                 <td className="amount">
                   {account.unallocatedCents === 0 ? (
-                    <span className="muted">—</span>
+                    <span className="muted">N/A</span>
                   ) : (
                     formatCentsWhole(account.unallocatedCents)
                   )}
@@ -299,13 +286,13 @@ export function AssetClassBreakdown({ clientCase, tickers, feeTiers, onRefreshPr
                       </td>
                       <td className="muted">
                         {holding.assetClass === null
-                          ? '—'
+                          ? 'N/A'
                           : ASSET_CLASS_LABELS[holding.assetClass]}
                       </td>
                       <td className="amount">{formatCents(holding.marketValueCents)}</td>
                       <td className="amount">
                         {holding.symbol === null ? (
-                          <span className="muted">—</span>
+                          <span className="muted">N/A</span>
                         ) : holding.shares === null ? (
                           <span className="muted">no price</span>
                         ) : (

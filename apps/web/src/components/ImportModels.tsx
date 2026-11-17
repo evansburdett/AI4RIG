@@ -141,13 +141,13 @@ export function ImportModels({ models, tickers, onImport }: Props) {
         />
       </div>
       <p className="muted">
-        One row with a model&rsquo;s name, then a row for each fund with its symbol and weight. A
-        model with the same name as one here replaces it.
+        A row with the model&rsquo;s name, then one row per fund with its symbol and weight. A model
+        with an existing name is replaced.
       </p>
 
       {done !== null && (
         <Callout tone="info" title="Imported">
-          {done} Edit any of them below, or change a ticker&rsquo;s bucket on the Tickers screen.
+          {done}
         </Callout>
       )}
       {error !== null && (

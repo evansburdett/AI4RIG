@@ -8,8 +8,11 @@ import {
   atCurrentPrices,
   bucketsByAccount,
   caseAtCurrentPrices,
+  actualCashCents,
   caseWithSharesPinned,
-  cashForFeeCents,
+  cashStatus,
+  modelStatus,
+  withActualCash,
   computeBreakdown,
   computeDrift,
   feesByAccount,
@@ -31,7 +34,7 @@ import {
 import { SAMPLE_CASES } from '../fixtures/clients.js';
 import { PLACEHOLDER_MODELS, PLACEHOLDER_TICKERS, RIG_FEE_TIERS } from '../fixtures/tickers.js';
 import { accountAdvisoryFees, computePlanTotals, targetAllocation } from './worksheet.js';
-import type { ClientCase } from './types.js';
+import { DEFAULT_THRESHOLDS, type ClientCase } from './types.js';
 
 const WORKBOOK_CASE = SAMPLE_CASES[0]!;
 const ACCUMULATOR_CASE = SAMPLE_CASES[1]!;
@@ -278,23 +281,23 @@ describe('one kind of fund, however it got into the account', () => {
     ],
   };
 
-  it('turns dollars into whole shares of an ETF, and the rest stays in the balance as cash', () => {
-    // 166 × $300 = $49,800 of the $50,000 typed.
+  it('turns dollars into shares to the hundredth, and the rest stays in the balance as cash', () => {
+    // 166.66 × $300 = $49,998 of the $50,000 typed.
     const placed = atCurrentPrices({ ...blank, lines: [withDollars('VTI', 50_000_00)] }, tickers);
-    expect(placed.lines[0]).toEqual({ tickerSymbol: 'VTI', amountCents: 49_800_00, sharesMicros: 166_000_000 });
+    expect(placed.lines[0]).toEqual({ tickerSymbol: 'VTI', amountCents: 49_998_00, sharesMicros: 166_660_000 });
     expect(placed.balanceCents).toBe(100_000_00);
   });
 
-  it('turns dollars into a fraction of a mutual fund or cash fund, landing on the same cent', () => {
+  it('rounds every kind of fund the same way, mutual funds and cash funds too', () => {
     const placed = atCurrentPrices({ ...blank, lines: [withDollars('ABCDX', 50_000_00), withDollars('SGOV', 1_234_56)] }, tickers);
-    expect(placed.lines.map((l) => l.amountCents)).toEqual([50_000_00, 1_234_56]);
-    expect(placed.lines[0]?.sharesMicros).toBe(189_753_321);
+    // 189.75 × $263.50 = $49,999.13; 12.34 × $100 = $1,234.
+    expect(placed.lines.map((l) => l.amountCents)).toEqual([49_999_13, 1_234_00]);
+    expect(placed.lines[0]?.sharesMicros).toBe(189_750_000);
     expect(placed.balanceCents).toBe(100_000_00);
   });
 
   it('does not lose a share to rounding when dollars came from a share count', () => {
-    const exact = { symbol: 'SPYI', name: null, assetClass: 'EQUITY', defaultBucket: 'LATER', priceCents: 53_01, priceMicros: 53_009_200, priceAsOf: null } as const;
-    expect(sharesForDollars(109_198_95, exact, 53_009_200)).toBe(2_060_000_000);
+    expect(sharesForDollars(109_198_95, 53_009_200)).toBe(2_060_000_000);
   });
 
   it('lets typed shares move the balance, since that is what the client owns', () => {
@@ -320,9 +323,9 @@ describe('one kind of fund, however it got into the account', () => {
   it('moves dollars and the balance when a price moves, on every account, and leaves cash alone', () => {
     const placed = atCurrentPrices({ ...blank, lines: [withDollars('VTI', 50_000_00)] }, tickers);
     const later = atCurrentPrices(placed, repriced('VTI', 320_00));
-    expect(later.lines[0]).toEqual({ tickerSymbol: 'VTI', amountCents: 53_120_00, sharesMicros: 166_000_000 });
-    // $50,200 of cash from before, plus the same 166 shares at the new price.
-    expect(later.balanceCents).toBe(50_200_00 + 53_120_00);
+    expect(later.lines[0]).toEqual({ tickerSymbol: 'VTI', amountCents: 53_331_20, sharesMicros: 166_660_000 });
+    // $50,002 of cash from before, plus the same 166.66 shares at the new price.
+    expect(later.balanceCents).toBe(50_002_00 + 53_331_20);
   });
 
   it('holds dollars until there is a price, then makes them shares without touching the balance', () => {
@@ -330,7 +333,7 @@ describe('one kind of fund, however it got into the account', () => {
     const waiting = atCurrentPrices({ ...blank, lines: [withDollars('VTI', 50_000_00)] }, noPrice);
     expect(waiting.lines[0]).toEqual(withDollars('VTI', 50_000_00));
     const priced = atCurrentPrices(waiting, tickers);
-    expect(priced.lines[0]?.sharesMicros).toBe(166_000_000);
+    expect(priced.lines[0]?.sharesMicros).toBe(166_660_000);
     expect(priced.balanceCents).toBe(100_000_00);
   });
 
@@ -345,13 +348,13 @@ describe('one kind of fund, however it got into the account', () => {
   it('moves the balance on a later price once dollars are pinned to shares', () => {
     const filled = { ...WORKBOOK_CASE, accounts: [{ ...blank, lines: [withDollars('VTI', 50_000_00)] }] };
     const pinned = caseWithSharesPinned(filled, PLACEHOLDER_TICKERS);
-    expect(pinned.accounts[0]?.lines[0]?.sharesMicros).toBe(166_000_000);
+    expect(pinned.accounts[0]?.lines[0]?.sharesMicros).toBe(166_660_000);
     expect(pinned.accounts[0]?.balanceCents).toBe(100_000_00);
 
     const up = PLACEHOLDER_TICKERS.map((t) => (t.symbol === 'VTI' ? { ...t, priceCents: 320_00, priceMicros: 320_000_000 } : t));
     const shown = caseAtCurrentPrices(pinned, up).accounts[0]!;
-    expect(shown.lines[0]?.sharesMicros).toBe(166_000_000);
-    expect(shown.balanceCents).toBe(100_000_00 + 166 * 20_00);
+    expect(shown.lines[0]?.sharesMicros).toBe(166_660_000);
+    expect(shown.balanceCents).toBe(100_000_00 + 3_333_20);
 
     // Left in dollars, the same new price just buys fewer shares: the bug this prevents.
     expect(caseAtCurrentPrices(filled, up).accounts[0]?.balanceCents).toBe(100_000_00);
@@ -372,13 +375,18 @@ describe('one kind of fund, however it got into the account', () => {
     expect(caseAtCurrentPrices(settledCase, PLACEHOLDER_TICKERS)).toBe(settledCase);
   });
 
-  it('pays the fee from cash funds when an imported account has no other cash', () => {
+  it('counts only actual cash toward the fee, not a money market fund (Blake, 11/2)', () => {
     const valued = atCurrentPrices(statement, tickers);
     expect(investableCents(valued, 900_00)).toBe(valued.balanceCents);
     expect(leftToAllocateCents(valued, tickers, 900_00)).toBe(0);
-    expect(cashForFeeCents(valued, tickers)).toBe(9_000_00);
-    // No separate fee cash: SGOV already is the cash.
+    expect(actualCashCents(valued)).toBe(0);
+    expect(cashStatus(valued, 900_00, undefined, DEFAULT_THRESHOLDS)).toMatchObject({ light: 'RED', targetCents: 900_00 });
     expect(accountHoldings(valued, tickers, 900_00).map((h) => h.tickerSymbol)).toEqual(['SGOV', 'VTI']);
+
+    // Typing the actual cash keeps the funds and adds it to the balance.
+    const withCash = withActualCash(valued, 1_000_00);
+    expect(withCash.balanceCents).toBe(valued.balanceCents + 1_000_00);
+    expect(cashStatus(withCash, 900_00, undefined, DEFAULT_THRESHOLDS).light).toBe('GREEN');
   });
 
   it('holds the fee back from the same kind of account when it has the money', () => {
@@ -389,21 +397,21 @@ describe('one kind of fund, however it got into the account', () => {
     expect(accountHoldings(open, tickers, 900_00)[0]?.tickerSymbol).toBeNull();
   });
 
-  it('counts what whole shares leave behind as cash, not as work left to do', () => {
+  it('counts what rounding shares leaves behind as cash, not as work left to do', () => {
     const model = { id: 'm', name: 'All VTI', taxFunnel: null, lines: [{ tickerSymbol: 'VTI', weightBps: 10_000 }] };
     const filled = atCurrentPrices(applyModel({ ...blank, balanceCents: 100_000_00 }, model, 1_000_00), tickers);
     // $99,000 at $300 is exactly 330 shares; a nudge in the balance leaves change.
-    const change = { ...filled, balanceCents: 100_000_00 + 250_00 };
+    const change = { ...filled, balanceCents: 100_000_00 + 2_00 };
     expect(accountCash(change, tickers, 1_000_00)).toEqual({
-      uninvestedCents: 1_250_00,
+      uninvestedCents: 1_002_00,
       feeCashCents: 1_000_00,
-      roundingCents: 250_00,
+      roundingCents: 2_00,
       leftCents: 0,
     });
-    expect(accountHoldings(change, tickers, 1_000_00)[0]?.marketValueCents).toBe(1_250_00);
-    // More than a share's price is money still to place.
-    const more = { ...filled, balanceCents: 100_000_00 + 400_00 };
-    expect(accountCash(more, tickers, 1_000_00)).toMatchObject({ roundingCents: 0, leftCents: 400_00 });
+    expect(accountHoldings(change, tickers, 1_000_00)[0]?.marketValueCents).toBe(1_002_00);
+    // More than a hundredth of a share is money still to place.
+    const more = { ...filled, balanceCents: 100_000_00 + 250_00 };
+    expect(accountCash(more, tickers, 1_000_00)).toMatchObject({ roundingCents: 0, leftCents: 250_00 });
   });
 
   it('still matches its model right after a fill, and not once prices have moved it', () => {
@@ -429,6 +437,58 @@ describe('one kind of fund, however it got into the account', () => {
     const fee = new Map([[blank.id, 1_000_00]]);
     const [next] = followModels({ ...WORKBOOK_CASE, accounts: [filled] }, [filled], new Map([['m', model]]), fee, fee, tickers);
     expect(next).toBe(filled);
+  });
+
+  it('keeps a model\'s own cash as the account\'s cash, not a fund, and fills the fee first', () => {
+    const model = {
+      id: 'm',
+      name: 'With cash',
+      taxFunnel: null,
+      lines: [
+        { tickerSymbol: 'VTI', weightBps: 9_900 },
+        { tickerSymbol: 'CASH', weightBps: 100 },
+      ],
+    };
+    const filled = atCurrentPrices(applyModel(blank, model, 1_000_00), tickers);
+    expect(filled.lines.map((l) => l.tickerSymbol)).toEqual(['VTI']);
+    // $100,000 less the $1,000 fee, 1% of it as cash: $990.
+    const status = cashStatus(filled, 1_000_00, model, DEFAULT_THRESHOLDS);
+    expect(status.targetCents).toBe(1_990_00);
+    expect(status.light).toBe('GREEN');
+
+    const short = withActualCash(filled, 1_500_00);
+    expect(cashStatus(short, 1_000_00, model, DEFAULT_THRESHOLDS)).toMatchObject({ light: 'YELLOW' });
+    const tooLittle = withActualCash(filled, 500_00);
+    expect(cashStatus(tooLittle, 1_000_00, model, DEFAULT_THRESHOLDS)).toMatchObject({ light: 'RED' });
+    // More than 5% of the account over the target asks for a rebalance.
+    const deposit = withActualCash(filled, 20_000_00);
+    expect(cashStatus(deposit, 1_000_00, model, DEFAULT_THRESHOLDS)).toMatchObject({ light: 'YELLOW' });
+  });
+
+  it('tells a model update, changed funds, and drift apart, leaving cash out', () => {
+    const model = {
+      id: 'm',
+      name: 'Split',
+      taxFunnel: null,
+      updatedAt: '2026-11-01T00:00:00.000Z',
+      lines: [
+        { tickerSymbol: 'VTI', weightBps: 5_000 },
+        { tickerSymbol: 'ABCDX', weightBps: 5_000 },
+      ],
+    };
+    const filled = atCurrentPrices(applyModel(blank, model, 1_000_00, new Date('2026-11-02T00:00:00Z')), tickers);
+    expect(modelStatus(filled, model, DEFAULT_THRESHOLDS).kind).toBe('MATCHES');
+    // A deposit sits in cash and is not drift.
+    expect(modelStatus(withActualCash(filled, 50_000_00), model, DEFAULT_THRESHOLDS).kind).toBe('MATCHES');
+
+    const moved = repriced('VTI', 400_00);
+    expect(modelStatus(atCurrentPrices(filled, moved), model, DEFAULT_THRESHOLDS)).toMatchObject({ kind: 'DRIFTED', light: 'YELLOW' });
+
+    const extra = { ...filled, lines: [...filled.lines, { tickerSymbol: 'BND', amountCents: 1_000_00, sharesMicros: null }] };
+    expect(modelStatus(extra, model, DEFAULT_THRESHOLDS).kind).toBe('FUNDS_CHANGED');
+
+    const updated = { ...model, updatedAt: '2026-11-10T00:00:00.000Z' };
+    expect(modelStatus(filled, updated, DEFAULT_THRESHOLDS)).toMatchObject({ kind: 'MODEL_UPDATED', light: 'RED' });
   });
 
   it('shows the shares a fund holds in the bucket list', () => {

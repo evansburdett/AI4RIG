@@ -317,6 +317,12 @@ The shapes on both ends (`ClientCase`, `Ticker`, ...) are defined once, in
 | `GET /api/advisory-fee-tiers` | RIG's fee schedule, lowest balance first |
 | `PUT /api/advisory-fee-tiers` | Replace the whole schedule (first tier starts at $0) |
 | `POST /api/prices/refresh` | Look up `{ symbols?, skipCheckedToday? }` on Market Data and save the prices. Returns every ticker, plus which were `updated`, which of those `changed`, which were `assumedCash` ($1.00), and which were `notFound`. 503 without a key; 502 changes nothing |
+| `PUT /api/settings/thresholds` | `{ cashExcessBps, driftBps }` for the account cash and model alerts. Defaults 5% and 1 point |
+| `GET /api/clients/:clientNumber/reports` | Saved bucket reports, newest first |
+| `POST /api/clients/:clientNumber/reports` | Save `{ snapshot }` exactly as generated. Never changed after |
+| `DELETE /api/clients/:clientNumber/reports/:id` | Delete one report |
+| `GET /api/transfer/export` | Every case with its reports, and the tickers and models they use, as one file |
+| `POST /api/transfer/import` | Merge a file's cases in: `{ file, choices, dryRun }`. A number already here is skipped, replaced, or copied to a new number, as chosen. Backs the database up first |
 | `PUT /api/settings/market-data-key` | Save `{ apiKey }` or remove it with `null`. Never returned. 409 when it comes from `.env` |
 | `POST /api/life-expectancy/estimate` | US-28 AI estimate from `{ age, gender, healthConcerns, healthConcernOther }`. Saves nothing. 503 without `OPENAI_API_KEY` |
 
@@ -411,6 +417,8 @@ lookups:
   are sent. It needs `OPENAI_API_KEY` in your own `.env` (see `.env.example`);
   without it the button says so and the age is typed in.
 
+- **Cash and model alerts**: `cashStatus` and `modelStatus` in `apps/web/src/domain/breakdown.ts`.
+- **Bucket report**: `apps/web/src/domain/report.ts` builds it; reports are stored as JSON in `client_reports`.
 - **Live prices**: `apps/api/src/prices.ts` (ADR 0008). It needs
   `MARKETDATA_API_KEY` in your own `.env`, and only ticker symbols are sent.
 

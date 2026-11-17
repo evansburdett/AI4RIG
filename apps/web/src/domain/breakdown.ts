@@ -19,10 +19,13 @@
 import { WHOLE_BPS, addCents, splitByWeights, wholeShares, type Cents } from '@ai4rig/engine';
 
 import { percentOf } from './money.js';
+import { CASH_SYMBOL } from './tickerGuesses.js';
 import { ASSET_CLASSES, BUCKETS } from './types.js';
 import type {
   Account,
   AccountLine,
+  AlertThresholds,
+  Light,
   AccountType,
   AllocationTarget,
   AssetClass,
@@ -68,32 +71,24 @@ export function valueOfSharesCents(sharesMicros: number, priceMicros: number): C
   return Number((product + 5_000_000_000n) / 10_000_000_000n);
 }
 
-/**
- * Mutual funds (five letters ending in X) and cash funds can be bought in
- * fractions. Stocks and ETFs are bought in whole shares.
- */
-export function buysWholeShares(ticker: Ticker): boolean {
-  return ticker.assetClass !== 'CASH' && !/^[A-Z]{4}X$/.test(ticker.symbol);
-}
-
 const SHARE_MICROS = 1_000_000n;
+/** A hundredth of a share, in millionths. */
+const HUNDREDTH = 10_000n;
 
 /**
- * The shares some dollars buy. A fraction is taken far enough that it comes
- * back to the same cent. Whole shares never spend more than the dollars, and
- * half a cent of slack keeps dollars that came from a share count on that
- * count: 2,060 shares at $53.0092 is $109,198.95, a hair under 2,060 exactly.
+ * The shares some dollars buy, rounded down to a hundredth of a share (RIG,
+ * 11/2: partials are a thing). Half a cent of slack keeps dollars that came
+ * from a share count on that count: 2,060 shares at $53.0092 is $109,198.95,
+ * a hair under 2,060 exactly. What the hundredth leaves over stays as cash.
  */
-export function sharesForDollars(amountCents: Cents, ticker: Ticker, priceMicros: number): number {
-  const numerator = (BigInt(amountCents) * 10_000n + 5_000n) * SHARE_MICROS;
-  const price = BigInt(priceMicros);
-  if (buysWholeShares(ticker)) return Number((numerator / price / SHARE_MICROS) * SHARE_MICROS);
-  return Number((BigInt(amountCents) * 10_000n * SHARE_MICROS + price / 2n) / price);
+export function sharesForDollars(amountCents: Cents, priceMicros: number): number {
+  const micros = ((BigInt(amountCents) * 10_000n + 5_000n) * SHARE_MICROS) / BigInt(priceMicros);
+  return Number((micros / HUNDREDTH) * HUNDREDTH);
 }
 
 /** A fund's dollars as shares at today's price. What whole shares cannot use stays in the balance as cash. */
-function pinnedToShares(line: AccountLine, ticker: Ticker, priceMicros: number): AccountLine {
-  const sharesMicros = sharesForDollars(line.amountCents, ticker, priceMicros);
+function pinnedToShares(line: AccountLine, priceMicros: number): AccountLine {
+  const sharesMicros = sharesForDollars(line.amountCents, priceMicros);
   return { ...line, sharesMicros, amountCents: valueOfSharesCents(sharesMicros, priceMicros) };
 }
 
@@ -117,7 +112,7 @@ export function atCurrentPrices(account: Account, tickers: ReadonlyMap<string, T
     if (ticker === undefined || price === null) return line;
 
     if (line.sharesMicros === null) {
-      return line.amountCents === 0 ? line : pinnedToShares(line, ticker, price);
+      return line.amountCents === 0 ? line : pinnedToShares(line, price);
     }
 
     const amountCents = valueOfSharesCents(line.sharesMicros, price);
@@ -150,20 +145,21 @@ export function caseWithSharesPinned(clientCase: ClientCase, tickerList: readonl
       const ticker = tickers.get(line.tickerSymbol);
       const price = exactPriceMicros(ticker);
       if (ticker === undefined || price === null || line.sharesMicros !== null || line.amountCents === 0) return line;
-      return pinnedToShares(line, ticker, price);
+      return pinnedToShares(line, price);
     });
     return lines.every((line, i) => line === account.lines[i]) ? account : { ...account, lines };
   });
   return accounts.every((account, i) => account === clientCase.accounts[i]) ? clientCase : { ...clientCase, accounts };
 }
 
-/** What the account's cash funds (money market, sweep) hold. */
-export function cashFundsCents(account: Account, tickers: ReadonlyMap<string, Ticker>): Cents {
-  return addCents(
-    ...account.lines
-      .filter((line) => tickers.get(line.tickerSymbol)?.assetClass === 'CASH')
-      .map((line) => line.amountCents),
-  );
+/** A model's or account's plain cash line ("USD CASH" in a vendor model), not a money market fund. */
+export function isCashLine(line: { readonly tickerSymbol: string }): boolean {
+  return line.tickerSymbol === CASH_SYMBOL;
+}
+
+/** The funds the client is invested in: everything but plain cash. */
+function investedLines(account: Account): readonly AccountLine[] {
+  return account.lines.filter((line) => !isCashLine(line));
 }
 
 /** How the money in an account that is not in a fund is spoken for. */
@@ -172,30 +168,35 @@ export interface AccountCash {
   readonly uninvestedCents: Cents;
   /** Held back for the year's advisory fee, up to the fee. */
   readonly feeCashCents: Cents;
-  /** Too little to buy another share of anything: staying cash is the plan, not a job left undone. */
+  /** Too little to buy another hundredth of a share of anything: staying cash is the plan, not a job left undone. */
   readonly roundingCents: Cents;
   /** Still to put in a fund. Negative when the funds add up to more than the balance. */
   readonly leftCents: Cents;
 }
 
-export function accountCash(account: Account, tickers: ReadonlyMap<string, Ticker>, feeCents: Cents): AccountCash {
+export function accountCash(
+  account: Account,
+  tickers: ReadonlyMap<string, Ticker>,
+  feeCents: Cents,
+  modelCashCents: Cents = 0,
+): AccountCash {
   const uninvestedCents = account.balanceCents - allocatedCents(account);
   const feeCashCents = Math.max(Math.min(uninvestedCents, feeCents), 0);
-  const spare = uninvestedCents - feeCashCents;
-  const oneShareOfEach = addCents(
-    ...account.lines.map((line) => {
-      const ticker = tickers.get(line.tickerSymbol);
-      return ticker !== undefined && buysWholeShares(ticker) ? (ticker.priceCents ?? 0) : 0;
-    }),
+  // Cash the model itself holds is part of the plan too, not money left over.
+  const plainCashLines = addCents(...account.lines.filter(isCashLine).map((line) => line.amountCents));
+  const modelCashHeld = Math.max(Math.min(uninvestedCents - feeCashCents, modelCashCents - plainCashLines), 0);
+  const spare = uninvestedCents - feeCashCents - modelCashHeld;
+  const aHundredthOfEach = addCents(
+    ...account.lines.map((line) => Math.ceil((tickers.get(line.tickerSymbol)?.priceCents ?? 0) / 100)),
   );
-  const roundingCents = spare > 0 && spare <= oneShareOfEach ? spare : 0;
-  return { uninvestedCents, feeCashCents, roundingCents, leftCents: spare - roundingCents };
+  const roundingCents = spare > 0 && spare <= aHundredthOfEach ? spare : 0;
+  return { uninvestedCents, feeCashCents: feeCashCents + modelCashHeld, roundingCents, leftCents: spare - roundingCents };
 }
 
 /**
  * What the funds are a share of: the balance less the cash held for the fee.
  * An account from a statement often has no such cash, because its fee comes
- * from a money market it already holds, and then all of it counts.
+ * from cash it already holds, and then all of it counts.
  */
 export function investableCents(account: Account, feeCents: Cents): Cents {
   const uninvested = account.balanceCents - allocatedCents(account);
@@ -203,23 +204,104 @@ export function investableCents(account: Account, feeCents: Cents): Cents {
 }
 
 /** Still to put in a fund. Negative when the funds add up to more than the balance. */
-export function leftToAllocateCents(account: Account, tickers: ReadonlyMap<string, Ticker>, feeCents: Cents): Cents {
-  return accountCash(account, tickers, feeCents).leftCents;
+export function leftToAllocateCents(
+  account: Account,
+  tickers: ReadonlyMap<string, Ticker>,
+  feeCents: Cents,
+  modelCashCents: Cents = 0,
+): Cents {
+  return accountCash(account, tickers, feeCents, modelCashCents).leftCents;
 }
 
-/** What the year's fee can come from: cash not in a fund, and cash funds. */
-export function cashForFeeCents(account: Account, tickers: ReadonlyMap<string, Ticker>): Cents {
-  return Math.max(account.balanceCents - allocatedCents(account), 0) + cashFundsCents(account, tickers);
+/**
+ * The account's actual cash: what is not in a fund, plus any plain cash line.
+ * Money market funds do not count; Blake (11/2): only cash pays the fee.
+ */
+export function actualCashCents(account: Account): Cents {
+  return account.balanceCents - addCents(...investedLines(account).map((line) => line.amountCents));
+}
+
+/** Typing the account's actual cash: the funds stay, so the balance is them plus the cash. */
+export function withActualCash(account: Account, cashCents: Cents): Account {
+  const invested = addCents(...investedLines(account).map((line) => line.amountCents));
+  return { ...account, balanceCents: invested + cashCents };
+}
+
+/** The cash a model holds, as dollars of this account (its weight of the balance less the fee). */
+export function modelCashCents(account: Account, model: ModelPortfolio | undefined, feeCents: Cents): Cents {
+  if (model === undefined) return 0;
+  const bps = model.lines.filter(isCashLine).reduce((sum, line) => sum + line.weightBps, 0);
+  return Math.round((Math.max(account.balanceCents - feeCents, 0) * bps) / WHOLE_BPS);
+}
+
+/**
+ * Each account's cash target (its fee plus its model's cash), by account id.
+ * Passed where the bucket totals take fees, so a model's own cash counts as
+ * cash in Now rather than as money still to place.
+ */
+export function cashTargetsByAccount(
+  clientCase: ClientCase,
+  fees: FeesByAccount,
+  models: ReadonlyMap<string, ModelPortfolio>,
+): FeesByAccount {
+  return new Map(
+    clientCase.accounts.map((account) => {
+      const fee = fees.get(account.id) ?? 0;
+      const model = account.modelId === null ? undefined : models.get(account.modelId);
+      return [account.id, fee + modelCashCents(account, model, fee)];
+    }),
+  );
+}
+
+export interface CashStatus {
+  readonly light: Light;
+  /** The fee plus the model's cash: what the account should hold in cash. */
+  readonly targetCents: Cents;
+  readonly actualCents: Cents;
+  /** Positive when there is more cash than the target. */
+  readonly varianceCents: Cents;
+  readonly message: string;
+}
+
+/**
+ * Cash against its target (RIG, 11/2). The fee is filled first, then the
+ * model's cash. Short of the fee is red, since a fee debit would take the
+ * account negative. Short of the model's cash, or more than the threshold over
+ * the target (a deposit, say), is yellow: time to rebalance.
+ */
+export function cashStatus(
+  account: Account,
+  feeCents: Cents,
+  model: ModelPortfolio | undefined,
+  thresholds: AlertThresholds,
+): CashStatus {
+  const modelCash = modelCashCents(account, model, feeCents);
+  const targetCents = feeCents + modelCash;
+  const actualCents = actualCashCents(account);
+  const varianceCents = actualCents - targetCents;
+  const money = (cents: Cents) => formatWholeDollars(Math.abs(cents));
+  const base = { targetCents, actualCents, varianceCents };
+
+  if (actualCents < feeCents) {
+    return { ...base, light: 'RED', message: `${money(feeCents - actualCents)} short of the year's advisory fee. Raise cash.` };
+  }
+  if (actualCents < targetCents) {
+    return { ...base, light: 'YELLOW', message: `The fee is covered, but ${money(-varianceCents)} short of the model's cash.` };
+  }
+  if (varianceCents * WHOLE_BPS > account.balanceCents * thresholds.cashExcessBps && varianceCents > 0) {
+    return { ...base, light: 'YELLOW', message: `${money(varianceCents)} more cash than the target. Consider investing it.` };
+  }
+  return { ...base, light: 'GREEN', message: 'Cash covers the fee and the model.' };
 }
 
 /**
  * Fill the account from a model: its weights applied to the balance less a
  * year's fee (RIG, 10/26), to the exact cent. The dollars become shares at
- * today's price (atCurrentPrices). Replaces the funds, including any added by
- * hand, so the screen asks before doing this over funds the advisor has
- * changed.
+ * today's price (atCurrentPrices). The model's own cash stays as the account's
+ * cash rather than a fund. Replaces the funds, including any added by hand, so
+ * the screen asks before doing this over funds the advisor has changed.
  */
-export function applyModel(account: Account, model: ModelPortfolio, feeCents: Cents): Account {
+export function applyModel(account: Account, model: ModelPortfolio, feeCents: Cents, now: Date = new Date()): Account {
   const shares = splitByWeights(
     Math.max(account.balanceCents - feeCents, 0),
     model.lines.map((line) => ({ key: line.tickerSymbol, weightBps: line.weightBps })),
@@ -227,17 +309,17 @@ export function applyModel(account: Account, model: ModelPortfolio, feeCents: Ce
   return {
     ...account,
     modelId: model.id,
-    lines: shares.map(
-      (share): AccountLine => ({ tickerSymbol: share.key, amountCents: share.amountCents, sharesMicros: null }),
-    ),
+    modelFilledAt: now.toISOString(),
+    lines: shares
+      .filter((share) => !isCashLine({ tickerSymbol: share.key }))
+      .map((share): AccountLine => ({ tickerSymbol: share.key, amountCents: share.amountCents, sharesMicros: null })),
   };
 }
 
 /**
- * Whether the funds are still what the model would give today. Whole shares
- * land up to one share off the dollars, and a cent is rounding. An edit makes
- * this false, and so do prices moving unevenly, which is the same news to the
- * advisor: the account has moved away from its model.
+ * Whether the funds are still what the model would give today, cash aside.
+ * A hundredth of a share lands a little off the dollars, and a cent is
+ * rounding. For the "differs" alerts, see modelStatus.
  */
 export function matchesModel(
   account: Account,
@@ -246,16 +328,66 @@ export function matchesModel(
   tickers: ReadonlyMap<string, Ticker>,
 ): boolean {
   const filled = applyModel(account, model, feeCents).lines;
+  const own = investedLines(account);
   return (
-    filled.length === account.lines.length &&
+    filled.length === own.length &&
     filled.every((line) => {
-      const own = account.lines.find((l) => l.tickerSymbol === line.tickerSymbol);
-      if (own === undefined) return false;
-      const ticker = tickers.get(line.tickerSymbol);
-      const oneShare = ticker !== undefined && buysWholeShares(ticker) ? (ticker.priceCents ?? 0) : 0;
-      return Math.abs(own.amountCents - line.amountCents) <= Math.max(oneShare, 1);
+      const mine = own.find((l) => l.tickerSymbol === line.tickerSymbol);
+      if (mine === undefined) return false;
+      const aHundredth = Math.ceil((tickers.get(line.tickerSymbol)?.priceCents ?? 0) / 100);
+      return Math.abs(mine.amountCents - line.amountCents) <= Math.max(aHundredth, 1);
     })
   );
+}
+
+export type ModelStatusKind = 'MATCHES' | 'MODEL_UPDATED' | 'FUNDS_CHANGED' | 'DRIFTED';
+
+export interface ModelStatus {
+  readonly kind: ModelStatusKind;
+  readonly light: Light;
+  readonly message: string;
+}
+
+/**
+ * How an account on a model stands against it (RIG, 11/2), cash left out:
+ * red when the model was saved after the account was filled from it, yellow
+ * when its funds are not the model's or any fund's weight is further off than
+ * the drift threshold, green otherwise. Weights are each fund's share of the
+ * invested funds, so a deposit or a fee debit does not count as drift.
+ */
+export function modelStatus(account: Account, model: ModelPortfolio, thresholds: AlertThresholds): ModelStatus {
+  if (model.updatedAt !== undefined && account.modelFilledAt != null && model.updatedAt > account.modelFilledAt) {
+    return { kind: 'MODEL_UPDATED', light: 'RED', message: 'The model has been updated since this account was filled.' };
+  }
+
+  const wanted = model.lines.filter((line) => !isCashLine(line));
+  const own = investedLines(account).filter((line) => line.amountCents > 0);
+  const sameFunds =
+    wanted.length === own.length && wanted.every((line) => own.some((l) => l.tickerSymbol === line.tickerSymbol));
+  if (!sameFunds) {
+    return { kind: 'FUNDS_CHANGED', light: 'YELLOW', message: "The account's funds are not the model's." };
+  }
+
+  const wantedTotal = wanted.reduce((sum, line) => sum + line.weightBps, 0);
+  const ownTotal = addCents(...own.map((line) => line.amountCents));
+  let worst: { symbol: string; offBps: number } | null = null;
+  for (const line of wanted) {
+    const mine = own.find((l) => l.tickerSymbol === line.tickerSymbol)!;
+    const offBps =
+      ownTotal === 0 || wantedTotal === 0
+        ? 0
+        : Math.round((mine.amountCents / ownTotal) * WHOLE_BPS - (line.weightBps / wantedTotal) * WHOLE_BPS);
+    if (worst === null || Math.abs(offBps) > Math.abs(worst.offBps)) worst = { symbol: line.tickerSymbol, offBps };
+  }
+  if (worst !== null && Math.abs(worst.offBps) > thresholds.driftBps) {
+    const points = (Math.abs(worst.offBps) / 100).toFixed(1);
+    return {
+      kind: 'DRIFTED',
+      light: 'YELLOW',
+      message: `Drifted from the model: ${worst.symbol} is ${points} points ${worst.offBps > 0 ? 'over' : 'under'} its weight.`,
+    };
+  }
+  return { kind: 'MATCHES', light: 'GREEN', message: 'Matches the model.' };
 }
 
 /** A fund's share of the amount to invest, in basis points, for the weight column. */

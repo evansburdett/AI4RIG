@@ -1,3 +1,5 @@
+import { download } from '../download.js';
+import { modelCsv, modelCsvName } from '../domain/modelCsv.js';
 import { useEffect, useState } from 'react';
 
 import { ApiError } from '../api.js';
@@ -181,9 +183,20 @@ function ModelEditor({
               .join(' · ')}
           </span>
         </div>
-        <button type="button" onClick={() => setOpen(true)}>
-          Edit
-        </button>
+        <div className="button-row">
+          <button
+            type="button"
+            className="icon-button"
+            title="Download as CSV for YCharts"
+            aria-label={`Download ${model.name} as CSV for YCharts`}
+            onClick={() => download(modelCsvName(model), modelCsv(model), 'text/csv')}
+          >
+            <span aria-hidden="true">⤓</span> CSV
+          </button>
+          <button type="button" onClick={() => setOpen(true)}>
+            Edit
+          </button>
+        </div>
       </div>
     );
   }

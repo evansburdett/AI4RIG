@@ -4,8 +4,10 @@ import { api, ApiError } from './api.js';
 import { Callout } from './components/Callout.js';
 import { ClientSwitcher } from './components/ClientSwitcher.js';
 import { ConnectionStatus } from './components/ConnectionStatus.js';
+import { DEFAULT_THRESHOLDS } from './domain/types.js';
 import type {
   AdvisoryFeeTier,
+  AlertThresholds,
   BucketDefinition,
   ClientCase,
   ClientSummary,
@@ -24,6 +26,7 @@ import { BucketAssignments } from './screens/BucketAssignments.js';
 import { ClientProfile } from './screens/ClientProfile.js';
 import { FeeTiers } from './screens/FeeTiers.js';
 import { Models } from './screens/Models.js';
+import { Reports } from './screens/Reports.js';
 import { Settings } from './screens/Settings.js';
 
 /**
@@ -41,6 +44,20 @@ export function App() {
   const [definitions, setDefinitions] = useState<readonly BucketDefinition[]>([]);
   const [feeTiers, setFeeTiers] = useState<readonly AdvisoryFeeTier[]>([]);
   const [referenceError, setReferenceError] = useState<string | null>(null);
+  const [thresholds, setThresholds] = useState<AlertThresholds>(DEFAULT_THRESHOLDS);
+
+  useEffect(() => {
+    // The alert thresholds; the defaults stand in if settings cannot load.
+    api
+      .getSettings()
+      .then((settings) => setThresholds(settings.thresholds))
+      .catch(() => undefined);
+  }, []);
+
+  /** After an import on the Settings screen: the new cases join the switcher. */
+  const reloadClients = useCallback(async () => {
+    setClients(await api.listClients());
+  }, []);
 
   /** Where to return from the model and ticker screens, which belong to no client. */
   const [lastClientNumber, setLastClientNumber] = useState<string | null>(null);
@@ -182,8 +199,14 @@ export function App() {
     setBusy(true);
     setActionError(null);
     try {
-      // Saved as shown, so the stored values are today's.
-      const result = await api.saveClient(caseAtCurrentPrices(draft, tickers));
+      // Saved as shown, so the stored values are today's. Locked-in proposals
+      // are retired (each fund keeps its shares now), so any left are cleared.
+      const current = caseAtCurrentPrices(draft, tickers);
+      const result = await api.saveClient({
+        ...current,
+        proposalLockedAt: null,
+        accounts: current.accounts.map((account) => ({ ...account, proposalShares: [] })),
+      });
       setSaved(result);
       setDraft(result);
       setClients((current) =>
@@ -365,6 +388,12 @@ export function App() {
             Breakdown
           </a>
           <a
+            href={hrefFor({ screen: 'report', clientNumber: activeClientNumber })}
+            aria-current={route.screen === 'report' ? 'page' : undefined}
+          >
+            Report
+          </a>
+          <a
             href={hrefFor({ screen: 'models', clientNumber: null })}
             aria-current={route.screen === 'models' ? 'page' : undefined}
           >
@@ -448,7 +477,7 @@ export function App() {
         ) : route.screen === 'fees' ? (
           <FeeTiers tiers={feeTiers} onSave={saveFeeTiers} />
         ) : route.screen === 'settings' ? (
-          <Settings />
+          <Settings onThresholdsChange={setThresholds} onCasesImported={reloadClients} />
         ) : caseError !== null ? (
           <Callout tone="error" title="Could not open this case">
             {caseError}
@@ -457,11 +486,21 @@ export function App() {
           <p className="empty">No client cases. Use “New client” to create one.</p>
         ) : shown === null ? (
           <p className="empty">Loading…</p>
+        ) : route.screen === 'report' ? (
+          <Reports
+            clientCase={shown}
+            tickers={tickers}
+            feeTiers={feeTiers}
+            models={models}
+            saved={!dirty}
+            today={today}
+          />
         ) : route.screen === 'breakdown' ? (
           <AssetClassBreakdown
             clientCase={shown}
             tickers={tickers}
             feeTiers={feeTiers}
+            models={models}
             onRefreshPrices={refreshPrices}
             today={today}
           />
@@ -477,6 +516,7 @@ export function App() {
             onImport={runImport}
             onRefreshPrices={refreshPrices}
             onEstimateLifeExpectancy={api.estimateLifeExpectancy}
+            thresholds={thresholds}
             today={today}
           />
         )}

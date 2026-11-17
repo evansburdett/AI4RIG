@@ -17,7 +17,7 @@ server.on('listening', () => {
 server.on('error', (error: NodeJS.ErrnoException) => {
   if (error.code === 'EADDRINUSE') {
     console.error(
-      `\nPort ${config.port} is already in use — most likely an API you started earlier is still running.\n` +
+      `\nPort ${config.port} is already in use, most likely by an API you started earlier is still running.\n` +
         `Run "npm run doctor" to see what is holding it, or change API_PORT in .env.\n`,
     );
     process.exit(1);

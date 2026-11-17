@@ -4,9 +4,13 @@ import {
   accountCash,
   accountHoldings,
   allocatedCents,
+  actualCashCents,
   atCurrentPrices,
-  cashForFeeCents,
+  cashStatus,
   exactPriceMicros,
+  modelCashCents,
+  modelStatus,
+  withActualCash,
   amountForWeight,
   applyModel,
   bucketOf,
@@ -27,6 +31,7 @@ import { ACCOUNT_TYPES, BUCKETS, DEFAULT_TAX_FUNNEL, TAX_FUNNELS } from '../doma
 import type {
   Account,
   AccountLine,
+  AlertThresholds,
   BucketType,
   ImportRequest,
   ImportResult,
@@ -43,6 +48,7 @@ import { SelectField, TextField } from './Fields.js';
 import { MoneyInput } from './MoneyInput.js';
 import { NewTickerFields } from './NewTickerFields.js';
 import { formatShares } from './shares.js';
+import { Stoplight } from './Stoplight.js';
 
 interface Props {
   /** Its place in the case, for the title: "Account 2". */
@@ -64,6 +70,8 @@ interface Props {
   onImport: (request: ImportRequest) => Promise<ImportResult>;
   /** This account's advisory fee if its balance were this, for a holdings import. */
   feeFor: (balanceCents: number) => number;
+  /** When the cash and model alerts go off (Settings). */
+  thresholds: AlertThresholds;
 }
 
 /** Dollars typed in a fund: never negative. */
@@ -95,6 +103,7 @@ export function AccountCard({
   onAddTicker,
   onImport,
   feeFor,
+  thresholds,
 }: Props) {
   const root = useRef<HTMLDivElement>(null);
 
@@ -114,19 +123,22 @@ export function AccountCard({
   const investable = investableCents(account, feeCents);
   const allocated = allocatedCents(account);
   const tickerMap = tickersBySymbol(tickers);
-  const { feeCashCents, roundingCents, leftCents: left } = accountCash(account, tickerMap, feeCents);
   const byId = modelsById(models);
   const model = account.modelId === null ? undefined : byId.get(account.modelId);
+  // The cash the account should hold: the fee first, then the model's own cash.
+  const cashTarget = feeCents + modelCashCents(account, model, feeCents);
+  const { feeCashCents, roundingCents, leftCents: left } = accountCash(account, tickerMap, cashTarget);
   const adjusted = model !== undefined && !matchesModel(account, model, feeCents, tickerMap);
-  // Buckets come from the funds chosen, never typed: the fee cash in Now,
-  // then each fund in its ticker's bucket.
-  const holdings = accountHoldings(account, tickerMap, feeCents);
+  const status = model === undefined ? null : modelStatus(account, model, thresholds);
+  const cash = cashStatus(account, feeCents, model, thresholds);
+  // Buckets come from the funds chosen, never typed: the cash in Now, then
+  // each fund in its ticker's bucket.
+  const holdings = accountHoldings(account, tickerMap, cashTarget);
   const segments = BUCKETS.map((bucket) => ({
     bucket,
     valueCents: holdings.filter((h) => h.bucket === bucket).reduce((sum, h) => sum + h.marketValueCents, 0),
   }));
   const unpriced = account.lines.filter((l) => exactPriceMicros(tickerMap.get(l.tickerSymbol)) === null);
-  const feeCovered = cashForFeeCents(account, tickerMap);
 
   function patch(changes: Partial<Account>) {
     // Every edit goes through the one rule for what a change to a fund means.
@@ -202,8 +214,13 @@ export function AccountCard({
         <MoneyInput
           label="Account balance"
           valueCents={account.balanceCents}
-          hint="Funds at today's prices plus cash. Typing it sets the cash."
           onChange={(balanceCents) => patch({ balanceCents })}
+        />
+        <MoneyInput
+          label="Actual cash"
+          valueCents={actualCashCents(account)}
+          hint="Cash only, not money market funds."
+          onChange={(cents) => patch(withActualCash(account, cents))}
         />
         <div className="field">
           <button type="button" className="danger" onClick={onRemove}>
@@ -216,30 +233,30 @@ export function AccountCard({
         <span>
           Balance <strong>{formatCents(account.balanceCents)}</strong>
         </span>
-        <span aria-hidden="true">−</span>
+        <span aria-hidden="true">·</span>
         <span>
-          Fee cash <strong>{formatCents(feeCashCents)}</strong>
-          {fee !== undefined && fee.rateBps > 0 && <span className="muted"> ({formatBps(fee.rateBps)})</span>}
+          Cash target <strong>{formatCents(cash.targetCents)}</strong>
+          <span className="muted">
+            {' '}
+            (fee {formatCents(feeCents)}
+            {fee !== undefined && fee.rateBps > 0 ? ` at ${formatBps(fee.rateBps)}` : ''}
+            {cash.targetCents > feeCents ? ` + model cash ${formatCents(cash.targetCents - feeCents)}` : ''})
+          </span>
         </span>
-        <span aria-hidden="true">=</span>
+        <span aria-hidden="true">·</span>
+        <span>
+          Actual cash <strong>{formatCents(cash.actualCents)}</strong>
+        </span>
+        <span aria-hidden="true">·</span>
         <span>
           To invest <strong>{formatCents(investable)}</strong>
         </span>
       </p>
 
-      {feeCashCents < feeCents && (
-        <p className="account-math">
-          <span>
-            Rest of the {formatCents(feeCents)} fee from cash funds:{' '}
-            {feeCovered >= feeCents ? (
-              <span className="muted">{formatCents(feeCovered)} in cash covers it</span>
-            ) : (
-              <span className="text-warn">
-                {formatCents(feeCovered)} in cash, {formatCents(feeCents - feeCovered)} short
-              </span>
-            )}
-          </span>
-        </p>
+      {account.balanceCents > 0 && (
+        <div className="account-alerts">
+          <Stoplight light={cash.light} message={cash.message} />
+        </div>
       )}
 
       {account.balanceCents > 0 && (
@@ -256,7 +273,7 @@ export function AccountCard({
             title={model?.name}
             onChange={(event) => chooseModel(event.target.value)}
           >
-            <option value="">No model (pick funds yourself)</option>
+            <option value="">No model</option>
             {account.modelId !== null && model === undefined && (
               <option value={account.modelId}>(deleted model)</option>
             )}
@@ -270,14 +287,14 @@ export function AccountCard({
             ))}
           </select>
         </label>
-        {adjusted && (
+        {model !== undefined && status !== null && (
           <>
-            <span className="tag" title="The funds no longer match the model, from an edit or from prices moving">
-              differs from model
-            </span>
-            <button type="button" className="link" onClick={() => fillFrom(model)}>
-              Refill from model
-            </button>
+            <Stoplight light={status.light} message={status.message} />
+            {status.kind !== 'MATCHES' && (
+              <button type="button" onClick={() => fillFrom(model)}>
+                Rebalance to model
+              </button>
+            )}
           </>
         )}
       </div>
@@ -312,12 +329,12 @@ export function AccountCard({
               <td>
                 <BucketTag bucket="NOW" />
               </td>
-              <td className="amount muted">fee</td>
+              <td className="amount muted">cash</td>
               <td className="amount">{formatCents(feeCashCents + roundingCents)}</td>
               <td colSpan={3} className="muted">
-                {feeCashCents > 0 ? 'One year of the advisory fee' : ''}
+                {feeCashCents > 0 ? 'Fee and model cash' : ''}
                 {feeCashCents > 0 && roundingCents > 0 ? ', plus ' : ''}
-                {roundingCents > 0 ? `${formatCents(roundingCents)} left after whole shares` : ''}
+                {roundingCents > 0 ? `${formatCents(roundingCents)} left from rounding` : ''}
               </td>
             </tr>
           )}
@@ -446,7 +463,7 @@ function FundRow({
         />
       </td>
       <td className="amount">{priceMicros === null ? <span className="muted">No price</span> : formatPrice(priceMicros)}</td>
-      <td className="amount" title="Shares the client owns. Change it when they buy or sell, and the balance follows.">
+      <td className="amount">
         <CellInput
           label={`${symbol} shares`}
           text={line.sharesMicros === null ? '' : formatShares(line.sharesMicros)}
@@ -574,7 +591,7 @@ function SaveAsModel({
         <input
           type="text"
           aria-label="Name for a model from these funds"
-          placeholder="Name to reuse these funds as a model"
+          placeholder="Save these funds as a model"
           value={name}
           onChange={(event) => setName(event.target.value)}
         />
