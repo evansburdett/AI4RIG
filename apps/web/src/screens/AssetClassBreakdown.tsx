@@ -57,12 +57,12 @@ export function AssetClassBreakdown({ clientCase, tickers, feeTiers, models, onR
     () => cashTargetsByAccount(clientCase, feesByAccount(totals.advisoryFees), modelsById(models)),
     [clientCase, totals.advisoryFees, models],
   );
-  const breakdown = useMemo(() => computeBreakdown(clientCase, tickers, fees), [clientCase, tickers, fees]);
+  const breakdown = useMemo(() => computeBreakdown(clientCase, tickers), [clientCase, tickers]);
   const target = useMemo(() => targetAllocation(clientCase, totals), [clientCase, totals]);
   const drift = useMemo(() => computeDrift(target, breakdown), [target, breakdown]);
   const delta = (bucket: 'NOW' | 'SOON') => drift.find((d) => d.bucket === bucket)?.deltaCents ?? 0;
   const advice = varianceAdvice(delta('NOW'), delta('SOON'), breakdown.unallocatedCents);
-  const perAccount = useMemo(() => bucketsByAccount(clientCase, tickers, fees), [clientCase, tickers, fees]);
+  const perAccount = useMemo(() => bucketsByAccount(clientCase, tickers), [clientCase, tickers]);
 
   return (
     <div>

@@ -316,10 +316,18 @@ export const priceRefreshSchema = z.object({
   skipCheckedToday: z.boolean().default(false),
 });
 
-export const thresholdsSchema = z.object({
-  cashExcessBps: z.int().min(0).max(10_000),
-  driftBps: z.int().min(1).max(10_000),
-});
+export const thresholdsSchema = z
+  .object({
+    cashExcessBps: z.int().min(0).max(10_000),
+    driftBps: z.int().min(1).max(10_000),
+    // Settings saved by 0.1.6 have no guardrail limits; they take RIG's.
+    guardrailGreenMaxBps: z.int().min(0).max(10_000).default(350),
+    guardrailRedMinBps: z.int().min(1).max(10_000).default(700),
+  })
+  .refine((t) => t.guardrailGreenMaxBps < t.guardrailRedMinBps, {
+    message: 'The green limit has to be below the red limit',
+    path: ['guardrailRedMinBps'],
+  });
 
 /**
  * A report as the browser worked it out. Checked for shape and size, not
@@ -328,7 +336,7 @@ export const thresholdsSchema = z.object({
  */
 export const reportSchema = z.object({
   snapshot: z
-    .object({ version: z.literal(1), clientNumber: z.string().max(20) })
+    .object({ version: z.union([z.literal(1), z.literal(2)]), clientNumber: z.string().max(20) })
     .loose()
     .refine((s) => JSON.stringify(s).length <= 400_000, 'That report is too large to save'),
 });

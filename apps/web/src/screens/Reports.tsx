@@ -5,11 +5,11 @@ import { Callout } from '../components/Callout.js';
 import { CellInput } from '../components/CellInput.js';
 import { ReportView } from '../components/ReportView.js';
 import { cashTargetsByAccount, feesByAccount, modelsById } from '../domain/breakdown.js';
-import { formatDateTime } from '../domain/dates.js';
+import { formatDateTime, groupByYearAndMonth } from '../domain/dates.js';
 import { centsToInput, parseCents } from '../domain/money.js';
 import { bpsToPercentInput, parsePercentToBps } from '../domain/percent.js';
 import { buildReport, defaultGuardrails, reportReadiness, type GuardrailInputs } from '../domain/report.js';
-import type { AdvisoryFeeTier, ClientCase, ClientReport, ModelPortfolio, Ticker } from '../domain/types.js';
+import type { AdvisoryFeeTier, AlertThresholds, ClientCase, ClientReport, ModelPortfolio, Ticker } from '../domain/types.js';
 import { accountAdvisoryFees } from '../domain/worksheet.js';
 
 interface Props {
@@ -20,6 +20,8 @@ interface Props {
   /** False while the case has unsaved edits: a report is of the saved case. */
   saved: boolean;
   today: Date;
+  /** The spending guardrail's limits (Settings). */
+  thresholds: AlertThresholds;
 }
 
 /**
@@ -29,7 +31,7 @@ interface Props {
  * prints the report alone; the client's name is typed for that printout and
  * never stored.
  */
-export function Reports({ clientCase, tickers, feeTiers, models, saved, today }: Props) {
+export function Reports({ clientCase, tickers, feeTiers, models, saved, today, thresholds }: Props) {
   const [reports, setReports] = useState<ClientReport[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [guardrails, setGuardrails] = useState<GuardrailInputs>(() => defaultGuardrails(clientCase));
@@ -71,7 +73,7 @@ export function Reports({ clientCase, tickers, feeTiers, models, saved, today }:
     setBusy(true);
     setError(null);
     try {
-      const snapshot = buildReport(clientCase, tickers, feeTiers, fees, guardrails, today);
+      const snapshot = buildReport(clientCase, tickers, feeTiers, fees, guardrails, today, thresholds);
       const created = await api.addReport(clientCase.clientNumber, snapshot);
       setReports((current) => [created, ...(current ?? [])]);
       setSelectedId(created.id);
@@ -128,7 +130,7 @@ export function Reports({ clientCase, tickers, feeTiers, models, saved, today }:
 
         <h4>Spending guardrails</h4>
         <p className="muted">
-          Periodic withdrawals and QCDs / RMDs come from the plan. Enter the rest for this year.
+          Periodic Withdrawals and QCDs/RMDs start from the plan and can be typed over. Enter the rest for this year.
         </p>
         <table className="guardrail-inputs">
           <tbody>
@@ -180,18 +182,31 @@ export function Reports({ clientCase, tickers, feeTiers, models, saved, today }:
         ) : reports.length === 0 ? (
           <p className="empty">No reports yet for this case.</p>
         ) : (
-          <ul className="report-list">
-            {reports.map((report) => (
-              <li key={report.id} className={report.id === selectedId ? 'selected' : undefined}>
-                <button type="button" className="link" onClick={() => setSelectedId(report.id)}>
-                  {formatDateTime(report.createdAt)}
-                </button>
-                <button type="button" className="link danger-link" onClick={() => void remove(report)}>
-                  Delete
-                </button>
-              </li>
-            ))}
-          </ul>
+          // Grouped by year, then month (RIG, 11/17): years of quarterly reviews add up.
+          groupByYearAndMonth(reports, (report) => report.createdAt).map((year, yearIndex) => (
+            <details key={year.year} className="report-year" open={yearIndex === 0 || year.items.some((r) => r.id === selectedId)}>
+              <summary>
+                {year.year} <span className="muted">({year.items.length})</span>
+              </summary>
+              {year.months.map((month) => (
+                <div key={month.month} className="report-month">
+                  <h4>{month.label}</h4>
+                  <ul className="report-list">
+                    {month.items.map((report) => (
+                      <li key={report.id} className={report.id === selectedId ? 'selected' : undefined}>
+                        <button type="button" className="link" onClick={() => setSelectedId(report.id)}>
+                          {formatDateTime(report.createdAt)}
+                        </button>
+                        <button type="button" className="link danger-link" onClick={() => void remove(report)}>
+                          Delete
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </details>
+          ))
         )}
       </section>
 

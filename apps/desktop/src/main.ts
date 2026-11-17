@@ -14,6 +14,7 @@ import { join } from 'node:path';
 
 import { app, BrowserWindow, dialog, Menu, safeStorage, shell, type MenuItemConstructorOptions } from 'electron';
 
+import { withKeychainNotice } from './keychainNotice.js';
 import { fileSecretStore } from './secretStore.js';
 import { startServer, type RunningServer } from './server.js';
 import { RELEASES_URL, setUpUpdates, type Updates } from './updates.js';
@@ -177,19 +178,41 @@ async function start(): Promise<void> {
   log(`starting AI4RIG ${app.getVersion()} (${process.platform}/${process.arch}), data in ${dataDir}`);
 
   const appDir = app.getAppPath();
-  const keychain = {
+  const osEncryption = {
     isAvailable: () => safeStorage.isEncryptionAvailable(),
     encrypt: (plain: string) => safeStorage.encryptString(plain),
     decrypt: (encrypted: Buffer) => safeStorage.decryptString(encrypted),
   };
+  const keyFiles = { openAi: join(dataDir, 'openai-key'), marketData: join(dataDir, 'market-data-key') };
+  // On a Mac, say why the password prompt after an update is coming (keychainNotice.ts).
+  const keychain =
+    process.platform === 'darwin'
+      ? withKeychainNotice(osEncryption, {
+          markerFile: join(dataDir, 'keychain-version'),
+          version: app.getVersion(),
+          keyFiles: Object.values(keyFiles),
+          explain: () => {
+            log('keychain: explaining the password prompt before using the Keychain');
+            dialog.showMessageBoxSync({
+              type: 'info',
+              message: 'Your Mac will ask for your password next',
+              detail:
+                'AI4RIG keeps the keys you saved in Settings, like the Market Data key, encrypted in your Mac\'s keychain. ' +
+                'After an update, macOS asks once before the new version can unlock them.\n\n' +
+                'Type the password you use to log in to this Mac, then click Always Allow.',
+              buttons: ['OK'],
+            });
+          },
+        })
+      : osEncryption;
   server = await startServer({
     dataDir,
     webRoot: join(appDir, 'web'),
     migrationsDir: join(appDir, 'db', 'migrations'),
     referenceSeedDir: join(appDir, 'db', 'reference-seed'),
     appVersion: app.getVersion(),
-    openAiKey: fileSecretStore(join(dataDir, 'openai-key'), keychain),
-    marketDataKey: fileSecretStore(join(dataDir, 'market-data-key'), keychain),
+    openAiKey: fileSecretStore(keyFiles.openAi, keychain),
+    marketDataKey: fileSecretStore(keyFiles.marketData, keychain),
   });
   log(`serving on ${server.url}, database ${server.databasePath}`);
 

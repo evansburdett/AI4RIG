@@ -12,6 +12,8 @@ copyright: Railroad Investment Group · Auburn Senior Design Team 22
 directories:
   app: stage
   output: release
+  # resources/icon.png (1024 square, RIG's logo) becomes the Mac and Windows icons.
+  buildResources: resources
 
 asar: true
 files:

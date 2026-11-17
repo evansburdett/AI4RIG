@@ -10,6 +10,7 @@ laptop stays on that laptop. Why it is built this way is in
 - [Installing it for RIG](#installing-it-for-rig)
 - [Where their data lives, and backups](#where-their-data-lives-and-backups)
 - [Releasing an update](#releasing-an-update)
+- [The Mac password prompt after an update](#the-mac-password-prompt-after-an-update)
 - [How it fits together](#how-it-fits-together)
 - [Troubleshooting](#troubleshooting)
 
@@ -169,16 +170,55 @@ What happens on their laptops:
 
 - **Windows:** the update downloads in the background and asks *Restart now*
   or *Later*. Later installs it the next time they close AI4RIG.
-- **Mac:** it says a new version is available and opens the download page.
-  They drag the new app into Applications, replacing the old one. (A Mac app
-  can only replace itself if it is signed with a paid Apple Developer ID,
-  $99/year. That is worth adding if RIG keeps using it.)
+- **Mac:** it asks *Install and reopen* or *Later*. The app installs the
+  update itself (`src/macInstall.ts`), since Electron's own Mac updater needs a
+  paid Apple Developer ID ($99/year). It downloads the release's zip for that
+  Mac, checks it against the SHA-512 in `latest-mac.yml`, unpacks it, quits,
+  and a small script swaps the new app in where the old one was and opens it.
+  A download the app makes itself has no quarantine flag, so there is no
+  second *Open Anyway*. Where it cannot replace itself (opened from the
+  `.dmg` or Downloads, or a folder it cannot write to) it opens the right
+  `.dmg` in the browser instead. The zips and `latest-mac.yml` must stay in
+  each release for this to work. Versions before 0.1.7 only open the download
+  page.
 - **Both:** their data is kept, and any new migrations run on the next start.
 
 To pull back a bad release, delete it on GitHub and release a newer version
 with the fix. Installed apps never move to an older version.
 
 ---
+
+## The Mac password prompt after an update
+
+The keys saved in Settings are encrypted with a key macOS keeps in the
+Keychain. Without a paid Apple Developer ID ($99/year), which comes with a
+Team ID, macOS sees each new version as a different app and asks for the login
+password before it can use that key. A free self-signed certificate does not
+help: it has no Team ID either (tried 11/17). So the app explains instead
+(`src/keychainNotice.ts`): the first time a new version is about to use the
+Keychain, it says the Mac will ask next, why, and to click **Always Allow**.
+Each version records itself in `keychain-version` in the data folder once it
+has been let in, so the explanation shows once per update, never on a first
+install, and again if the password was refused.
+
+The updater still checks the signer when there is one
+(`signerRequirement` in `src/macInstall.ts`): signed ad hoc, as now, there is
+nothing to compare, but with a Developer ID an update would have to come from
+the same one.
+
+### Trying a Mac update before releasing
+
+```bash
+npm run desktop:try-update
+```
+
+Builds this branch as 0.99.0 and 0.99.1, serves 0.99.1 from a local server
+the way GitHub Releases would, and opens 0.99.0 from a trial Applications
+folder with its own data folder. Click **Install and reopen**; the script
+says when the trial app has become 0.99.1. Save any text as the Market Data
+key in Settings first to see the explanation before the password prompt after
+the update. Nothing is published, and the installed app and its cases are not
+touched.
 
 ## How it fits together
 
@@ -188,8 +228,12 @@ apps/desktop/
   src/server.ts           starts the API + front end on 127.0.0.1 (no Electron; tested)
   src/secretStore.ts      the encrypted API key files (no Electron; tested)
   src/updates.ts          checking GitHub Releases
+  src/macInstall.ts       a Mac update without a paid signature: download, check, swap, reopen (tested)
+  src/keychainNotice.ts   explains the Mac's password prompt after an update (tested)
+  resources/icon.png      the app icon (RIG's logo), made into the Mac and Windows icons
   scripts/build.mjs       builds apps/desktop/stage: what the installer contains
   scripts/after-pack.mjs  signs the Mac app ad hoc so Apple silicon will run it
+  scripts/try-mac-update.mjs  a real Mac update between two local builds, to try before releasing
   scripts/smoke-test.mjs  starts a packaged app and checks it works
   electron-builder.yml    installer settings
 .github/workflows/desktop.yml   builds, tests, and drafts releases

@@ -7,6 +7,7 @@ import {
   actualCashCents,
   atCurrentPrices,
   cashStatus,
+  isCashLine,
   exactPriceMicros,
   modelCashCents,
   modelStatus,
@@ -83,12 +84,14 @@ function parseDollars(text: string): number | null {
 /**
  * One account, the way RIG allocates (10/26): type the balance, and a year of
  * its advisory fee is held back as cash. The rest is the amount to invest,
- * filled from a model, imported from a statement, or picked by hand. Every fund
- * then works the same way, and any of its weight, dollars, or shares can be
- * typed, with the others following at today's price. Dollars and weight move
- * money inside the balance, and the footer shows what is left to allocate.
- * Shares are what the client owns, so the balance follows them. Every fund
- * counts toward its ticker's bucket.
+ * filled from a model, imported from a statement, or picked by hand.
+ *
+ * The table starts with two fixed rows (RIG, 11/17): the fee, then Cash, the
+ * cash beyond the fee. A fund's dollars or weight come out of Cash, the way
+ * money moves inside the balance, so adding a fund at 20% spends Cash down
+ * rather than overfunding the account. Typing Cash, or a fund's shares, is
+ * what the client holds, so the balance follows. Every fund counts toward its
+ * ticker's bucket, and all the cash toward Now.
  */
 export function AccountCard({
   number,
@@ -126,14 +129,14 @@ export function AccountCard({
   const byId = modelsById(models);
   const model = account.modelId === null ? undefined : byId.get(account.modelId);
   // The cash the account should hold: the fee first, then the model's own cash.
-  const cashTarget = feeCents + modelCashCents(account, model, feeCents);
-  const { feeCashCents, roundingCents, leftCents: left } = accountCash(account, tickerMap, cashTarget);
+  const modelCash = modelCashCents(account, model, feeCents);
+  const { investableCashCents, overCents } = accountCash(account, feeCents);
   const adjusted = model !== undefined && !matchesModel(account, model, feeCents, tickerMap);
   const status = model === undefined ? null : modelStatus(account, model, thresholds);
   const cash = cashStatus(account, feeCents, model, thresholds);
   // Buckets come from the funds chosen, never typed: the cash in Now, then
   // each fund in its ticker's bucket.
-  const holdings = accountHoldings(account, tickerMap, cashTarget);
+  const holdings = accountHoldings(account, tickerMap);
   const segments = BUCKETS.map((bucket) => ({
     bucket,
     valueCents: holdings.filter((h) => h.bucket === bucket).reduce((sum, h) => sum + h.marketValueCents, 0),
@@ -141,11 +144,43 @@ export function AccountCard({
   const unpriced = account.lines.filter((l) => exactPriceMicros(tickerMap.get(l.tickerSymbol)) === null);
 
   function patch(changes: Partial<Account>) {
+    const next = { ...account, ...changes };
+    // A cash line typed as a fund before 0.1.7 is already counted in Cash; any edit drops it.
+    const lines = next.lines.some(isCashLine) ? next.lines.filter((line) => !isCashLine(line)) : next.lines;
     // Every edit goes through the one rule for what a change to a fund means.
-    onChange(atCurrentPrices({ ...account, ...changes }, tickerMap));
+    onChange(atCurrentPrices({ ...next, lines }, tickerMap));
   }
 
   /** The client bought or sold (RIG, 10/26), so the balance follows the shares. */
+  /**
+   * Typing Cash is the cash the client holds beyond the fee: the funds stay
+   * and the balance follows. A new balance can mean a new fee (and tier), so
+   * the balance is settled first, then Cash is exactly what was typed.
+   */
+  function setCashBy(cashAt: (balanceCents: number, feeAtBalance: number) => number) {
+    const funds = allocatedCents(account);
+    let balance = account.balanceCents;
+    let feeThen = feeFor(balance);
+    let cashThen = cashAt(balance, feeThen);
+    for (let i = 0; i < 10; i += 1) {
+      const next = funds + feeThen + cashThen;
+      if (next === balance) break;
+      balance = next;
+      feeThen = feeFor(balance);
+      cashThen = cashAt(balance, feeThen);
+    }
+    patch(withActualCash(account, feeThen + cashThen));
+  }
+
+  function setCash(cents: number) {
+    setCashBy(() => cents);
+  }
+
+  /** A Cash weight is its share of the balance less the fee, at the balance it makes. */
+  function setCashWeight(bps: number) {
+    setCashBy((balance, feeAtBalance) => amountForWeight(bps, Math.max(balance - feeAtBalance, 0)));
+  }
+
   function setShares(symbol: string, sharesMicros: number) {
     patch({ lines: account.lines.map((l) => (l.tickerSymbol === symbol ? { ...l, sharesMicros } : l)) });
   }
@@ -219,7 +254,7 @@ export function AccountCard({
         <MoneyInput
           label="Actual cash"
           valueCents={actualCashCents(account)}
-          hint="Cash only, not money market funds."
+          hint="All of it, fee included. Not money market funds."
           onChange={(cents) => patch(withActualCash(account, cents))}
         />
         <div className="field">
@@ -235,22 +270,21 @@ export function AccountCard({
         </span>
         <span aria-hidden="true">·</span>
         <span>
-          Cash target <strong>{formatCents(cash.targetCents)}</strong>
-          <span className="muted">
-            {' '}
-            (fee {formatCents(feeCents)}
-            {fee !== undefined && fee.rateBps > 0 ? ` at ${formatBps(fee.rateBps)}` : ''}
-            {cash.targetCents > feeCents ? ` + model cash ${formatCents(cash.targetCents - feeCents)}` : ''})
-          </span>
-        </span>
-        <span aria-hidden="true">·</span>
-        <span>
-          Actual cash <strong>{formatCents(cash.actualCents)}</strong>
+          Advisory fee <strong>{formatCents(feeCents)}</strong>
+          {fee !== undefined && fee.rateBps > 0 && <span className="muted"> at {formatBps(fee.rateBps)}</span>}
         </span>
         <span aria-hidden="true">·</span>
         <span>
           To invest <strong>{formatCents(investable)}</strong>
         </span>
+        {modelCash > 0 && (
+          <>
+            <span aria-hidden="true">·</span>
+            <span>
+              Model cash <strong>{formatCents(modelCash)}</strong>
+            </span>
+          </>
+        )}
       </p>
 
       {account.balanceCents > 0 && (
@@ -261,7 +295,7 @@ export function AccountCard({
 
       {account.balanceCents > 0 && (
         <div className="account-buckets">
-          <BucketBar segments={segments} totalCents={account.balanceCents} unallocatedCents={left} />
+          <BucketBar segments={segments} totalCents={account.balanceCents} />
         </div>
       )}
 
@@ -323,22 +357,56 @@ export function AccountCard({
           </tr>
         </thead>
         <tbody>
-          {feeCashCents + roundingCents > 0 && (
-            <tr className="fee-cash">
-              <th scope="row">Cash</th>
-              <td>
-                <BucketTag bucket="NOW" />
-              </td>
-              <td className="amount muted">cash</td>
-              <td className="amount">{formatCents(feeCashCents + roundingCents)}</td>
-              <td colSpan={3} className="muted">
-                {feeCashCents > 0 ? 'Fee and model cash' : ''}
-                {feeCashCents > 0 && roundingCents > 0 ? ', plus ' : ''}
-                {roundingCents > 0 ? `${formatCents(roundingCents)} left from rounding` : ''}
-              </td>
-            </tr>
-          )}
-          {account.lines.map((line) => (
+          {/* Fixed rows, always first (RIG, 11/17): the fee's cash, then the rest of the cash. */}
+          <tr className="fee-cash">
+            <th scope="row">Advisory fee</th>
+            <td>
+              <BucketTag bucket="NOW" />
+            </td>
+            <td className="amount muted">cash</td>
+            <td className="amount">{formatCents(feeCents)}</td>
+            <td colSpan={3} className="muted">
+              A year&rsquo;s fee, held as cash
+            </td>
+          </tr>
+          <tr className="cash-row">
+            <th scope="row">Cash</th>
+            <td>
+              <BucketTag bucket="NOW" />
+            </td>
+            <td className="amount">
+              <CellInput
+                label="Cash weight"
+                text={bpsToPercentInput(weightBpsOf(investableCashCents, investable))}
+                parse={(text) => {
+                  const bps = parsePercentToBps(text);
+                  return bps === null || bps >= 10_000 ? null : bps;
+                }}
+                onChange={setCashWeight}
+                suffix="%"
+              />
+            </td>
+            <td className={`amount${investableCashCents < 0 ? ' text-danger' : ''}`}>
+              <CellInput
+                label="Cash dollars"
+                text={centsToInput(investableCashCents)}
+                parse={parseDollars}
+                onChange={setCash}
+                prefix="$"
+                money
+              />
+            </td>
+            <td colSpan={3} className={investableCashCents < 0 ? 'text-danger' : 'muted'}>
+              {overCents < 0
+                ? `${formatCents(-investableCashCents)} over: lower a fund or add cash`
+                : investableCashCents < 0
+                  ? `${formatCents(-investableCashCents)} short of the fee`
+                  : modelCash > 0
+                    ? `Beyond the fee. The model keeps ${formatCents(modelCash)} in cash.`
+                    : 'Beyond the fee. Adding a fund takes from here.'}
+            </td>
+          </tr>
+          {account.lines.filter((line) => !isCashLine(line)).map((line) => (
             <FundRow
               key={line.tickerSymbol}
               line={line}
@@ -360,15 +428,9 @@ export function AccountCard({
             <td className="amount">{formatBps(weightBpsOf(allocated, investable))}</td>
             <td className="amount">{formatCents(allocated)}</td>
             <td colSpan={3}>
-              {account.balanceCents === 0 ? null : left === 0 ? (
-                <span className="muted">All invested</span>
-              ) : left > 0 ? (
-                <span className="text-warn">
-                  <strong>{formatCents(left)}</strong> left to allocate
-                </span>
-              ) : (
-                <span className="text-warn">
-                  <strong>{formatCents(-left)}</strong> over the balance
+              {overCents < 0 && (
+                <span className="text-danger">
+                  <strong>{formatCents(-overCents)}</strong> over the balance
                 </span>
               )}
             </td>
@@ -502,9 +564,11 @@ function AddFund({
   const listId = useId();
   const [text, setText] = useState('');
   const symbol = normalizeSymbol(text);
+  // Cash is the account's own Cash row, not a fund (RIG, 11/17).
+  const cash = isCashLine({ tickerSymbol: symbol });
   const known = tickers.some((t) => t.symbol === symbol);
   const already = held.includes(symbol);
-  const canAdd = known && !already;
+  const canAdd = known && !already && !cash;
 
   function add(added: string) {
     onAdd(added);
@@ -531,9 +595,10 @@ function AddFund({
         <button type="button" disabled={!canAdd} onClick={() => add(symbol)}>
           Add fund
         </button>
-        {already && <span className="muted">{symbol} is already in this account.</span>}
+        {already && !cash && <span className="muted">{symbol} is already in this account.</span>}
+        {cash && <span className="muted">Cash is the Cash row at the top. Type the amount there.</span>}
       </div>
-      {symbol !== '' && !known &&
+      {symbol !== '' && !known && !cash &&
         (isValidSymbol(symbol) ? (
           <NewTickerFields
             key={symbol}

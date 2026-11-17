@@ -6,7 +6,7 @@
 
 import { useCallback, useSyncExternalStore } from 'react';
 
-export type Screen = 'profile' | 'breakdown' | 'report' | 'models' | 'tickers' | 'fees' | 'settings';
+export type Screen = 'home' | 'profile' | 'breakdown' | 'report' | 'models' | 'tickers' | 'fees' | 'settings';
 
 export interface Route {
   readonly screen: Screen;
@@ -14,7 +14,8 @@ export interface Route {
   readonly clientNumber: string | null;
 }
 
-const DEFAULT_ROUTE: Route = { screen: 'profile', clientNumber: null };
+/** Home, the client list (RIG, 11/17): where the app opens, with no client's figures on screen. */
+const DEFAULT_ROUTE: Route = { screen: 'home', clientNumber: null };
 
 export function parseHash(hash: string): Route {
   const path = hash.replace(/^#\/?/, '').split('?')[0] ?? '';
@@ -35,6 +36,7 @@ export function parseHash(hash: string): Route {
 }
 
 export function hrefFor(route: Route): string {
+  if (route.screen === 'home') return '#/';
   if (route.screen === 'tickers') return '#/tickers';
   if (route.screen === 'models') return '#/models';
   if (route.screen === 'fees') return '#/fees';
@@ -68,7 +70,7 @@ export function useRoute(): [Route, (route: Route) => void] {
   return [parseHash(hash), navigate];
 }
 
-/** Screens that belong to no client: the administrator's reference data. */
+/** Screens that belong to no client: Home and the administrator's reference data. */
 export function isReferenceScreen(screen: Screen): boolean {
-  return screen === 'models' || screen === 'tickers' || screen === 'fees' || screen === 'settings';
+  return screen === 'home' || screen === 'models' || screen === 'tickers' || screen === 'fees' || screen === 'settings';
 }

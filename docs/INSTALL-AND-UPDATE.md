@@ -37,10 +37,24 @@ the app.
 
 **Updates**
 
-When a new version is out, AI4RIG says so and opens the download page. Download
-the new `.dmg` and drag AI4RIG into Applications again, choosing **Replace**.
-You may need to repeat step 5 once. A Mac app can only update itself if it is
-signed with a paid Apple developer account, which this one is not yet.
+When a new version is out, AI4RIG asks **Install and reopen** or **Later**.
+Install and reopen downloads it, closes AI4RIG, puts the new version in
+Applications, and opens it again, in about a minute. There is nothing to drag
+and no need to visit Privacy & Security again.
+
+Updating to 0.1.7 is the last time to do it by hand: download the new `.dmg`,
+quit AI4RIG (**AI4RIG → Quit**, or Command-Q), then drag AI4RIG into
+Applications and choose **Replace**. You may need to repeat step 5 once.
+
+If AI4RIG was opened straight from the `.dmg` or from Downloads, it cannot
+replace itself and downloads the `.dmg` in your browser instead. Drag it into
+Applications once and open it from there.
+
+**Password after an update:** AI4RIG keeps the keys you saved in Settings
+encrypted in your Mac's keychain, and the first time a new version opens, the
+Mac asks for your password before it can unlock them. AI4RIG says so just
+before. Type the password you use to log in to the Mac and click **Always
+Allow** (not **Allow**), and it will not ask again until the next update.
 
 ## Both
 
@@ -52,5 +66,5 @@ signed with a paid Apple developer account, which this one is not yet.
 - **Moving cases to another computer:** on **Settings**, **Export cases**
   saves them to a file. On the other computer, **Import cases…** brings them in
   alongside the cases already there. If a case number is already on that
-  computer, you choose whether to keep it, replace it, or keep both. A backup is
-  taken before every import.
+  computer, it is replaced by the file's unless you choose to keep yours or
+  keep both. A backup is taken before every import.

@@ -5,7 +5,7 @@ import { PLACEHOLDER_TICKERS, RIG_FEE_TIERS } from '../fixtures/tickers.js';
 
 import { feesByAccount } from './breakdown.js';
 import { modelCsv, modelCsvName } from './modelCsv.js';
-import { bucketLight, buildReport, defaultGuardrails, reportReadiness } from './report.js';
+import { bucketLight, buildReport, defaultGuardrails, guardrailLevels, guardrailLight, reportReadiness } from './report.js';
 import { accountAdvisoryFees } from './worksheet.js';
 
 const WORKBOOK_CASE = SAMPLE_CASES[0]!;
@@ -29,16 +29,45 @@ describe('bucketLight', () => {
   });
 });
 
+describe('guardrailLight', () => {
+  it('follows RIG\'s rule in D31: withdrawals over total assets, 3.5% and 7%', () => {
+    const total = 1_000_000_00;
+    expect(guardrailLight(35_000_00, total, 350, 700)).toBe('GREEN'); // 3.5% exactly is green
+    expect(guardrailLight(35_001_00, total, 350, 700)).toBe('YELLOW');
+    expect(guardrailLight(69_999_00, total, 350, 700)).toBe('YELLOW');
+    expect(guardrailLight(70_000_00, total, 350, 700)).toBe('RED'); // 7% exactly is red
+    expect(guardrailLight(0, 0, 350, 700)).toBeNull();
+    // The limits come from Settings.
+    expect(guardrailLight(45_000_00, total, 500, 800)).toBe('GREEN');
+  });
+
+  it('keeps RIG\'s wording, with the limits filled in', () => {
+    const [green, yellow, red] = guardrailLevels(350, 700);
+    expect(green?.heading).toBe('GREEN – 60 MPH in a 70 MPH Zone (3.5% or Less)');
+    expect(yellow?.heading).toBe('YELLOW – 78 MPH in a 70 MPH Zone (Above 3.5% to Below 7%)');
+    expect(red?.heading).toBe('RED – 95 MPH in a 70 MPH Zone (7% or More)');
+    expect(green?.plan).toBe('Overfunded Plan');
+    expect(red?.explanation).toMatch(/^You're driving well above the speed limit!/);
+  });
+});
+
 describe('buildReport', () => {
-  it('puts the workbook case on target in every bucket, with RIG\'s wording', () => {
+  it('uses the Bucket Deliverable\'s wording, with how long each income line covers', () => {
     const report = buildReport(WORKBOOK_CASE, PLACEHOLDER_TICKERS, RIG_FEE_TIERS, fees, defaultGuardrails(WORKBOOK_CASE), today);
+    expect(report.version).toBe(2);
     expect(report.totalCents).toBe(3_000_000_00);
-    expect(report.buckets.map((b) => [b.subtitle, b.light])).toEqual([
-      ['Safe & Liquid', 'GREEN'],
-      ['Conservative & Income', 'GREEN'],
-      ['Long-Term Growth & Legacy Planning', 'GREEN'],
+    expect(report.buckets.map((b) => b.subtitle)).toEqual([
+      'Safe & Liquid',
+      'Conservative & Income',
+      'Long Term Growth & Legacy Planning',
     ]);
-    expect(report.buckets[0]?.lines.map((l) => l.label)).toContain('Emergency fund');
+    const months = WORKBOOK_CASE.nowInputs.incomeDrawMonths;
+    const years = WORKBOOK_CASE.soonInputs.incomeGapYears;
+    expect(report.buckets.map((b) => b.lines.map((l) => l.label))).toEqual([
+      [`Income - ${months} Months`, 'Emergency Fund', 'Planned Expenses'],
+      [`Income - First Phase (${years} Years)`, 'Inflation Hedge', 'Cash to Invest During Downturns', 'Funds Invested Conservatively'],
+      ['Income - Second Phase', 'LTC / Disability', 'Inheritance'],
+    ]);
     expect(report.accounts).toHaveLength(3);
   });
 
@@ -48,6 +77,17 @@ describe('buildReport', () => {
     expect(report.guardrails.budgetCents).toBe(159_000_00);
     expect(report.guardrails.totalWithdrawalsCents).toBe(60_000_00);
     expect(report.guardrails.remainingCents).toBe(99_000_00);
+    // RIG's seven lines in RIG's order, zero or not, and the limits the light used.
+    expect(report.guardrails.withdrawals.map((w) => w.label)).toEqual([
+      'Periodic Withdrawals',
+      'DAF Disbursements',
+      'QCDs/RMDs',
+      'Insurance Premiums',
+      'Gifts to Family',
+      'Charitable Giving Contributions',
+      'Additional Withdrawals',
+    ]);
+    expect(report.guardrails).toMatchObject({ greenMaxBps: 350, redMinBps: 700 });
   });
 });
 
@@ -56,8 +96,12 @@ describe('reportReadiness', () => {
     expect(reportReadiness(WORKBOOK_CASE, PLACEHOLDER_TICKERS, fees, true).every((i) => i.ok)).toBe(true);
     const unsaved = reportReadiness(WORKBOOK_CASE, PLACEHOLDER_TICKERS, fees, false);
     expect(unsaved.find((i) => !i.ok)?.label).toMatch(/saved/);
-    const accumulator = reportReadiness(SAMPLE_CASES[1]!, PLACEHOLDER_TICKERS, feesByAccount(accountAdvisoryFees(SAMPLE_CASES[1]!, RIG_FEE_TIERS)), true);
-    expect(accumulator.find((i) => !i.ok)?.label).toMatch(/allocated/);
+    // Cash not in a fund yet is cash, not a job left undone (RIG, 11/17).
+    const accumulator = SAMPLE_CASES[1]!;
+    const accumulatorFees = feesByAccount(accountAdvisoryFees(accumulator, RIG_FEE_TIERS));
+    expect(reportReadiness(accumulator, PLACEHOLDER_TICKERS, accumulatorFees, true).every((i) => i.ok)).toBe(true);
+    const over = { ...accumulator, accounts: accumulator.accounts.map((a) => ({ ...a, balanceCents: 1_00 })) };
+    expect(reportReadiness(over, PLACEHOLDER_TICKERS, accumulatorFees, true).find((i) => !i.ok)?.label).toMatch(/more than its balance/);
   });
 });
 

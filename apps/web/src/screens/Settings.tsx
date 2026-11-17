@@ -111,21 +111,26 @@ function ThresholdsCard({
 }) {
   const [cashText, setCashText] = useState(bpsToPercentInput(thresholds.cashExcessBps));
   const [driftText, setDriftText] = useState(bpsToPercentInput(thresholds.driftBps));
+  const [greenText, setGreenText] = useState(bpsToPercentInput(thresholds.guardrailGreenMaxBps));
+  const [redText, setRedText] = useState(bpsToPercentInput(thresholds.guardrailRedMinBps));
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const cash = parsePercentToBps(cashText);
   const drift = parsePercentToBps(driftText);
-  const valid = cash !== null && drift !== null && drift > 0;
+  const green = parsePercentToBps(greenText);
+  const red = parsePercentToBps(redText);
+  const guardrailsValid = green !== null && red !== null && green < red;
+  const valid = cash !== null && drift !== null && drift > 0 && guardrailsValid;
 
   async function save() {
-    if (cash === null || drift === null) return;
+    if (cash === null || drift === null || green === null || red === null) return;
     setBusy(true);
     setNotice(null);
     setError(null);
     try {
-      await onSave({ cashExcessBps: cash, driftBps: drift });
-      setNotice('Saved. The account alerts use these now.');
+      await onSave({ cashExcessBps: cash, driftBps: drift, guardrailGreenMaxBps: green, guardrailRedMinBps: red });
+      setNotice('Saved. Account alerts and new reports use these now.');
     } catch (caught: unknown) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -135,7 +140,7 @@ function ThresholdsCard({
 
   return (
     <section className="card">
-      <h3>Account alerts</h3>
+      <h3>Alerts</h3>
       <p className="muted">When an account&rsquo;s cash or model needs a rebalance.</p>
       <div className="grid two">
         <div className="field">
@@ -161,6 +166,37 @@ function ThresholdsCard({
             onChange={(event) => setDriftText(event.target.value)}
           />
           <p className="field-hint">Default 1.</p>
+        </div>
+      </div>
+      <h4>Report spending guardrails</h4>
+      <p className="muted">
+        A year&rsquo;s withdrawals as a share of total assets, as in RIG&rsquo;s Bucket Deliverable. Saved reports keep
+        the limits they were made with.
+      </p>
+      <div className="grid two">
+        <div className="field">
+          <label htmlFor="guardrail-green">Green up to (%)</label>
+          <input
+            id="guardrail-green"
+            type="text"
+            inputMode="decimal"
+            value={greenText}
+            aria-invalid={!guardrailsValid}
+            onChange={(event) => setGreenText(event.target.value)}
+          />
+          <p className="field-hint">Default 3.5%. Above this is yellow.</p>
+        </div>
+        <div className="field">
+          <label htmlFor="guardrail-red">Red from (%)</label>
+          <input
+            id="guardrail-red"
+            type="text"
+            inputMode="decimal"
+            value={redText}
+            aria-invalid={!guardrailsValid}
+            onChange={(event) => setRedText(event.target.value)}
+          />
+          <p className="field-hint">Default 7%. Has to be above the green limit.</p>
         </div>
       </div>
       <div className="button-row">

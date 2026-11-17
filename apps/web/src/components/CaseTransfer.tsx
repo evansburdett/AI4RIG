@@ -7,8 +7,8 @@ import type { CaseTransferFile, ImportCasesResult, ImportChoice } from '../domai
 import { Callout } from './Callout.js';
 
 const CHOICE_LABELS: Record<ImportChoice, string> = {
-  SKIP: 'Keep the one here',
   REPLACE: 'Replace it with the file’s',
+  SKIP: 'Keep the one here',
   COPY: 'Keep both (the file’s gets a new number)',
 };
 
@@ -56,7 +56,8 @@ export function CaseTransfer({ onImported }: { onImported: () => Promise<void> }
         fileName: chosen.name,
         added: preview.added,
         conflicts: preview.conflicts,
-        choices: Object.fromEntries(preview.conflicts.map((n) => [n, 'SKIP' as ImportChoice])),
+        // Replace by default (RIG, 11/17): a file sent over is usually the newer copy.
+        choices: Object.fromEntries(preview.conflicts.map((n) => [n, 'REPLACE' as ImportChoice])),
       });
     } catch (caught: unknown) {
       setError(caught instanceof SyntaxError ? 'That file is not an AI4RIG cases file.' : String(caught instanceof Error ? caught.message : caught));
