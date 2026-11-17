@@ -315,9 +315,21 @@ export interface AlertThresholds {
   readonly cashExcessBps: number;
   /** How far any fund's weight can move from its model, in basis points, before it shows as drifted. */
   readonly driftBps: number;
+  /**
+   * The report's spending guardrail (RIG's Bucket Deliverable, cell D31): a year's withdrawals as a
+   * share of total assets. At or under this it is green.
+   */
+  readonly guardrailGreenMaxBps: number;
+  /** At or over this it is red; between the two, yellow. */
+  readonly guardrailRedMinBps: number;
 }
 
-export const DEFAULT_THRESHOLDS: AlertThresholds = { cashExcessBps: 500, driftBps: 100 };
+export const DEFAULT_THRESHOLDS: AlertThresholds = {
+  cashExcessBps: 500,
+  driftBps: 100,
+  guardrailGreenMaxBps: 350,
+  guardrailRedMinBps: 700,
+};
 
 export type Light = 'GREEN' | 'YELLOW' | 'RED';
 
@@ -329,13 +341,7 @@ export interface ReportBucket {
   readonly subtitle: string;
   /** What the accounts hold in this bucket. */
   readonly actualCents: Cents;
-  /** What the plan calls for. For Later, the rest of the money. */
-  readonly targetCents: Cents;
-  readonly varianceCents: Cents;
-  readonly light: Light;
-  /** One plain sentence on what the light means. */
-  readonly message: string;
-  /** What the bucket is for. Null amount for a line that is a purpose, not a figure. */
+  /** What the bucket is for, in RIG's words. Reports from 0.1.6 also carry amounts, which are not shown. */
   readonly lines: readonly { readonly label: string; readonly amountCents: Cents | null }[];
 }
 
@@ -349,7 +355,8 @@ export interface ReportWithdrawal {
  * back into the case, so later edits and price moves leave it as it was.
  */
 export interface ReportSnapshot {
-  readonly version: 1;
+  /** 1: 0.1.6, with a stoplight per bucket (no longer shown). 2: the spending guardrail light. */
+  readonly version: 1 | 2;
   readonly clientNumber: string;
   readonly initials: string;
   readonly lifeStageLabel: string;
@@ -370,6 +377,9 @@ export interface ReportSnapshot {
     readonly withdrawals: readonly ReportWithdrawal[];
     readonly totalWithdrawalsCents: Cents;
     readonly remainingCents: Cents;
+    /** The light's limits when the report was made. Missing on 0.1.6 reports, which use the defaults. */
+    readonly greenMaxBps?: number;
+    readonly redMinBps?: number;
   };
 }
 

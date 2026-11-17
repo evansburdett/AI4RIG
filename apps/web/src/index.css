@@ -101,8 +101,21 @@ code {
 
 .brand {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
   line-height: 1.25;
+  color: inherit;
+  text-decoration: none;
+}
+
+.brand > span {
+  display: flex;
+  flex-direction: column;
+}
+
+.brand img {
+  height: 2.25rem;
+  width: auto;
 }
 
 .brand h1 {
@@ -1189,6 +1202,28 @@ table caption {
   color: var(--danger);
 }
 
+/* Home: the client list. */
+
+.home-search {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.home-search input {
+  flex: 1;
+  max-width: 24rem;
+}
+
+.home-clients {
+  width: 100%;
+}
+
+.home-clients th[scope='row'] a {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
 /* The bucket report screen. */
 
 .readiness {
@@ -1222,6 +1257,25 @@ table caption {
   padding: 0.25rem 0;
 }
 
+.report-year {
+  margin-bottom: var(--space-2);
+}
+
+.report-year summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.report-month {
+  margin-left: var(--space-3);
+}
+
+.report-month h4 {
+  margin: var(--space-2) 0 0.15rem;
+  font-size: var(--text-caption);
+  color: var(--text-muted);
+}
+
 .report-list li.selected .link:first-child {
   font-weight: 600;
 }
@@ -1249,6 +1303,13 @@ table caption {
   border-radius: var(--radius);
   padding: var(--space-4, 1.5rem);
   margin-bottom: var(--space-4, 1.5rem);
+}
+
+.report-logo {
+  display: block;
+  width: 9rem;
+  height: auto;
+  margin: 0 auto var(--space-3);
 }
 
 .report-head {
@@ -1328,27 +1389,8 @@ table caption {
 }
 
 .report-bucket li {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-2);
   padding: 0.15rem 0;
   border-bottom: 1px dotted var(--border);
-}
-
-.report-bucket dl {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  margin: var(--space-1) 0;
-  font-variant-numeric: tabular-nums;
-}
-
-.report-bucket dl div {
-  display: contents;
-}
-
-.report-bucket dd {
-  margin: 0;
-  text-align: right;
 }
 
 .report-lower {
@@ -1365,6 +1407,97 @@ table caption {
 .report-indent {
   padding-left: var(--space-3);
   font-weight: 400;
+}
+
+/* RIG's colors for the amount remaining (Bucket Deliverable, D31). */
+.guardrail-green {
+  --guardrail-bg: #c6efce;
+  --guardrail-text: #006100;
+}
+
+.guardrail-yellow {
+  --guardrail-bg: #ffeb9c;
+  --guardrail-text: #9c5700;
+}
+
+.guardrail-red {
+  --guardrail-bg: #ffc7ce;
+  --guardrail-text: #9c0006;
+}
+
+.report tfoot tr[class^='guardrail-'] th,
+.report tfoot tr[class^='guardrail-'] td {
+  background: var(--guardrail-bg);
+  color: var(--guardrail-text);
+  font-weight: 700;
+}
+
+.guardrail-gauge {
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: var(--text-caption);
+}
+
+.guardrail-rate {
+  margin: 0 0 var(--space-2);
+}
+
+.guardrail-bar {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-radius: 999px;
+  overflow: visible;
+  margin-bottom: var(--space-2);
+}
+
+.guardrail-segment {
+  padding: 0.2rem 0.4rem;
+  text-align: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.guardrail-segment.green {
+  background: #c6efce;
+  color: #006100;
+  border-radius: 999px 0 0 999px;
+}
+
+.guardrail-segment.yellow {
+  background: #ffeb9c;
+  color: #9c5700;
+}
+
+.guardrail-segment.red {
+  background: #ffc7ce;
+  color: #9c0006;
+  border-radius: 0 999px 999px 0;
+}
+
+/* The client's rate on the bar. */
+.guardrail-marker {
+  position: absolute;
+  top: -0.3rem;
+  bottom: -0.3rem;
+  width: 3px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: var(--text);
+}
+
+.guardrail-level {
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-control);
+  background: var(--guardrail-bg);
+  color: var(--guardrail-text);
+}
+
+.guardrail-level p {
+  margin: 0.15rem 0 0;
 }
 
 /* Download PDF prints the report alone. */
@@ -1389,6 +1522,8 @@ table caption {
   }
 
   .report-bucket,
+  .report tfoot tr,
+  .guardrail-gauge *,
   .stoplight-dot {
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;

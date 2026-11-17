@@ -1,9 +1,8 @@
+import logoUrl from '../assets/rig-logo.png';
 import { formatDateTime } from '../domain/dates.js';
 import { formatCentsWhole } from '../domain/money.js';
-import { formatBps } from '../domain/percent.js';
-import type { ReportSnapshot } from '../domain/types.js';
-
-import { Stoplight } from './Stoplight.js';
+import { guardrailLevels, guardrailLight, percentText, type GuardrailLevel } from '../domain/report.js';
+import { DEFAULT_THRESHOLDS, type ReportSnapshot } from '../domain/types.js';
 
 interface Props {
   snapshot: ReportSnapshot;
@@ -12,32 +11,38 @@ interface Props {
   clientName: string;
 }
 
-function signed(cents: number): string {
-  if (cents === 0) return 'on target';
-  return `${cents > 0 ? '+' : '−'}${formatCentsWhole(Math.abs(cents))}`;
+function money(cents: number): string {
+  return `${cents < 0 ? '−' : ''}${formatCentsWhole(Math.abs(cents))}`;
 }
 
 /**
- * The bucket report as the client sees it, laid out like RIG's Bucket
- * Deliverable: the three buckets side by side, what each is for, and the
- * spending guardrails below. Also what prints when it is saved as a PDF.
+ * The bucket report as the client sees it, laid out and worded like RIG's
+ * Bucket Deliverable: the three buckets side by side with what each is for,
+ * then the spending guardrails and RIG's three levels. Also what prints when
+ * it is saved as a PDF.
  */
 export function ReportView({ snapshot, createdAt, clientName }: Props) {
   const { guardrails } = snapshot;
+  // Reports from 0.1.6 have no limits of their own; RIG's stood then.
+  const greenMaxBps = guardrails.greenMaxBps ?? DEFAULT_THRESHOLDS.guardrailGreenMaxBps;
+  const redMinBps = guardrails.redMinBps ?? DEFAULT_THRESHOLDS.guardrailRedMinBps;
+  const light = guardrailLight(guardrails.totalWithdrawalsCents, snapshot.totalCents, greenMaxBps, redMinBps);
+  const levels = guardrailLevels(greenMaxBps, redMinBps);
+  const name = clientName.trim();
+
   return (
     <article className="report">
+      <img className="report-logo" src={logoUrl} alt="Railroad Investment Group" />
       <header className="report-head">
         <div>
-          <h2>Bucket plan</h2>
+          <h2>{name !== '' ? name : `Client ${snapshot.clientNumber}${snapshot.initials !== '' ? ` (${snapshot.initials})` : ''}`}</h2>
           <p className="muted">
-            {clientName.trim() !== '' ? clientName.trim() : `Client ${snapshot.clientNumber}`}
-            {snapshot.initials !== '' && clientName.trim() === '' ? ` (${snapshot.initials})` : ''} ·{' '}
             {snapshot.lifeStageLabel}
             {snapshot.planYears !== null ? ` · plan covers ${snapshot.planYears} years` : ''}
           </p>
         </div>
         <div className="report-total">
-          <span className="muted">Total assets</span>
+          <span className="muted">Total Assets</span>
           <strong>{formatCentsWhole(snapshot.totalCents)}</strong>
           <span className="muted">As of {formatDateTime(createdAt)}</span>
         </div>
@@ -51,56 +56,39 @@ export function ReportView({ snapshot, createdAt, clientName }: Props) {
             <p className="report-bucket-subtitle">{bucket.subtitle}</p>
             <ul>
               {bucket.lines.map((line) => (
-                <li key={line.label}>
-                  <span>{line.label}</span>
-                  {line.amountCents !== null && <span className="amount">{formatCentsWhole(line.amountCents)}</span>}
-                </li>
+                <li key={line.label}>{line.label}</li>
               ))}
             </ul>
-            <dl>
-              <div>
-                <dt>{bucket.bucket === 'LATER' ? 'Room in the plan' : 'Plan needs'}</dt>
-                <dd>{formatCentsWhole(bucket.targetCents)}</dd>
-              </div>
-              <div>
-                <dt>Variance</dt>
-                <dd>{signed(bucket.varianceCents)}</dd>
-              </div>
-            </dl>
-            <Stoplight light={bucket.light} message={bucket.message} compact />
           </section>
         ))}
       </div>
 
       <div className="report-lower">
         <section>
-          <h3>Spending guardrails</h3>
+          <h3>Spending Guardrails</h3>
           <table>
             <tbody>
               <tr>
-                <th scope="row">Yearly spending budget from investments ({formatBps(guardrails.budgetBps)})</th>
-                <td className="amount">{formatCentsWhole(guardrails.budgetCents)}</td>
+                <th scope="row">YTD Spending Budget from Investments:</th>
+                <td className="amount">{money(guardrails.budgetCents)}</td>
+              </tr>
+              <tr>
+                <th scope="row">Total Withdrawals</th>
+                <td className="amount">{money(guardrails.totalWithdrawalsCents)}</td>
               </tr>
               {guardrails.withdrawals.map((w) => (
                 <tr key={w.label}>
                   <th scope="row" className="report-indent">
-                    {w.label}
+                    {w.label.endsWith(':') ? w.label : `${w.label}:`}
                   </th>
-                  <td className="amount">{formatCentsWhole(w.amountCents)}</td>
+                  <td className="amount">{money(w.amountCents)}</td>
                 </tr>
               ))}
-              <tr>
-                <th scope="row">Total withdrawals</th>
-                <td className="amount">{formatCentsWhole(guardrails.totalWithdrawalsCents)}</td>
-              </tr>
             </tbody>
             <tfoot>
-              <tr>
-                <th scope="row">Amount remaining</th>
-                <td className={`amount${guardrails.remainingCents < 0 ? ' text-danger' : ''}`}>
-                  {guardrails.remainingCents < 0 ? '−' : ''}
-                  {formatCentsWhole(Math.abs(guardrails.remainingCents))}
-                </td>
+              <tr className={light === null ? undefined : `guardrail-${light.toLowerCase()}`}>
+                <th scope="row">Amount Remaining:</th>
+                <td className="amount">{money(guardrails.remainingCents)}</td>
               </tr>
             </tfoot>
           </table>
@@ -134,8 +122,67 @@ export function ReportView({ snapshot, createdAt, clientName }: Props) {
               ))}
             </tbody>
           </table>
+
+          {light !== null && (
+            <GuardrailGauge
+              rateBps={Math.round((guardrails.totalWithdrawalsCents * 10_000) / snapshot.totalCents)}
+              greenMaxBps={greenMaxBps}
+              redMinBps={redMinBps}
+              level={levels.find((l) => l.light === light)!}
+            />
+          )}
         </section>
       </div>
     </article>
+  );
+}
+
+/**
+ * Where this year's withdrawals sit against RIG's limits: a three-color bar
+ * with a marker, then RIG's words for the level it lands in (D31).
+ */
+function GuardrailGauge({
+  rateBps,
+  greenMaxBps,
+  redMinBps,
+  level,
+}: {
+  rateBps: number;
+  greenMaxBps: number;
+  redMinBps: number;
+  level: GuardrailLevel;
+}) {
+  // Each color gets a third of the bar; the marker sits in proportion within its third. Red runs to twice its limit.
+  const third = 100 / 3;
+  const within = (from: number, to: number) => Math.min(Math.max((rateBps - from) / (to - from), 0), 1);
+  const position =
+    rateBps <= greenMaxBps
+      ? within(0, greenMaxBps) * third
+      : rateBps < redMinBps
+        ? third + within(greenMaxBps, redMinBps) * third
+        : 2 * third + within(redMinBps, redMinBps * 2) * third;
+
+  return (
+    <div className={`guardrail-gauge guardrail-${level.light.toLowerCase()}`}>
+      <p className="guardrail-rate">
+        Withdrawals are <strong>{percentText(rateBps)}</strong> of total assets
+      </p>
+      <div className="guardrail-bar" aria-hidden="true">
+        <span className="guardrail-segment green">{percentText(greenMaxBps)} or less</span>
+        <span className="guardrail-segment yellow">
+          {percentText(greenMaxBps)} to {percentText(redMinBps)}
+        </span>
+        <span className="guardrail-segment red">{percentText(redMinBps)} or more</span>
+        <span className="guardrail-marker" style={{ left: `${position}%` }} />
+      </div>
+      <div className="guardrail-level">
+        <strong>
+          <span aria-hidden="true">{level.icon}</span> {level.heading}
+        </strong>
+        <p>
+          {level.plan}: {level.explanation}
+        </p>
+      </div>
+    </div>
   );
 }

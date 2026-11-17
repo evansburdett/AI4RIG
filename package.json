@@ -28,6 +28,7 @@
     "desktop:start": "npm run start --workspace apps/desktop --",
     "desktop:dist": "npm run dist --workspace apps/desktop --",
     "desktop:smoke": "npm run smoke --workspace apps/desktop",
+    "desktop:try-update": "npm run try-update --workspace apps/desktop",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "npm run typecheck --workspaces --if-present",

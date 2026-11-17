@@ -15,13 +15,11 @@ import {
 import { MoneyInput } from '../components/MoneyInput.js';
 import {
   bucketsByAccount,
-  cashTargetsByAccount,
   feesByAccount,
   followModels,
   modelsById,
   tickersBySymbol,
   varianceAdvice,
-  type FeesByAccount,
 } from '../domain/breakdown.js';
 import { newAccount, newExpense, newGapEntry } from '../domain/factory.js';
 import {
@@ -422,7 +420,6 @@ export function ClientProfile({
       <HouseholdBuckets
         clientCase={clientCase}
         tickers={tickers}
-        fees={cashTargetsByAccount(clientCase, fees, modelsById(models))}
         target={target}
       />
 
@@ -526,16 +523,14 @@ const TAX_BRACKET_LABELS: Record<string, string> = Object.fromEntries(
 function HouseholdBuckets({
   clientCase,
   tickers,
-  fees,
   target,
 }: {
   clientCase: ClientCase;
   tickers: readonly Ticker[];
-  fees: FeesByAccount;
   target: AllocationTarget;
 }) {
   if (clientCase.accounts.length === 0) return null;
-  const rows = bucketsByAccount(clientCase, tickers, fees);
+  const rows = bucketsByAccount(clientCase, tickers);
   const sum = (pick: (r: (typeof rows)[number]) => number) => rows.reduce((t, r) => t + pick(r), 0);
   const lines = [
     { label: 'Now', bucket: 'NOW' as const, actual: sum((r) => r.nowCents), target: target.nowCents },
@@ -608,7 +603,7 @@ function HouseholdBuckets({
         {unallocated !== 0 && (
           <tfoot>
             <tr>
-              <th scope="row">{unallocated > 0 ? 'Not in a fund' : 'Funds over the amount to invest'}</th>
+              <th scope="row">{unallocated > 0 ? 'Not in a fund' : 'Funds over the balance'}</th>
               <td />
               <td className="amount text-warn">{formatCentsWhole(Math.abs(unallocated))}</td>
               <td />

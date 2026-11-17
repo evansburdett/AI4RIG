@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { api, ApiError } from './api.js';
+import logoMarkUrl from './assets/rig-mark.png';
 import { Callout } from './components/Callout.js';
 import { ClientSwitcher } from './components/ClientSwitcher.js';
 import { ConnectionStatus } from './components/ConnectionStatus.js';
@@ -27,6 +28,7 @@ import { ClientProfile } from './screens/ClientProfile.js';
 import { FeeTiers } from './screens/FeeTiers.js';
 import { Models } from './screens/Models.js';
 import { Reports } from './screens/Reports.js';
+import { Home } from './screens/Home.js';
 import { Settings } from './screens/Settings.js';
 
 /**
@@ -100,13 +102,6 @@ export function App() {
   useEffect(() => {
     if (route.clientNumber !== null) setLastClientNumber(route.clientNumber);
   }, [route.clientNumber]);
-
-  // Land where the advisor last was, or on the first client.
-  useEffect(() => {
-    if (route.clientNumber !== null || isReferenceScreen(route.screen)) return;
-    const target = lastClientNumber ?? clients[0]?.clientNumber;
-    if (target !== undefined) navigate({ screen: 'profile', clientNumber: target });
-  }, [clients, lastClientNumber, route.clientNumber, route.screen, navigate]);
 
   /**
    * The case the working copy belongs to. Coming back to it from the model,
@@ -257,12 +252,7 @@ export function App() {
       setDraft(null);
       setSaved(null);
       setLastClientNumber(null);
-      const next = remaining[0]?.clientNumber;
-      navigate(
-        next === undefined
-          ? { screen: 'profile', clientNumber: null }
-          : { screen: 'profile', clientNumber: next },
-      );
+      navigate({ screen: 'home', clientNumber: null });
     } catch (error: unknown) {
       setActionError(describeError(error));
     } finally {
@@ -358,10 +348,13 @@ export function App() {
   return (
     <div>
       <header className="app-header">
-        <div className="brand">
-          <h1>AI4RIG</h1>
-          <span className="muted">Railroad Investment Group</span>
-        </div>
+        <a className="brand" href={hrefFor({ screen: 'home', clientNumber: null })} title="Home: all clients">
+          <img src={logoMarkUrl} alt="" />
+          <span>
+            <h1>AI4RIG</h1>
+            <span className="muted">Railroad Investment Group</span>
+          </span>
+        </a>
 
         <ClientSwitcher
           clients={clients}
@@ -375,6 +368,9 @@ export function App() {
         </button>
 
         <nav aria-label="Screens">
+          <a href={hrefFor({ screen: 'home', clientNumber: null })} aria-current={route.screen === 'home' ? 'page' : undefined}>
+            Home
+          </a>
           <a
             href={hrefFor({ screen: 'profile', clientNumber: activeClientNumber })}
             aria-current={route.screen === 'profile' ? 'page' : undefined}
@@ -455,7 +451,9 @@ export function App() {
           </Callout>
         )}
 
-        {route.screen === 'models' ? (
+        {route.screen === 'home' ? (
+          <Home clients={clients} onOpen={selectClient} onNewClient={() => void createClient()} busy={busy} />
+        ) : route.screen === 'models' ? (
           <Models
             models={models}
             tickers={tickers}
@@ -494,6 +492,7 @@ export function App() {
             models={models}
             saved={!dirty}
             today={today}
+            thresholds={thresholds}
           />
         ) : route.screen === 'breakdown' ? (
           <AssetClassBreakdown

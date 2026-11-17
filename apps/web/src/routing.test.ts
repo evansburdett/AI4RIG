@@ -22,14 +22,14 @@ describe('parseHash', () => {
     expect(parseHash('#/tickers')).toEqual({ screen: 'tickers', clientNumber: null });
   });
 
-  it('falls back rather than throwing on anything it does not recognise', () => {
+  it('opens on Home, and falls back there on anything it does not recognise', () => {
     for (const hash of ['', '#', '#/', '#/nonsense', '#/clients']) {
-      expect(parseHash(hash)).toEqual({ screen: 'profile', clientNumber: null });
+      expect(parseHash(hash)).toEqual({ screen: 'home', clientNumber: null });
     }
   });
 
   it('round-trips through hrefFor', () => {
-    for (const hash of ['#/clients/1042/profile', '#/clients/1042/breakdown', '#/tickers', '#/fees', '#/settings']) {
+    for (const hash of ['#/', '#/clients/1042/profile', '#/clients/1042/breakdown', '#/tickers', '#/fees', '#/settings']) {
       expect(hrefFor(parseHash(hash))).toBe(hash);
     }
   });

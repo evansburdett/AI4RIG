@@ -76,9 +76,15 @@ describe('reports', () => {
 
 describe('alert thresholds', () => {
   it('starts at 5% and 1 point, and saves new ones', async () => {
-    expect((await call<AppSettings>(`${base}/api/settings`)).body.thresholds).toEqual({ cashExcessBps: 500, driftBps: 100 });
+    expect((await call<AppSettings>(`${base}/api/settings`)).body.thresholds).toEqual({
+      cashExcessBps: 500,
+      driftBps: 100,
+      guardrailGreenMaxBps: 350,
+      guardrailRedMinBps: 700,
+    });
     const saved = await call<AppSettings>(`${base}/api/settings/thresholds`, 'PUT', { cashExcessBps: 300, driftBps: 250 });
-    expect(saved.body.thresholds).toEqual({ cashExcessBps: 300, driftBps: 250 });
+    // Saved the way 0.1.6 saves them: the guardrail limits take RIG's.
+    expect(saved.body.thresholds).toEqual({ cashExcessBps: 300, driftBps: 250, guardrailGreenMaxBps: 350, guardrailRedMinBps: 700 });
     expect((await call<AppSettings>(`${base}/api/settings`)).body.thresholds.driftBps).toBe(250);
   });
 });

@@ -1,8 +1,8 @@
 /**
- * The client-facing bucket report (RIG, 11/2), modeled on RIG's "Bucket
- * Deliverable": three buckets with RIG's wording, what each holds against
- * what the plan needs, and the spending guardrails underneath. Each bucket gets
- * a stoplight and one plain sentence saying what it means.
+ * The client-facing bucket report (RIG, 11/2), matching RIG's "Bucket
+ * Deliverable" sheet word for word: the three buckets with what each is for,
+ * then the spending guardrails, whose amount remaining is lit green, yellow or
+ * red by RIG's rule (cell D31, 11/17).
  *
  * A report is generated from a saved case and then kept as numbers, so last
  * quarter's still reads as it did when it was handed over.
@@ -10,10 +10,11 @@
 
 import { addCents, type Cents } from '@ai4rig/engine';
 
-import { accountCash, bucketsByAccount, exactPriceMicros, tickersBySymbol, type FeesByAccount } from './breakdown.js';
+import { actualCashCents, bucketsByAccount, exactPriceMicros, tickersBySymbol, type FeesByAccount } from './breakdown.js';
 import { ACCOUNT_TYPE_LABELS, LIFE_STAGE_LABELS, householdPlanYears } from './lifeStage.js';
 import type {
   AdvisoryFeeTier,
+  AlertThresholds,
   BucketType,
   ClientCase,
   Light,
@@ -22,10 +23,8 @@ import type {
   ReportWithdrawal,
   Ticker,
 } from './types.js';
-import { computePlanTotals, targetAllocation } from './worksheet.js';
-
-/** Within this share of the target, a bucket is on target. */
-const ON_TARGET_BPS = 500;
+import { DEFAULT_THRESHOLDS } from './types.js';
+import { computePlanTotals } from './worksheet.js';
 
 /** RIG's yearly spending budget from investments, as a share of total assets. */
 export const DEFAULT_BUDGET_BPS = 530;
@@ -33,14 +32,99 @@ export const DEFAULT_BUDGET_BPS = 530;
 const BUCKET_WORDS: Record<BucketType, { title: string; subtitle: string }> = {
   NOW: { title: 'Now Bucket', subtitle: 'Safe & Liquid' },
   SOON: { title: 'Soon Bucket', subtitle: 'Conservative & Income' },
-  LATER: { title: 'Later Bucket', subtitle: 'Long-Term Growth & Legacy Planning' },
+  LATER: { title: 'Later Bucket', subtitle: 'Long Term Growth & Legacy Planning' },
 };
+
+/**
+ * What each bucket is for, as the Bucket Deliverable lists it. RIG asked on
+ * 11/17 for the income lines to say how long they cover.
+ */
+function bucketPurposes(clientCase: ClientCase): Record<BucketType, readonly string[]> {
+  const months = clientCase.nowInputs.incomeDrawMonths;
+  const years = clientCase.soonInputs.incomeGapYears;
+  return {
+    NOW: [`Income - ${months} ${months === 1 ? 'Month' : 'Months'}`, 'Emergency Fund', 'Planned Expenses'],
+    SOON: [
+      years > 0 ? `Income - First Phase (${years} ${years === 1 ? 'Year' : 'Years'})` : 'Income - First Phase',
+      'Inflation Hedge',
+      'Cash to Invest During Downturns',
+      'Funds Invested Conservatively',
+    ],
+    LATER: ['Income - Second Phase', 'LTC / Disability', 'Inheritance'],
+  };
+}
+
+export interface GuardrailLevel {
+  readonly light: Light;
+  readonly icon: string;
+  /** RIG's heading, with the limits filled in. */
+  readonly heading: string;
+  readonly plan: string;
+  readonly explanation: string;
+}
+
+export function percentText(bps: number): string {
+  return `${(bps / 100).toFixed(2).replace(/\.?0+$/, '')}%`;
+}
+
+/** RIG's three levels and their wording (Bucket Deliverable, G22 to H29). */
+export function guardrailLevels(greenMaxBps: number, redMinBps: number): readonly GuardrailLevel[] {
+  return [
+    {
+      light: 'GREEN',
+      icon: '✅',
+      heading: `GREEN – 60 MPH in a 70 MPH Zone (${percentText(greenMaxBps)} or Less)`,
+      plan: 'Overfunded Plan',
+      explanation:
+        "You're cruising comfortably below the speed limit! Your spending is well within your guardrails, giving you room to enjoy more without jeopardizing your financial plan.",
+    },
+    {
+      light: 'YELLOW',
+      icon: '⚠️',
+      heading: `YELLOW – 78 MPH in a 70 MPH Zone (Above ${percentText(greenMaxBps)} to Below ${percentText(redMinBps)})`,
+      plan: 'Constrained Plan',
+      explanation:
+        "You're moving a little faster than the speed limit. You're still on track, but proceed with caution! Large, unexpected withdrawals could push your plan into the danger zone.",
+    },
+    {
+      light: 'RED',
+      icon: '🛑',
+      heading: `RED – 95 MPH in a 70 MPH Zone (${percentText(redMinBps)} or More)`,
+      plan: 'Underfunded Plan',
+      explanation:
+        "You're driving well above the speed limit! Continuing at this spending pace significantly increases the risk of a financial setback. Slowing down and adjusting spending may be necessary to get back on track.",
+    },
+  ];
+}
+
+/**
+ * RIG's rule for the amount remaining (D31's conditional formatting): the
+ * year's total withdrawals over total assets. It does not follow the 5.3%
+ * budget, so money can be left in the budget while the light is yellow.
+ * Null when there are no assets to measure against.
+ */
+export function guardrailLight(
+  totalWithdrawalsCents: Cents,
+  totalCents: Cents,
+  greenMaxBps: number,
+  redMinBps: number,
+): Light | null {
+  if (totalCents <= 0) return null;
+  // Compared without dividing, so 3.5% exactly is green as it is in Excel.
+  const scaled = totalWithdrawalsCents * 10_000;
+  if (scaled <= greenMaxBps * totalCents) return 'GREEN';
+  if (scaled >= redMinBps * totalCents) return 'RED';
+  return 'YELLOW';
+}
+
+/** Within this share of the target, a bucket is on target. */
+const ON_TARGET_BPS = 500;
 
 function dollars(cents: Cents): string {
   return `$${Math.round(Math.abs(cents) / 100).toLocaleString('en-US')}`;
 }
 
-/** The stoplight and its sentence for one bucket. */
+/** The profile's stoplight and its sentence for one bucket. The report no longer shows these (RIG, 11/17). */
 export function bucketLight(bucket: BucketType, actualCents: Cents, targetCents: Cents): { light: Light; message: string } {
   const variance = actualCents - targetCents;
   const tolerance = Math.max(Math.round((Math.abs(targetCents) * ON_TARGET_BPS) / 10_000), 100);
@@ -94,11 +178,9 @@ export function reportReadiness(
     { label: 'All changes are saved', ok: saved },
     { label: 'At least one account has a balance', ok: withBalance.length > 0 },
     {
-      // Within 1% of the account: leftovers from rounding shares are not a job left undone.
-      label: 'Every account is allocated',
-      ok:
-        withBalance.length > 0 &&
-        withBalance.every((a) => Math.abs(accountCash(a, tickers, fees.get(a.id) ?? 0).leftCents) * 100 <= a.balanceCents),
+      // Cash not in a fund is cash, in Now (RIG, 11/17), so only funds over the balance stop a report.
+      label: "No account's funds add up to more than its balance",
+      ok: accounts.every((a) => actualCashCents(a) >= 0),
     },
     {
       label: 'Every fund has a price',
@@ -125,27 +207,18 @@ export function defaultGuardrails(clientCase: ClientCase): GuardrailInputs {
   const forced = addCents(...clientCase.soonInputs.forcedWithdrawals.map((w) => Math.round(w.annualAmountCents)));
   return {
     budgetBps: DEFAULT_BUDGET_BPS,
+    // RIG's lines and order (Bucket Deliverable, C24 to C30).
     withdrawals: [
-      { label: 'Periodic withdrawals', amountCents: clientCase.nowInputs.monthlyIncomeDrawCents * 12 },
-      { label: 'QCDs / RMDs', amountCents: forced },
-      { label: 'DAF disbursements', amountCents: 0 },
-      { label: 'Insurance premiums', amountCents: 0 },
-      { label: 'Gifts to family', amountCents: 0 },
-      { label: 'Charitable giving', amountCents: 0 },
-      { label: 'Additional withdrawals', amountCents: 0 },
+      { label: 'Periodic Withdrawals', amountCents: clientCase.nowInputs.monthlyIncomeDrawCents * 12 },
+      { label: 'DAF Disbursements', amountCents: 0 },
+      { label: 'QCDs/RMDs', amountCents: forced },
+      { label: 'Insurance Premiums', amountCents: 0 },
+      { label: 'Gifts to Family', amountCents: 0 },
+      { label: 'Charitable Giving Contributions', amountCents: 0 },
+      { label: 'Additional Withdrawals', amountCents: 0 },
     ],
   };
 }
-
-const SOON_LABELS = [
-  'Income (first phase)',
-  'Inflation hedge',
-  'Social Security bridge',
-  'Healthcare',
-  'Other planned costs',
-  'Required withdrawals',
-  'Funds invested conservatively',
-];
 
 /** The report's numbers, worked out from the case as it is now. */
 export function buildReport(
@@ -155,51 +228,29 @@ export function buildReport(
   fees: FeesByAccount,
   guardrails: GuardrailInputs,
   today: Date,
+  thresholds: Pick<AlertThresholds, 'guardrailGreenMaxBps' | 'guardrailRedMinBps'> = DEFAULT_THRESHOLDS,
 ): ReportSnapshot {
   const totals = computePlanTotals(clientCase, feeTiers);
-  const target = targetAllocation(clientCase, totals);
-  const perAccount = bucketsByAccount(clientCase, tickers, fees);
+  const perAccount = bucketsByAccount(clientCase, tickers);
   const actual = (bucket: BucketType) =>
     addCents(...perAccount.map((a) => (bucket === 'NOW' ? a.nowCents : bucket === 'SOON' ? a.soonCents : a.laterCents)));
-  const targets: Record<BucketType, Cents> = { NOW: target.nowCents, SOON: target.soonCents, LATER: target.laterCents };
+  const purposes = bucketPurposes(clientCase);
 
-  const [income, bank, planned, fee] = totals.now.lines;
-  const lines: Record<BucketType, ReportBucket['lines']> = {
-    NOW: [
-      { label: `Income (${clientCase.nowInputs.incomeDrawMonths} months)`, amountCents: income?.amountCents ?? 0 },
-      { label: 'Emergency fund', amountCents: bank?.amountCents ?? 0 },
-      { label: 'Planned expenses', amountCents: planned?.amountCents ?? 0 },
-      { label: 'Advisory fees, one year', amountCents: fee?.amountCents ?? 0 },
-    ].filter((line) => line.amountCents !== 0),
-    SOON: totals.soon.lines
-      .map((line, i) => ({ label: SOON_LABELS[i] ?? line.label, amountCents: line.amountCents }))
-      .filter((line) => line.amountCents !== 0),
-    LATER: [
-      { label: 'Income (second phase)', amountCents: null },
-      { label: 'Long-term care / disability', amountCents: null },
-      { label: 'Inheritance', amountCents: null },
-    ],
-  };
-
-  const buckets = (['NOW', 'SOON', 'LATER'] as const).map((bucket): ReportBucket => {
-    const actualCents = actual(bucket);
-    return {
+  const buckets = (['NOW', 'SOON', 'LATER'] as const).map(
+    (bucket): ReportBucket => ({
       bucket,
       ...BUCKET_WORDS[bucket],
-      actualCents,
-      targetCents: targets[bucket],
-      varianceCents: actualCents - targets[bucket],
-      ...bucketLight(bucket, actualCents, targets[bucket]),
-      lines: lines[bucket],
-    };
-  });
+      actualCents: actual(bucket),
+      lines: purposes[bucket].map((label) => ({ label, amountCents: null })),
+    }),
+  );
 
   const totalCents = totals.investableAssetsCents;
   const budgetCents = Math.round((totalCents * guardrails.budgetBps) / 10_000);
   const totalWithdrawalsCents = addCents(...guardrails.withdrawals.map((w) => w.amountCents));
 
   return {
-    version: 1,
+    version: 2,
     clientNumber: clientCase.clientNumber,
     initials: clientCase.initials,
     lifeStageLabel: LIFE_STAGE_LABELS[clientCase.lifeStage],
@@ -216,9 +267,12 @@ export function buildReport(
     guardrails: {
       budgetBps: guardrails.budgetBps,
       budgetCents,
-      withdrawals: guardrails.withdrawals.filter((w) => w.amountCents !== 0),
+      // Every line, as RIG's sheet shows them, zero or not.
+      withdrawals: guardrails.withdrawals,
       totalWithdrawalsCents,
       remainingCents: budgetCents - totalWithdrawalsCents,
+      greenMaxBps: thresholds.guardrailGreenMaxBps,
+      redMinBps: thresholds.guardrailRedMinBps,
     },
   };
 }

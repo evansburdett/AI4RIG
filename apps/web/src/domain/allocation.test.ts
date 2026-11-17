@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   accountCash,
   accountHoldings,
+  allocatedCents,
   amountForWeight,
   applyModel,
   atCurrentPrices,
@@ -44,7 +45,7 @@ const ROTH_GROWTH = MODELS.get('9004')!;
 const BALANCED = MODELS.get('9003')!;
 
 const feesOf = (c: ClientCase) => feesByAccount(accountAdvisoryFees(c, RIG_FEE_TIERS));
-const breakdownOf = (c = WORKBOOK_CASE) => computeBreakdown(c, PLACEHOLDER_TICKERS, feesOf(c));
+const breakdownOf = (c = WORKBOOK_CASE) => computeBreakdown(c, PLACEHOLDER_TICKERS);
 
 describe('targetAllocation', () => {
   it('derives the split from the client inputs, not from a table', () => {
@@ -97,7 +98,7 @@ describe('an account allocated by fund (10/26)', () => {
   const joint = WORKBOOK_CASE.accounts[0]!;
 
   it('holds the advisory fee as cash in Now and each fund in its ticker\'s bucket', () => {
-    const holdings = accountHoldings(joint, TICKERS, 12_000_00);
+    const holdings = accountHoldings(joint, TICKERS);
     expect(holdings[0]).toEqual({ accountId: '9001', bucket: 'NOW', tickerSymbol: null, marketValueCents: 12_000_00 });
     expect(holdings.filter((h) => h.bucket === 'NOW').map((h) => [h.tickerSymbol, h.marketValueCents])).toEqual([
       [null, 12_000_00],
@@ -106,11 +107,14 @@ describe('an account allocated by fund (10/26)', () => {
     ]);
   });
 
-  it('invests the balance less the fee, and says what is left', () => {
-    expect(leftToAllocateCents(joint, TICKERS, 12_000_00)).toBe(0);
-    expect(leftToAllocateCents(ACCUMULATOR_CASE.accounts[0]!, TICKERS, 4_200_00)).toBe(15_000_00);
+  it('counts cash not in a fund as cash, and only funds over the balance as unaccounted for (RIG, 11/17)', () => {
+    expect(leftToAllocateCents(joint)).toBe(0);
+    const accumulator = ACCUMULATOR_CASE.accounts[0]!;
+    expect(leftToAllocateCents(accumulator)).toBe(0);
+    // Its $15,000 not in a fund is the Cash row, beyond the $4,200 fee.
+    expect(accountCash(accumulator, 4_200_00)).toMatchObject({ investableCashCents: 15_000_00, overCents: 0 });
     // More in funds than the balance comes back negative.
-    expect(leftToAllocateCents({ ...joint, balanceCents: 1_000_000_00 }, TICKERS, 12_000_00)).toBe(-188_000_00);
+    expect(leftToAllocateCents({ ...joint, balanceCents: 1_000_000_00 })).toBe(-188_000_00);
   });
 
   it('fills from a model to the exact cent of the amount to invest', () => {
@@ -189,8 +193,8 @@ describe('computeBreakdown', () => {
     expect(drift.map((d) => d.deltaCents)).toEqual([0, 0, 0]);
   });
 
-  it('reports money not yet in a fund', () => {
-    expect(breakdownOf(ACCUMULATOR_CASE).unallocatedCents).toBe(15_000_00);
+  it('counts money not yet in a fund as cash in Now (RIG, 11/17)', () => {
+    expect(breakdownOf(ACCUMULATOR_CASE).unallocatedCents).toBe(0);
   });
 
   it('shows drift against the worksheet for an off-target case', () => {
@@ -199,9 +203,10 @@ describe('computeBreakdown', () => {
 
     // Worksheet: Now $30,000 (bank reserve) plus $7,800 of fee cash ($520,000
     // in all is the 1.50% tier: $4,200 + $3,600); the accounts hold only the
-    // fee cash there. Soon $75,000 (conservative reserve) against the
-    // Balanced model's bond funds in the Single account.
-    expect(drift.NOW?.deltaCents).toBe(-30_000_00);
+    // fee cash there, plus the Single account's $15,000 not in a fund. Soon
+    // $75,000 (conservative reserve) against the Balanced model's bond funds
+    // in the Single account.
+    expect(drift.NOW?.deltaCents).toBe(-15_000_00);
     expect(drift.SOON?.deltaCents).toBe(29_320_00);
   });
 
@@ -213,7 +218,7 @@ describe('computeBreakdown', () => {
 
 describe('bucketsByAccount', () => {
   it('splits each account into Now, Soon, and Later from its funds', () => {
-    const joint = bucketsByAccount(WORKBOOK_CASE, PLACEHOLDER_TICKERS, feesOf(WORKBOOK_CASE))[0]!;
+    const joint = bucketsByAccount(WORKBOOK_CASE, PLACEHOLDER_TICKERS)[0]!;
     expect(joint).toMatchObject({
       nowCents: 202_000_00,
       soonCents: 400_000_00,
@@ -223,9 +228,10 @@ describe('bucketsByAccount', () => {
     });
   });
 
-  it('shows what is left over in an account', () => {
-    const single = bucketsByAccount(ACCUMULATOR_CASE, PLACEHOLDER_TICKERS, feesOf(ACCUMULATOR_CASE))[0]!;
-    expect(single.unallocatedCents).toBe(15_000_00);
+  it('puts cash not in a fund in Now, not in a gap of its own', () => {
+    const single = bucketsByAccount(ACCUMULATOR_CASE, PLACEHOLDER_TICKERS)[0]!;
+    expect(single.unallocatedCents).toBe(0);
+    expect(single.nowCents).toBeGreaterThanOrEqual(15_000_00 + 4_200_00);
   });
 });
 
@@ -317,7 +323,7 @@ describe('one kind of fund, however it got into the account', () => {
     const account = atCurrentPrices(statement, tickers);
     const typed = atCurrentPrices({ ...account, lines: [...account.lines, withDollars('BND', 50_000_00)] }, tickers);
     expect(typed.balanceCents).toBe(account.balanceCents);
-    expect(leftToAllocateCents(typed, tickers, 0)).toBeLessThan(-49_000_00);
+    expect(leftToAllocateCents(typed)).toBeLessThan(-49_000_00);
   });
 
   it('moves dollars and the balance when a price moves, on every account, and leaves cash alone', () => {
@@ -377,11 +383,13 @@ describe('one kind of fund, however it got into the account', () => {
 
   it('counts only actual cash toward the fee, not a money market fund (Blake, 11/2)', () => {
     const valued = atCurrentPrices(statement, tickers);
-    expect(investableCents(valued, 900_00)).toBe(valued.balanceCents);
-    expect(leftToAllocateCents(valued, tickers, 900_00)).toBe(0);
+    // The fee is a fixed row, so with no cash the Cash row is short by the fee.
+    expect(investableCents(valued, 900_00)).toBe(valued.balanceCents - 900_00);
+    expect(accountCash(valued, 900_00)).toMatchObject({ cashCents: 0, investableCashCents: -900_00, overCents: 0 });
+    expect(leftToAllocateCents(valued)).toBe(0);
     expect(actualCashCents(valued)).toBe(0);
     expect(cashStatus(valued, 900_00, undefined, DEFAULT_THRESHOLDS)).toMatchObject({ light: 'RED', targetCents: 900_00 });
-    expect(accountHoldings(valued, tickers, 900_00).map((h) => h.tickerSymbol)).toEqual(['SGOV', 'VTI']);
+    expect(accountHoldings(valued, tickers).map((h) => h.tickerSymbol)).toEqual(['SGOV', 'VTI']);
 
     // Typing the actual cash keeps the funds and adds it to the balance.
     const withCash = withActualCash(valued, 1_000_00);
@@ -391,27 +399,38 @@ describe('one kind of fund, however it got into the account', () => {
 
   it('holds the fee back from the same kind of account when it has the money', () => {
     const open = atCurrentPrices({ ...statement, balanceCents: statement.balanceCents + 5_000_00 }, tickers);
-    const cash = accountCash(open, tickers, 900_00);
-    expect(cash.feeCashCents).toBe(900_00);
+    const cash = accountCash(open, 900_00);
+    expect(cash).toMatchObject({ cashCents: 5_000_00, feeCents: 900_00, investableCashCents: 4_100_00 });
     expect(investableCents(open, 900_00)).toBe(open.balanceCents - 900_00);
-    expect(accountHoldings(open, tickers, 900_00)[0]?.tickerSymbol).toBeNull();
+    expect(accountHoldings(open, tickers)[0]).toMatchObject({ tickerSymbol: null, marketValueCents: 5_000_00 });
   });
 
-  it('counts what rounding shares leaves behind as cash, not as work left to do', () => {
+  it('takes a fund added by weight out of Cash, and lets Cash be typed (RIG, 11/17)', () => {
     const model = { id: 'm', name: 'All VTI', taxFunnel: null, lines: [{ tickerSymbol: 'VTI', weightBps: 10_000 }] };
     const filled = atCurrentPrices(applyModel({ ...blank, balanceCents: 100_000_00 }, model, 1_000_00), tickers);
-    // $99,000 at $300 is exactly 330 shares; a nudge in the balance leaves change.
-    const change = { ...filled, balanceCents: 100_000_00 + 2_00 };
-    expect(accountCash(change, tickers, 1_000_00)).toEqual({
-      uninvestedCents: 1_002_00,
-      feeCashCents: 1_000_00,
-      roundingCents: 2_00,
-      leftCents: 0,
-    });
-    expect(accountHoldings(change, tickers, 1_000_00)[0]?.marketValueCents).toBe(1_002_00);
-    // More than a hundredth of a share is money still to place.
-    const more = { ...filled, balanceCents: 100_000_00 + 250_00 };
-    expect(accountCash(more, tickers, 1_000_00)).toMatchObject({ roundingCents: 0, leftCents: 250_00 });
+    // $99,000 at $300 is exactly 330 shares: Cash is 0 beyond the fee.
+    expect(accountCash(filled, 1_000_00)).toMatchObject({ cashCents: 1_000_00, investableCashCents: 0 });
+
+    // A $300,000 deposit typed as Cash: the funds stay and the balance follows.
+    const deposit = withActualCash(filled, 1_000_00 + 300_000_00);
+    expect(deposit.balanceCents).toBe(400_000_00);
+    expect(cashStatus(deposit, 1_000_00, undefined, DEFAULT_THRESHOLDS)).toMatchObject({ light: 'YELLOW' });
+
+    // Adding a fund at 20% of the amount to invest spends Cash down, inside the balance.
+    const amount = amountForWeight(2_000, investableCents(deposit, 1_000_00));
+    const added = atCurrentPrices({ ...deposit, lines: [...deposit.lines, withDollars('BND', amount)] }, tickers);
+    expect(added.balanceCents).toBe(400_000_00);
+    expect(accountCash(added, 1_000_00).investableCashCents).toBeGreaterThan(300_000_00 - amount - 100_00);
+    expect(accountCash(added, 1_000_00).investableCashCents).toBeLessThanOrEqual(300_000_00 - amount + 100_00);
+
+  });
+
+  it('keeps the fee at the top when CASH is typed in as a fund (bug, 11/17)', () => {
+    const open = atCurrentPrices({ ...statement, balanceCents: statement.balanceCents + 5_000_00 }, tickers);
+    const withCashLine = { ...open, lines: [...open.lines, { tickerSymbol: 'CASH', amountCents: 2_000_00, sharesMicros: null }] };
+    // The cash line is cash, not a fund: nothing moves.
+    expect(allocatedCents(withCashLine)).toBe(allocatedCents(open));
+    expect(accountCash(withCashLine, 900_00)).toEqual(accountCash(open, 900_00));
   });
 
   it('still matches its model right after a fill, and not once prices have moved it', () => {

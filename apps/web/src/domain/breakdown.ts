@@ -7,8 +7,9 @@
  * weights are how the advisor places the money; shares are what the client
  * owns, and they stay put when the market moves.
  *
- * An account's balance is its funds plus cash not in a fund. The cash pays the
- * advisory fee first and counts toward Now. Each fund counts toward its
+ * An account's balance is its funds plus its cash. The cash pays a year's
+ * advisory fee first, and what is beyond the fee is cash to invest (RIG,
+ * 11/17); all of it counts toward Now. Each fund counts toward its
  * ticker's default bucket, so the Now / Soon / Later totals are added up from
  * the funds rather than typed.
  *
@@ -50,9 +51,9 @@ export function feesByAccount(fees: readonly AccountFee[]): FeesByAccount {
 // One account
 // ---------------------------------------------------------------------------
 
-/** The money in the account's funds. */
+/** The money in the account's funds. A plain cash line is cash, not a fund. */
 export function allocatedCents(account: Account): Cents {
-  return addCents(...account.lines.map((line) => line.amountCents));
+  return addCents(...investedLines(account).map((line) => line.amountCents));
 }
 
 /** A ticker's exact price in millionths of a dollar, or its price in cents when that is all there is. */
@@ -162,55 +163,44 @@ function investedLines(account: Account): readonly AccountLine[] {
   return account.lines.filter((line) => !isCashLine(line));
 }
 
-/** How the money in an account that is not in a fund is spoken for. */
+/**
+ * An account's cash, as the account card lays it out (RIG, 11/17): a fixed
+ * row for the year's advisory fee, then a Cash row for what is beyond it,
+ * then the funds. The three add up to the balance.
+ */
 export interface AccountCash {
-  /** The balance less the funds. Negative when the funds add up to more. */
-  readonly uninvestedCents: Cents;
-  /** Held back for the year's advisory fee, up to the fee. */
-  readonly feeCashCents: Cents;
-  /** Too little to buy another hundredth of a share of anything: staying cash is the plan, not a job left undone. */
-  readonly roundingCents: Cents;
-  /** Still to put in a fund. Negative when the funds add up to more than the balance. */
-  readonly leftCents: Cents;
+  /** All the account's cash: the balance less its funds. Negative when the funds add up to more. */
+  readonly cashCents: Cents;
+  /** The year's advisory fee, held as cash. */
+  readonly feeCents: Cents;
+  /** The cash beyond the fee, to invest or keep. Negative when cash is short of the fee. */
+  readonly investableCashCents: Cents;
+  /** How far the funds go over the balance: negative, or 0. */
+  readonly overCents: Cents;
 }
 
-export function accountCash(
-  account: Account,
-  tickers: ReadonlyMap<string, Ticker>,
-  feeCents: Cents,
-  modelCashCents: Cents = 0,
-): AccountCash {
-  const uninvestedCents = account.balanceCents - allocatedCents(account);
-  const feeCashCents = Math.max(Math.min(uninvestedCents, feeCents), 0);
-  // Cash the model itself holds is part of the plan too, not money left over.
-  const plainCashLines = addCents(...account.lines.filter(isCashLine).map((line) => line.amountCents));
-  const modelCashHeld = Math.max(Math.min(uninvestedCents - feeCashCents, modelCashCents - plainCashLines), 0);
-  const spare = uninvestedCents - feeCashCents - modelCashHeld;
-  const aHundredthOfEach = addCents(
-    ...account.lines.map((line) => Math.ceil((tickers.get(line.tickerSymbol)?.priceCents ?? 0) / 100)),
-  );
-  const roundingCents = spare > 0 && spare <= aHundredthOfEach ? spare : 0;
-  return { uninvestedCents, feeCashCents: feeCashCents + modelCashHeld, roundingCents, leftCents: spare - roundingCents };
+export function accountCash(account: Account, feeCents: Cents): AccountCash {
+  const cashCents = actualCashCents(account);
+  return {
+    cashCents,
+    feeCents,
+    investableCashCents: cashCents - feeCents,
+    overCents: Math.min(cashCents, 0),
+  };
+}
+
+/** What a fund's weight is a share of: the balance less the year's fee. */
+export function investableCents(account: Account, feeCents: Cents): Cents {
+  return Math.max(account.balanceCents - feeCents, 0);
 }
 
 /**
- * What the funds are a share of: the balance less the cash held for the fee.
- * An account from a statement often has no such cash, because its fee comes
- * from cash it already holds, and then all of it counts.
+ * Money not accounted for: negative when the funds add up to more than the
+ * balance, else 0. Cash not in a fund is no longer "left to allocate"; it is
+ * cash, in Now (RIG, 11/17).
  */
-export function investableCents(account: Account, feeCents: Cents): Cents {
-  const uninvested = account.balanceCents - allocatedCents(account);
-  return account.balanceCents - Math.max(Math.min(uninvested, feeCents), 0);
-}
-
-/** Still to put in a fund. Negative when the funds add up to more than the balance. */
-export function leftToAllocateCents(
-  account: Account,
-  tickers: ReadonlyMap<string, Ticker>,
-  feeCents: Cents,
-  modelCashCents: Cents = 0,
-): Cents {
-  return accountCash(account, tickers, feeCents, modelCashCents).leftCents;
+export function leftToAllocateCents(account: Account): Cents {
+  return Math.min(actualCashCents(account), 0);
 }
 
 /**
@@ -265,9 +255,10 @@ export interface CashStatus {
 
 /**
  * Cash against its target (RIG, 11/2). The fee is filled first, then the
- * model's cash. Short of the fee is red, since a fee debit would take the
- * account negative. Short of the model's cash, or more than the threshold over
- * the target (a deposit, say), is yellow: time to rebalance.
+ * model's cash; what is beyond the fee is the Cash row (11/17), and that is
+ * what the alerts read. Short of the fee is red, since a fee debit would take
+ * the account negative. Short of the model's cash, or more than the threshold
+ * over the target (a deposit, say), is yellow: time to rebalance.
  */
 export function cashStatus(
   account: Account,
@@ -282,16 +273,19 @@ export function cashStatus(
   const money = (cents: Cents) => formatWholeDollars(Math.abs(cents));
   const base = { targetCents, actualCents, varianceCents };
 
+  if (actualCents < 0) {
+    return { ...base, light: 'RED', message: `The funds add up to ${money(actualCents)} more than the balance.` };
+  }
   if (actualCents < feeCents) {
-    return { ...base, light: 'RED', message: `${money(feeCents - actualCents)} short of the year's advisory fee. Raise cash.` };
+    return { ...base, light: 'RED', message: `Cash is ${money(feeCents - actualCents)} short of the year's advisory fee. Raise cash.` };
   }
   if (actualCents < targetCents) {
-    return { ...base, light: 'YELLOW', message: `The fee is covered, but ${money(-varianceCents)} short of the model's cash.` };
+    return { ...base, light: 'YELLOW', message: `The fee is covered, but cash is ${money(-varianceCents)} short of the model's cash.` };
   }
   if (varianceCents * WHOLE_BPS > account.balanceCents * thresholds.cashExcessBps && varianceCents > 0) {
-    return { ...base, light: 'YELLOW', message: `${money(varianceCents)} more cash than the target. Consider investing it.` };
+    return { ...base, light: 'YELLOW', message: `${money(varianceCents)} of cash to invest.` };
   }
-  return { ...base, light: 'GREEN', message: 'Cash covers the fee and the model.' };
+  return { ...base, light: 'GREEN', message: modelCash > 0 ? 'Cash covers the fee and the model.' : 'Cash covers the fee.' };
 }
 
 /**
@@ -462,23 +456,16 @@ export function bucketOf(tickerSymbol: string, tickers: ReadonlyMap<string, Tick
 }
 
 /**
- * Every position in one account and the bucket it counts toward: the cash
- * held for the fee and left over from whole shares in Now, then each fund.
- * Money still to allocate is in no bucket yet. Nothing for an empty fund.
+ * Every position in one account and the bucket it counts toward: all its cash
+ * in Now (the fee's and the rest), then each fund. Nothing for an empty fund.
  */
-export function accountHoldings(
-  account: Account,
-  tickers: ReadonlyMap<string, Ticker>,
-  feeCents: Cents,
-): Holding[] {
-  const { feeCashCents, roundingCents } = accountCash(account, tickers, feeCents);
+export function accountHoldings(account: Account, tickers: ReadonlyMap<string, Ticker>): Holding[] {
+  const cashCents = actualCashCents(account);
   const cash: Holding[] =
-    feeCashCents + roundingCents > 0
-      ? [{ accountId: account.id, bucket: 'NOW', tickerSymbol: null, marketValueCents: feeCashCents + roundingCents }]
-      : [];
+    cashCents > 0 ? [{ accountId: account.id, bucket: 'NOW', tickerSymbol: null, marketValueCents: cashCents }] : [];
   return [
     ...cash,
-    ...account.lines
+    ...investedLines(account)
       .filter((line) => line.amountCents > 0)
       .map(
         (line): Holding => ({
@@ -566,15 +553,9 @@ function slice(
   }).filter((s) => s.valueCents !== 0);
 }
 
-export function computeBreakdown(
-  clientCase: ClientCase,
-  tickerList: readonly Ticker[],
-  fees: FeesByAccount,
-): Breakdown {
+export function computeBreakdown(clientCase: ClientCase, tickerList: readonly Ticker[]): Breakdown {
   const tickers = tickersBySymbol(tickerList);
-  const holdings = clientCase.accounts.flatMap((account) =>
-    accountHoldings(account, tickers, fees.get(account.id) ?? 0),
-  );
+  const holdings = clientCase.accounts.flatMap((account) => accountHoldings(account, tickers));
   const totalCents = addCents(...clientCase.accounts.map((a) => a.balanceCents));
 
   const byBucket = BUCKETS.map((bucket): BucketComposition => {
@@ -590,9 +571,7 @@ export function computeBreakdown(
 
   return {
     totalCents,
-    unallocatedCents: addCents(
-      ...clientCase.accounts.map((account) => leftToAllocateCents(account, tickers, fees.get(account.id) ?? 0)),
-    ),
+    unallocatedCents: addCents(...clientCase.accounts.map((account) => leftToAllocateCents(account))),
     byAssetClass: slice(holdings, tickers, totalCents),
     byBucket,
   };
@@ -680,15 +659,10 @@ export interface AccountBuckets {
  * the detail per account, then nice clean summary that is the total of all the
  * accounts."
  */
-export function bucketsByAccount(
-  clientCase: ClientCase,
-  tickerList: readonly Ticker[],
-  fees: FeesByAccount,
-): AccountBuckets[] {
+export function bucketsByAccount(clientCase: ClientCase, tickerList: readonly Ticker[]): AccountBuckets[] {
   const tickers = tickersBySymbol(tickerList);
   return clientCase.accounts.map((account) => {
-    const feeCents = fees.get(account.id) ?? 0;
-    const holdings = accountHoldings(account, tickers, feeCents);
+    const holdings = accountHoldings(account, tickers);
     const amount = (bucket: BucketType) =>
       addCents(...holdings.filter((h) => h.bucket === bucket).map((h) => h.marketValueCents));
 
@@ -700,7 +674,7 @@ export function bucketsByAccount(
       nowCents: amount('NOW'),
       soonCents: amount('SOON'),
       laterCents: amount('LATER'),
-      unallocatedCents: leftToAllocateCents(account, tickers, feeCents),
+      unallocatedCents: leftToAllocateCents(account),
       balanceCents: account.balanceCents,
     };
   });
@@ -729,7 +703,7 @@ export function holdingsInBucket(
 
   return clientCase.accounts
     .flatMap((account) =>
-      accountHoldings(account, tickers, fees.get(account.id) ?? 0)
+      accountHoldings(account, tickers)
         .filter((holding) => holding.bucket === bucket)
         .map((holding): BucketHolding => {
           const ticker = holding.tickerSymbol === null ? undefined : tickers.get(holding.tickerSymbol);
